@@ -449,6 +449,30 @@ first 92.
   `… CORRECTED.pdf`), and the email names any attendance days that are also in
   an earlier submission.
 
+## Timesheets required, per user (TS-USER-1, 8 November 2026)
+
+Not everybody keeps a timesheet: some people never work overtime. On the Users
+page each account shows **Timesheets: Required / Not required** (the Office:
+*Not applicable — attendance only*), and the editor has **Timesheets required:
+Enabled / Disabled**. Whoever may edit the account sets it (the Office for
+Technicians and Apprentices; a Senior Tech for their own account — no Senior
+Tech edits another's, as before). Each change is on the audit trail, old → new.
+
+- **The rule** (`completesTimesheet(person)`): the ROLE decides who may keep a
+  timesheet (Senior Tech, Technician, Apprentice — never the Office); the
+  person's setting decides whether they must. Every timesheet write,
+  completion, submission and read of one's own sheet asks it on the server;
+  the office's month, the people list, the sidebar and My Monthly Forms ask it
+  too. A direct request is refused (`timesheet_not_required`).
+- **Disabled**: no timesheet is asked of them or counted as outstanding; they
+  submit attendance alone (as the Office does); nothing else their role does
+  changes — a Senior Tech keeps every Senior Tech permission, job assignment
+  included. Timesheets they submitted before stay in their History.
+- **Never switched off half-way**: refused (`timesheet_in_progress`) while a
+  completed timesheet (or its correction) waits on My Monthly Forms.
+- **Existing accounts** keep exactly what they had: migration 0057 adds
+  `users.timesheet_required` NOT NULL DEFAULT true.
+
 ## Who may do what
 
 | | Technician / Apprentice | Senior Tech (`master`) | Office (`coordinator`) |
@@ -491,6 +515,11 @@ reads another's forms (refused by the server). Every route checks it on the serv
 - The physical-device checks in `docs/timesheets-physical-test-sheet.md` are
   for a person with the real tablet, phone and printer; everything else is
   automated.
+
+## Database (migration 0057, additive — TS-USER-1)
+
+`users.timesheet_required boolean NOT NULL DEFAULT true`: every existing account keeps its behaviour. Rollback to
+v1.8.0: the column is unseen and untouched by its saves; the role alone decides again until rolled forward.
 
 ## Database (migration 0056, additive — REPEAT-DATES-1)
 
