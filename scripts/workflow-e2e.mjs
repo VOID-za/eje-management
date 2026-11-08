@@ -1563,6 +1563,9 @@ await step('JOB-SCHED-EDIT-1: the dates are cleared, the job reads unscheduled, 
   await page.getByTestId('job-detail-schedule-clear').click();
   await page.getByTestId('save-job-details').click();
   await page.getByTestId('job-details-form').waitFor({ state: 'detached', timeout: 15000 });
+  await page
+    .waitForFunction(() => (document.querySelector('[data-testid="job-overview-scheduled"]')?.textContent ?? '').trim() === '—', null, { timeout: 10000 })
+    .catch(() => undefined);
   if ((await page.getByTestId('job-overview-scheduled').innerText()).trim() !== '—') {
     throw new Error('a cleared date still shows on the overview');
   }
