@@ -247,7 +247,7 @@ const assertMaySetTimesheetRequired = async (context: OperationContext, target: 
     throw new WorkflowError(`You cannot change whether ${target.id === context.actor.id ? 'you keep' : `${userFullName(target)} keeps`} a timesheet.`, [
       {
         code: 'timesheet_setting_not_permitted',
-        message: 'It is set by somebody who administers the account: the Office for Technicians and Apprentices, a Senior Tech for anybody else — never by the person themselves.',
+        message: 'It is set by somebody who administers the account: the Office or a Senior Tech for Technicians and Apprentices; a Senior Tech for their own account.',
       },
     ]);
   }
@@ -281,10 +281,7 @@ const auditTimesheetRequired = (context: OperationContext, saved: User, required
     changes: [{ field: 'Timesheets required', from: required ? 'Disabled' : 'Enabled', to: required ? 'Enabled' : 'Disabled' }],
   });
 
-/**
- * SET "TIMESHEETS REQUIRED" ALONE (TS-USER-1) — for an account the actor may set it on but not otherwise edit
- * (a Senior Tech setting another Senior Tech's). The same rules as the editor; an unchanged value writes nothing.
- */
+/** SET "TIMESHEETS REQUIRED" ALONE (TS-USER-1). The same rules as the Users editor; an unchanged value writes nothing. */
 export const setTimesheetRequired = async (context: OperationContext, userId: string, required: boolean): Promise<User> => {
   assertManagesUsers(context);
   const existing = await context.repos.users.findById(asUserId(userId));

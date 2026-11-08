@@ -454,12 +454,11 @@ first 92.
 Not everybody keeps a timesheet: some people never work overtime. On the Users
 page each account shows **Timesheets: Required / Not required** (the Office:
 *Not applicable — attendance only*), and the editor has **Timesheets required:
-Enabled / Disabled**. It is set by somebody who administers the account —
-the Office for Technicians and Apprentices; a Senior Tech for anybody else,
-another Senior Tech included (this one setting, through *Manage → Disable /
-Enable timesheets*; a Senior Tech account is otherwise not editable by another)
-— and never by the person themselves, like a role. Each change is on the audit
-trail, old → new.
+Enabled / Disabled**. It is set within the existing account rules: the Office
+or a Senior Tech for Technicians and Apprentices; a Senior Tech for their own
+account — a Senior Tech account stays protected from every other user, so its
+holder (who administers users) sets it. A Technician or Apprentice never sets
+their own. Each change is on the audit trail, old → new.
 
 - **The rule** (`completesTimesheet(person)`): the ROLE decides who may keep a
   timesheet (Senior Tech, Technician, Apprentice — never the Office); the

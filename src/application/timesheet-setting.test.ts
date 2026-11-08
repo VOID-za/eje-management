@@ -38,11 +38,7 @@ const typed = (overtime: string): TimesheetLineTyped => ({ pick: '', customerNam
 const refusedWith = async (work: Promise<unknown>, code: string) => expect(work).rejects.toMatchObject({ violations: [{ code }] });
 const fresh = async (user: User): Promise<User> => (await harness.repos.users.findById(user.id))!;
 /** As the office would: the Users page's edit, with only the setting changed. */
-const setRequired = async (by: User, user: User, required: boolean) =>
-  // A Senior Tech account is not editable by another Senior Tech: its setting is set on its own (setTimesheetRequired).
-  user.role === 'master' && by.id !== user.id
-    ? setTimesheetRequired(harness.as(by), user.id, required)
-    : updateUser(harness.as(by), { ...(await fresh(user)), timesheetRequired: required });
+const setRequired = async (by: User, user: User, required: boolean) => updateUser(harness.as(by), { ...(await fresh(user)), timesheetRequired: required });
 const line = async (who: User, date = '2026-11-05') =>
   saveTimesheetLine(harness.as(await fresh(who)), who.id, { id: crypto.randomUUID(), date, typed: typed('1'), expectedRevision: null });
 const complete = async (who: User, kind: 'timesheet' | 'attendance') =>
@@ -58,8 +54,8 @@ describe('TS-USER-1 — the default keeps every account as it was', () => {
 });
 
 describe('TS-USER-1 — disabled and enabled again, for every role that keeps a timesheet', () => {
-  for (const [name, person, by] of [['Technician', sipho, coordinator], ['Apprentice', apprentice, coordinator], ['Senior Tech', otherMaster, master]] as const) {
-    // A Senior Tech's setting is set by another Senior Tech — never by its holder.
+  for (const [name, person, by] of [['Technician', sipho, coordinator], ['Apprentice', apprentice, coordinator], ['Senior Tech', otherMaster, otherMaster]] as const) {
+    // A Senior Tech account is protected from every other user: its holder, who administers users, sets it.
     it(`${name}: disabled — refused on the server, attendance only, nothing outstanding; enabled — the timesheet again`, async () => {
       await setRequired(by, person, false);
       const off = await fresh(person);
@@ -115,12 +111,13 @@ describe('TS-USER-1 — who may change it, and when', () => {
     await expect(setRequired(coordinator, otherMaster, false)).rejects.toBeDefined();
     await refusedWith(setTimesheetRequired(harness.as(coordinator), otherMaster.id, false), 'timesheet_setting_not_permitted');
     expect((await fresh(otherMaster)).timesheetRequired).not.toBe(false);
-    // Nobody switches their own timesheet off — a Senior Tech included, through either path.
-    await refusedWith(updateUser(harness.as(otherMaster), { ...(await fresh(otherMaster)), timesheetRequired: false }), 'timesheet_setting_not_permitted');
-    await refusedWith(setTimesheetRequired(harness.as(otherMaster), otherMaster.id, false), 'timesheet_setting_not_permitted');
+    // Another Senior Tech's account stays protected — through either path.
+    await refusedWith(setTimesheetRequired(harness.as(master), otherMaster.id, false), 'timesheet_setting_not_permitted');
     expect((await fresh(otherMaster)).timesheetRequired).not.toBe(false);
-    // The rest of a Senior Tech's account stays theirs to edit.
-    await expect(updateUser(harness.as(otherMaster), { ...(await fresh(otherMaster)), jobTitle: 'Workshop lead' })).resolves.toMatchObject({ jobTitle: 'Workshop lead' });
+    // A technician never sets his own (nor anybody's).
+    await expect(setTimesheetRequired(harness.as(sipho), sipho.id, false)).rejects.toBeDefined();
+    // A Senior Tech sets a technician's through the single-setting path too.
+    await expect(setTimesheetRequired(harness.as(master), sipho.id, false)).resolves.toMatchObject({ timesheetRequired: false });
   });
 
   it('not while a correction of a submitted timesheet waits for the office', async () => {
