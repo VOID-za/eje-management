@@ -241,9 +241,11 @@ describe('what: the fields this job type carries, validated as creation validate
   });
 
   it('offers exactly the fields creation keeps for each type', () => {
+    // JOB-SCHED-EDIT-1: the scheduled date wherever creation keeps one.
     expect(editableDetailFields('breakdown')).toEqual([
       'orderNumber',
       'referenceNumber',
+      'scheduledDate',
       'faultDescription',
     ]);
     // PARTS-02 (28 October 2026): the quote number is a Parts field too.
@@ -251,6 +253,7 @@ describe('what: the fields this job type carries, validated as creation validate
     expect(editableDetailFields('test_and_repair')).toEqual([
       'orderNumber',
       'referenceNumber',
+      'scheduledDate',
       'quoteNumber',
       'deliveryNote',
       'dateReceived',

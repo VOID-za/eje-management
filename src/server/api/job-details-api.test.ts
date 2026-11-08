@@ -125,4 +125,80 @@ describe('correcting a job’s details over the API', () => {
       ).status,
     ).toBe(400);
   });
+
+  /*
+   * JOB-SCHED-EDIT-1 (8 November 2026): the scheduled date, through the same
+   * route, with the same statuses — and the calendar's own read reflects it.
+   */
+  describe('the scheduled date', () => {
+    it('changes and clears it, records each from/to, and the calendar shows the new day', async () => {
+      const before = await jobOf(master, 'EJE-1048');
+      const changed = await edit(coordinator, 'EJE-1048', {
+        changes: { scheduledDate: '2027-03-15' },
+        expected: { scheduledDate: before.scheduledDate },
+      });
+      expect(changed.status, JSON.stringify(changed.error)).toBe(200);
+      expect(changed.data.scheduledDate).toBe('2027-03-15');
+      expect(changed.data.createdAt).toBe(before.createdAt);
+      expect(changed.data.completedAt).toBe(before.completedAt);
+
+      const calendar = await master.get<{ entries: readonly { kind: string; jobNumber?: string; start: string }[] }>(
+        '/api/calendar?from=2027-03-01&to=2027-03-31',
+      );
+      expect(calendar.status).toBe(200);
+      expect(calendar.data.entries.find((entry) => entry.jobNumber === 'EJE-1048')?.start).toBe('2027-03-15');
+
+      const cleared = await edit(coordinator, 'EJE-1048', {
+        changes: { scheduledDate: null },
+        expected: { scheduledDate: '2027-03-15' },
+      });
+      expect(cleared.status, JSON.stringify(cleared.error)).toBe(200);
+      expect(cleared.data.scheduledDate).toBeNull();
+
+      const screen = await master.get<{ activity: readonly ActivityEvent[] }>('/api/jobs/EJE-1048');
+      const changes = screen.data.activity
+        .filter((event) => event.type === 'job_details_edited')
+        .flatMap((event) => event.changes ?? []);
+      expect(changes).toEqual(
+        expect.arrayContaining([
+          { field: 'details.scheduledDate', from: before.scheduledDate, to: '2027-03-15' },
+          { field: 'details.scheduledDate', from: '2027-03-15', to: null },
+        ]),
+      );
+    });
+
+    it('refuses a day that does not exist with 422, and a malformed one by schema with 400', async () => {
+      const before = await jobOf(master, 'EJE-1048');
+      expect(
+        (await edit(master, 'EJE-1048', { changes: { scheduledDate: '2027-02-30' }, expected: { scheduledDate: before.scheduledDate } }))
+          .status,
+      ).toBe(422);
+      expect(
+        (await edit(master, 'EJE-1048', { changes: { scheduledDate: '15/03/2027' }, expected: { scheduledDate: before.scheduledDate } }))
+          .status,
+      ).toBe(400);
+      expect((await jobOf(master, 'EJE-1048')).scheduledDate).toBe(before.scheduledDate);
+    });
+
+    it('refuses a service ending before it starts with 422', async () => {
+      const before = await jobOf(master, 'EJE-1049');
+      const response = await edit(master, 'EJE-1049', {
+        changes: { scheduledDate: '2027-03-15', scheduledEndDate: '2027-03-10' },
+        expected: { scheduledDate: before.scheduledDate, scheduledEndDate: before.scheduledEndDate },
+      });
+      expect(response.status).toBe(422);
+      const after = await jobOf(master, 'EJE-1049');
+      expect([after.scheduledDate, after.scheduledEndDate]).toEqual([before.scheduledDate, before.scheduledEndDate]);
+    });
+
+    it('refuses a technician with 403', async () => {
+      const before = await jobOf(technician, 'EJE-1048');
+      const response = await edit(technician, 'EJE-1048', {
+        changes: { scheduledDate: '2027-03-15' },
+        expected: { scheduledDate: before.scheduledDate },
+      });
+      expect(response.status).toBe(403);
+      expect((await jobOf(master, 'EJE-1048')).scheduledDate).toBe(before.scheduledDate);
+    });
+  });
 });

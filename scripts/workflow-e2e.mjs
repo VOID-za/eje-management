@@ -1485,6 +1485,88 @@ await step('JOB-EDIT-1: the edit panel fits a tablet without sideways scrolling'
   if (overflow) throw new Error('the edit panel overflows horizontally at 820px');
 });
 
+/* -------------------------------------------------------------------------- */
+/* JOB-SCHED-EDIT-1 (8 November 2026): the scheduled date on Edit details.    */
+/* EJE-1049 is a service, so it carries the start AND end; the calendar's own */
+/* read is asked after each save, because that is where the date is used.     */
+/* -------------------------------------------------------------------------- */
+
+const calendarEntryFor = (jobNumber, from, to) =>
+  page.evaluate(
+    async ({ jobNumber, from, to }) => {
+      const response = await fetch(`/api/calendar?from=${from}&to=${to}`, { credentials: 'same-origin' });
+      const body = await response.json();
+      return (body.data?.entries ?? []).find((entry) => entry.jobNumber === jobNumber) ?? null;
+    },
+    { jobNumber, from, to },
+  );
+
+await step('JOB-SCHED-EDIT-1: a Master moves EJE-1049’s booking from Edit details, and the job and calendar show it', async () => {
+  await visit('/jobs/EJE-1049');
+  await page.getByTestId('edit-job-details').click();
+  const start = page.getByTestId('job-detail-scheduledDate');
+  const end = page.getByTestId('job-detail-scheduledEndDate');
+  await start.waitFor({ timeout: 15000 });
+  if ((await start.inputValue()).length === 0) throw new Error('the current scheduled date was not shown');
+  await start.fill('2027-06-14');
+  await end.fill('2027-06-16');
+  await page.getByTestId('save-job-details').click();
+  await page.getByTestId('job-details-form').waitFor({ state: 'detached', timeout: 15000 });
+  const shown = await page.getByTestId('job-overview-scheduled').innerText();
+  if (!shown.includes('2027') || !shown.includes('3 days')) throw new Error(`the overview shows "${shown}"`);
+  const entry = await calendarEntryFor('EJE-1049', '2027-06-01', '2027-06-30');
+  if (entry === null || entry.start !== '2027-06-14' || entry.end !== '2027-06-16') {
+    throw new Error(`the calendar has ${JSON.stringify(entry)}`);
+  }
+});
+
+await step('JOB-SCHED-EDIT-1: an end before the start is said in the dialog and cannot be saved', async () => {
+  await page.getByTestId('edit-job-details').click();
+  await page.getByTestId('job-detail-scheduledEndDate').fill('2027-06-01');
+  await page.getByText('The service end date cannot be before the start date.').first().waitFor({ timeout: 10000 });
+  if (!(await page.getByTestId('save-job-details').isDisabled())) throw new Error('Save stayed enabled with the end before the start');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+});
+
+await step('JOB-SCHED-EDIT-1: the dates are cleared, the job reads unscheduled, and a single day is set again', async () => {
+  await page.getByTestId('edit-job-details').click();
+  await page.getByTestId('job-detail-schedule-clear').click();
+  await page.getByTestId('save-job-details').click();
+  await page.getByTestId('job-details-form').waitFor({ state: 'detached', timeout: 15000 });
+  if ((await page.getByTestId('job-overview-scheduled').innerText()).trim() !== '—') {
+    throw new Error('a cleared date still shows on the overview');
+  }
+  if ((await calendarEntryFor('EJE-1049', '2027-06-01', '2027-06-30')) !== null) {
+    throw new Error('a cleared booking is still on the calendar');
+  }
+  // Set from empty: one day, no end date.
+  await page.getByTestId('edit-job-details').click();
+  await page.getByTestId('job-detail-scheduledDate').fill('2027-06-21');
+  await page.getByTestId('save-job-details').click();
+  await page.getByTestId('job-details-form').waitFor({ state: 'detached', timeout: 15000 });
+  const entry = await calendarEntryFor('EJE-1049', '2027-06-01', '2027-06-30');
+  if (entry === null || entry.start !== '2027-06-21' || entry.days !== 1) throw new Error(`the calendar has ${JSON.stringify(entry)}`);
+  const screen = await page.evaluate(async () => (await (await fetch('/api/jobs/EJE-1049', { credentials: 'same-origin' })).json()));
+  const moves = (screen.data?.activity ?? [])
+    .filter((event) => event.type === 'job_details_edited')
+    .flatMap((event) => event.changes ?? [])
+    .filter((change) => change.field === 'details.scheduledDate');
+  if (moves.length !== 3) throw new Error(`expected three scheduled-date changes on the trail, found ${moves.length}`);
+});
+
+await step('JOB-SCHED-EDIT-1: the dates fit a tablet and a phone without sideways scrolling', async () => {
+  for (const [width, height] of [[820, 1180], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    await visit('/jobs/EJE-1049');
+    await page.getByTestId('edit-job-details').click();
+    await page.getByTestId('job-detail-scheduledDate').waitFor({ timeout: 15000 });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    if (overflow) throw new Error(`the schedule fields overflow horizontally at ${width}px`);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+});
+
 await step('JOB-EDIT-1: a quantity that is not a whole number cannot be sent as a silent “clear”', async () => {
   // EJE-1067 is a Test & Repair job, so the unit booked in is editable on it.
   // TR-PARTS-1: the parts booked in are edited as a list, in their own dialog.

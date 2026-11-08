@@ -148,6 +148,9 @@ const detailChanges = z
     repairDescription: text(500),
     repairQuantity: z.number().int().positive().max(100_000).nullable(),
     dateReceived: isoDate.nullable(),
+    // JOB-SCHED-EDIT-1: the booking's dates; the operation refuses a day that does not exist.
+    scheduledDate: isoDate.nullable(),
+    scheduledEndDate: isoDate.nullable(),
   })
   .partial()
   .strict();
@@ -163,6 +166,8 @@ const detailExpected = z
     repairDescription: text(8000),
     repairQuantity: z.number().int().nullable(),
     dateReceived: isoDate.nullable(),
+    scheduledDate: isoDate.nullable(),
+    scheduledEndDate: isoDate.nullable(),
   })
   .partial()
   .strict();

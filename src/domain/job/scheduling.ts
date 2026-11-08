@@ -84,6 +84,21 @@ export const isMultiDay = (
   job: Pick<Job, 'jobType' | 'scheduledDate' | 'scheduledEndDate'>,
 ): boolean => (jobScheduleWindow(job)?.days ?? 1) > 1;
 
+/**
+ * Whether a value is a real calendar day written YYYY-MM-DD. JOB-SCHED-EDIT-1
+ * (8 November 2026): the command's pattern accepts "2026-02-31", which the
+ * database would refuse with an error nobody could read; this says so first.
+ */
+export const isCalendarDate = (value: string): boolean => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (match === null) return false;
+  const [, year, month, day] = match.map(Number) as [number, number, number, number];
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day
+  );
+};
+
 /** Validation for the scheduling fields on a job form. */
 export const checkSchedule = (
   jobType: JobTypeCode,

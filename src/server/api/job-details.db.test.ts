@@ -148,6 +148,77 @@ describeDb('correcting a job’s details on PostgreSQL', () => {
     expect(stored.quoteNumber).toBe('Q-20451');
   });
 
+  /*
+   * JOB-SCHED-EDIT-1 (8 November 2026): the scheduled date is written to the
+   * job's own `scheduled_date` column — the one the calendar reads — with its
+   * audit row, and nothing else on the row moves.
+   */
+  it('sets a scheduled date on a job raised without one, changes it, clears it — each persisted and audited', async () => {
+    const master = await signIn(MASTER);
+    const job = await raise(master);
+    const raised = await row(job.id);
+    expect(raised.scheduledDate).toBeNull();
+
+    const coordinator = await signIn(COORDINATOR);
+    const steps: readonly [string | null, string | null][] = [
+      [null, '2027-03-15'],
+      ['2027-03-15', '2027-03-22'],
+      ['2027-03-22', null],
+    ];
+    let version = raised.version;
+    for (const [from, to] of steps) {
+      const response = await coordinator.post<Job>(`/api/jobs/${job.id}/edit_details`, {
+        changes: { scheduledDate: to },
+        expected: { scheduledDate: from },
+      });
+      expect(response.status, JSON.stringify(response.error)).toBe(200);
+      const stored = await row(job.id);
+      expect(stored.scheduledDate).toBe(to);
+      expect(stored.version).toBeGreaterThan(version);
+      version = stored.version;
+      // Not details: the dates the workflow writes stay exactly as they were.
+      expect(stored.createdAt).toEqual(raised.createdAt);
+      expect(stored.completedAt).toEqual(raised.completedAt);
+      expect(stored.submittedAt).toEqual(raised.submittedAt);
+    }
+
+    const changes = (await editEvents(job.id)).flatMap(
+      (event) => (event.metadata as { changes: unknown[] }).changes,
+    );
+    expect(changes).toHaveLength(3);
+    expect(changes).toEqual(
+      expect.arrayContaining(steps.map(([from, to]) => ({ field: 'details.scheduledDate', from, to }))),
+    );
+  });
+
+  it('refuses a day that does not exist, and a service ending before it starts, writing nothing', async () => {
+    const master = await signIn(MASTER);
+    const job = await raise(master, { scheduledDate: '2027-03-15' });
+    const invalid = await master.post(`/api/jobs/${job.id}/edit_details`, {
+      changes: { scheduledDate: '2027-02-30' },
+      expected: { scheduledDate: '2027-03-15' },
+    });
+    expect(invalid.status).toBe(422);
+
+    const service = await raise(master, {
+      jobType: 'service',
+      priority: 'normal',
+      scheduledDate: '2027-03-15',
+      scheduledEndDate: '2027-03-17',
+    });
+    const backwards = await master.post(`/api/jobs/${service.id}/edit_details`, {
+      changes: { scheduledEndDate: '2027-03-10' },
+      expected: { scheduledEndDate: '2027-03-17' },
+    });
+    expect(backwards.status).toBe(422);
+
+    expect((await row(job.id)).scheduledDate).toBe('2027-03-15');
+    const stored = await row(service.id);
+    expect([stored.scheduledDate, stored.scheduledEndDate]).toEqual(['2027-03-15', '2027-03-17']);
+    expect(await editEvents(job.id)).toHaveLength(0);
+    expect(await editEvents(service.id)).toHaveLength(0);
+  });
+
   it('refuses a stale edit and keeps the value written first', async () => {
     const master = await signIn(MASTER);
     const job = await raise(master);

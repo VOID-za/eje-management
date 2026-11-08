@@ -195,7 +195,7 @@ export const JobOverviewPanel = ({
                   : 'Scheduled date',
                 value:
                   scheduleWindow !== null && scheduleWindow.days > 1 ? (
-                    <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="flex flex-wrap items-center gap-1.5" data-testid="job-overview-scheduled">
                       <span className={overdue ? 'font-semibold text-signal-600' : undefined}>
                         {formatDate(scheduleWindow.start)} – {formatDate(scheduleWindow.end)}
                       </span>
@@ -204,7 +204,7 @@ export const JobOverviewPanel = ({
                       </Badge>
                     </span>
                   ) : (
-                    <span className={overdue ? 'font-semibold text-signal-600' : undefined}>
+                    <span className={overdue ? 'font-semibold text-signal-600' : undefined} data-testid="job-overview-scheduled">
                       {formatDate(job.scheduledDate)}
                       {overdue && ' (overdue)'}
                     </span>

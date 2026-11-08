@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import {
+  checkSchedule,
   editableDetailFields,
   jobDetailLabel,
   jobDetailValues,
@@ -11,6 +12,7 @@ import {
 } from '@/domain';
 import { Button, Modal, TextAreaField, TextField } from '@/components/ui';
 import { RuleViolationNotice } from './RuleViolationNotice';
+import { JobScheduleDates } from './JobScheduleDates';
 import { jobs } from '@/api/endpoints';
 import { useOperation } from '@/hooks/useOperation';
 
@@ -44,13 +46,18 @@ const toForm = (values: JobDetailValues): FormValues => ({
   repairDescription: values.repairDescription,
   repairQuantity: values.repairQuantity === null ? '' : String(values.repairQuantity),
   dateReceived: values.dateReceived ?? '',
+  scheduledDate: values.scheduledDate ?? '',
+  scheduledEndDate: values.scheduledEndDate ?? '',
 });
+
+/** JOB-SCHED-EDIT-1: the dates, each null when blank. */
+const DATE_FIELDS: readonly JobDetailField[] = ['dateReceived', 'scheduledDate', 'scheduledEndDate'];
 
 /** The form's value as the job would hold it: trimmed text, a quantity or null. */
 const fromForm = (field: JobDetailField, value: string): string | number | null => {
   const text = value.trim();
   // A cleared date is NO date, not an empty string the server would refuse.
-  if (field === 'dateReceived') return text.length === 0 ? null : text;
+  if (DATE_FIELDS.includes(field)) return text.length === 0 ? null : text;
   if (field !== 'repairQuantity') return text;
   return text.length === 0 ? null : Number(text);
 };
@@ -65,6 +72,8 @@ const MAX_LENGTH: Readonly<Record<JobDetailField, number | undefined>> = {
   repairDescription: 500,
   repairQuantity: undefined,
   dateReceived: undefined,
+  scheduledDate: undefined,
+  scheduledEndDate: undefined,
 };
 
 export const JobDetailsEditDialog = ({
@@ -107,7 +116,20 @@ export const JobDetailsEditDialog = ({
       ? 'Enter a whole number of units, or leave it blank.'
       : undefined;
 
-  const changed = fields.filter((field) => fromForm(field, form[field]) !== original[field]);
+  /*
+   * JOB-SCHED-EDIT-1: an end before the start (or without one) is said here,
+   * with the words the server would use, and the save waits for it.
+   */
+  const ranged = fields.includes('scheduledEndDate');
+  const scheduleError = fields.includes('scheduledDate')
+    ? checkSchedule(
+        job.jobType,
+        fromForm('scheduledDate', form.scheduledDate) as string | null,
+        ranged ? (fromForm('scheduledEndDate', form.scheduledEndDate) as string | null) : null,
+      )[0]?.message
+    : undefined;
+
+  const changed =fields.filter((field) => fromForm(field, form[field]) !== original[field]);
 
   const close = () => {
     operation.clearError();
@@ -115,7 +137,7 @@ export const JobDetailsEditDialog = ({
   };
 
   const save = async () => {
-    if (quantityError !== undefined) return;
+    if (quantityError !== undefined || scheduleError !== undefined) return;
     if (changed.length === 0) {
       close();
       return;
@@ -153,7 +175,7 @@ export const JobDetailsEditDialog = ({
           </Button>
           <Button
             loading={operation.running}
-            disabled={changed.length === 0 || quantityError !== undefined}
+            disabled={changed.length === 0 || quantityError !== undefined || scheduleError !== undefined}
             onClick={save}
             data-testid="save-job-details"
           >
@@ -171,7 +193,32 @@ export const JobDetailsEditDialog = ({
           />
         )}
         {fields.map((field) =>
-          field === 'faultDescription' ? (
+          // The end date is drawn with the start, as one "Dates" section.
+          field === 'scheduledEndDate' ? null : field === 'scheduledDate' ? (
+            <div key={field} className="space-y-2" data-testid="job-detail-schedule">
+              {/* JOB-SCHED-EDIT-1: the same Dates section New Job uses, one control for both. */}
+              <JobScheduleDates
+                range={ranged}
+                start={form.scheduledDate}
+                end={form.scheduledEndDate}
+                onStartChange={(value) => setForm({ ...form, scheduledDate: value })}
+                onEndChange={(value) => setForm({ ...form, scheduledEndDate: value })}
+                endError={scheduleError}
+                startTestId="job-detail-scheduledDate"
+                endTestId="job-detail-scheduledEndDate"
+              />
+              {(form.scheduledDate.length > 0 || form.scheduledEndDate.length > 0) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setForm({ ...form, scheduledDate: '', scheduledEndDate: '' })}
+                  data-testid="job-detail-schedule-clear"
+                >
+                  Clear the scheduled date
+                </Button>
+              )}
+            </div>
+          ) : field === 'faultDescription' ? (
             <TextAreaField
               key={field}
               label={jobDetailLabel(field, job.jobType)}

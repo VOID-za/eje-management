@@ -1,20 +1,23 @@
 import {
   can,
+  checkSchedule,
   dateReceivedProblem,
   editableDetailFields,
   getJobTypeDefinition,
+  isCalendarDate,
   JOB_DETAIL_LABELS,
   jobDetailValues,
   userFullName,
   type Job,
   type JobDetailField,
   type JobDetailValues,
+  type UserId,
 } from '@/domain';
 import type { OperationContext } from './context';
 import { audit, changesBetween } from './audit';
 import { WorkflowError } from './errors';
 import { assertFaultDescribed } from './job-creation';
-import { assertEditable } from './job-operations';
+import { assertEditable, assertTechnicianAvailable } from './job-operations';
 
 /**
  * CORRECTING A JOB'S RECORDED DETAILS. JOB-EDIT-1 (#72).
@@ -47,6 +50,15 @@ import { assertEditable } from './job-operations';
  *              other. The same principle as a checklist answer carrying the
  *              answer it replaces (OFF-CHK-1); underneath it, the job row's
  *              version still refuses a concurrent write (`VersionLedger`).
+ *   SCHEDULE   JOB-SCHED-EDIT-1 (8 November 2026): the scheduled date (and a
+ *              Service's end date) are details like the rest — same who, when,
+ *              stale check and audit pair — held to exactly the rules
+ *              `rescheduleJob` holds them to: a real calendar day,
+ *              `checkSchedule` (no end without a start, no end before it), and
+ *              every assigned technician still free on the new days. Clearing
+ *              it is allowed: DECISION 1 lets an open job be unscheduled. The
+ *              created, completed and submitted dates are not details and are
+ *              never touched here.
  */
 export interface JobDetailEdit {
   /** The fields being changed, and what to. */
@@ -77,7 +89,7 @@ export const editJobDetails = async (
     throw refuse(
       'Only the office can change a job’s details.',
       'not_permitted',
-      'A Senior Tech or the Office corrects the order number, references and fault description. If one is wrong, raise a change request.',
+      'A Senior Tech or the Office corrects the order number, references, scheduled date and fault description. If one is wrong, raise a change request.',
     );
   }
 
@@ -141,6 +153,38 @@ export const editJobDetails = async (
     throw refuse('The date received is not a date that can be recorded.', 'date_received_invalid', dateProblem);
   }
 
+  /*
+   * JOB-SCHED-EDIT-1. Only when the booking actually moves, so correcting an
+   * order number is never refused over an old clash nobody is changing.
+   */
+  if (next.scheduledDate !== current.scheduledDate || next.scheduledEndDate !== current.scheduledEndDate) {
+    for (const field of ['scheduledDate', 'scheduledEndDate'] as const) {
+      const value = next[field];
+      if (value !== null && !isCalendarDate(value)) {
+        throw refuse(
+          `The ${JOB_DETAIL_LABELS[field].toLowerCase()} is not a date that can be recorded.`,
+          'scheduled_date_invalid',
+          `“${value}” is not a real calendar date. Use a date such as 2026-11-10, or leave it blank.`,
+        );
+      }
+    }
+    const violations = checkSchedule(job.jobType, next.scheduledDate, next.scheduledEndDate);
+    if (violations.length > 0) {
+      throw new WorkflowError(`${job.jobNumber} cannot be scheduled that way.`, violations);
+    }
+    const booking = {
+      jobType: job.jobType,
+      scheduledDate: next.scheduledDate,
+      scheduledEndDate: next.scheduledEndDate,
+    };
+    const assigned = [job.primaryTechnicianId, ...job.additionalTechnicianIds].filter(
+      (id): id is UserId => id !== null,
+    );
+    for (const technicianId of assigned) {
+      await assertTechnicianAvailable(context, booking, technicianId);
+    }
+  }
+
   // A draft may still say nothing about the work — DRAFT-1 defers exactly this
   // check, and `releaseDraft` asks it again before anybody is sent.
   if (job.status !== 'draft') assertFaultDescribed(definition, next.faultDescription);
@@ -168,6 +212,8 @@ export const editJobDetails = async (
       quantity: next.repairQuantity,
     },
     dateReceived: next.dateReceived,
+    scheduledDate: next.scheduledDate,
+    scheduledEndDate: next.scheduledEndDate,
   });
 
   await audit(context, {

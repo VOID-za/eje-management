@@ -29,6 +29,15 @@ export interface JobDetailValues {
   readonly repairQuantity: number | null;
   /** When the unit arrived on the counter (Test & Repair). */
   readonly dateReceived: string | null;
+  /**
+   * JOB-SCHED-EDIT-1 (8 November 2026). The booking's dates — the SAME fields
+   * creation writes (`Job.scheduledDate` / `scheduledEndDate`) and every
+   * calendar and schedule reads (`jobScheduleWindow`), not a copy of them.
+   * Null is "not scheduled yet", which DECISION 1 allows on an open job.
+   */
+  readonly scheduledDate: string | null;
+  /** Last day of a ranged booking, inclusive. Service work only. */
+  readonly scheduledEndDate: string | null;
 }
 
 export type JobDetailField = keyof JobDetailValues;
@@ -37,6 +46,8 @@ export type JobDetailField = keyof JobDetailValues;
 export const JOB_DETAIL_FIELDS: readonly JobDetailField[] = [
   'orderNumber',
   'referenceNumber',
+  'scheduledDate',
+  'scheduledEndDate',
   'quoteNumber',
   'deliveryNote',
   'dateReceived',
@@ -57,6 +68,8 @@ export const JOB_DETAIL_LABELS: Readonly<Record<JobDetailField, string>> = {
   repairDescription: 'Description (unit booked in)',
   repairQuantity: 'Quantity (unit booked in)',
   dateReceived: 'Date received',
+  scheduledDate: 'Scheduled date',
+  scheduledEndDate: 'Scheduled end date',
 };
 
 /**
@@ -72,7 +85,10 @@ export const JOB_DETAIL_LABELS: Readonly<Record<JobDetailField, string>> = {
 export const jobDetailLabel = (field: JobDetailField, jobType: JobTypeCode): string =>
   field === 'deliveryNote' && jobType === 'test_and_repair'
     ? 'Delivery note / waybill number'
-    : JOB_DETAIL_LABELS[field];
+    : // JOB-SCHED-EDIT-1: a ranged booking's first day, named as New Job names it.
+      field === 'scheduledDate' && getJobTypeDefinition(jobType).schedulesDateRange
+      ? 'Scheduled start date'
+      : JOB_DETAIL_LABELS[field];
 
 /** The details as the job records them now. */
 export const jobDetailValues = (job: Job): JobDetailValues => ({
@@ -85,6 +101,8 @@ export const jobDetailValues = (job: Job): JobDetailValues => ({
   repairDescription: job.repairItem.description,
   repairQuantity: job.repairItem.quantity,
   dateReceived: job.dateReceived,
+  scheduledDate: job.scheduledDate,
+  scheduledEndDate: job.scheduledEndDate,
 });
 
 /**
@@ -98,7 +116,11 @@ export const jobDetailValues = (job: Job): JobDetailValues => ({
  *   - the quote number, where `capturesQuoteNumber` (test & repair);
  *   - the unit booked in, where `capturesRepairItem` (test & repair);
  *   - the fault description, on every type that is not office-processed — a
- *     parts collection has no such field at all (CR-13).
+ *     parts collection has no such field at all (CR-13);
+ *   - the scheduled date, on the same types: creation stores none on an
+ *     office-processed job (a parts collection, a Delivery Note), and the end
+ *     date only where the type is booked across a range (`schedulesDateRange`,
+ *     a Service). JOB-SCHED-EDIT-1.
  */
 export const editableDetailFields = (jobType: JobTypeCode): readonly JobDetailField[] => {
   const definition = getJobTypeDefinition(jobType);
@@ -118,7 +140,10 @@ export const editableDetailFields = (jobType: JobTypeCode): readonly JobDetailFi
       case 'dateReceived':
         return definition.capturesRepairItem;
       case 'faultDescription':
+      case 'scheduledDate':
         return !definition.officeProcessed;
+      case 'scheduledEndDate':
+        return !definition.officeProcessed && definition.schedulesDateRange;
     }
   });
 };

@@ -26,6 +26,9 @@ export interface JobScheduleDatesProps {
   readonly startError?: string;
   readonly endError?: string;
   readonly disabled?: boolean;
+  /** JOB-SCHED-EDIT-1: the job's Edit details dialog names its two inputs for the browser checks. */
+  readonly startTestId?: string;
+  readonly endTestId?: string;
 }
 
 /**
@@ -44,6 +47,8 @@ export const JobScheduleDates = ({
   startError,
   endError,
   disabled,
+  startTestId,
+  endTestId,
 }: JobScheduleDatesProps) => (
   <fieldset
     className="min-w-0 rounded-[var(--radius-control)] border border-steel-200 p-4"
@@ -59,6 +64,7 @@ export const JobScheduleDates = ({
         disabled={disabled}
         className={DATE_CONTROL_CLASS}
         containerClassName="min-w-0"
+        data-testid={startTestId}
         onChange={(event) => onStartChange(event.target.value)}
       />
       {range && (
@@ -71,6 +77,7 @@ export const JobScheduleDates = ({
           disabled={disabled}
           className={DATE_CONTROL_CLASS}
           containerClassName="min-w-0"
+          data-testid={endTestId}
           onChange={(event) => onEndChange(event.target.value)}
         />
       )}
