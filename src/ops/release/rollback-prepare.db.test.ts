@@ -612,6 +612,14 @@ describePhase('rollback compatibility — phase 1: this release migrates to 0030
     expect(rows[0]?.n).toBe('2');
   });
 
+  it('writes the rows only this release can (0057): an account whose timesheets are disabled', async () => {
+    const users = new PostgresUserRepository(db);
+    const tech = await users.findById(asUserId(IDS.technician));
+    await users.save({ ...tech!, timesheetRequired: false });
+    const [row] = await db.execute<{ timesheet_required: boolean }>(sql`select timesheet_required from users where id = ${IDS.technician}`);
+    expect(row?.timesheet_required).toBe(false);
+  });
+
   it('writes the rows only this release can (0056): two current submissions with the very same dates, each with its own line', async () => {
     const B = ROLLBACK_0056;
     const tech = asUserId(IDS.technician);

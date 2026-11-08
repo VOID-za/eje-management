@@ -29,11 +29,11 @@ import { asCustomerId, asJobId, can, getJobTypeDefinition, notificationCategory,
 /**
  * ROLLBACK COMPATIBILITY, PHASE 2 OF 2: THE LIVE RELEASE'S OWN CODE.
  *
- * THIS FILE RUNS INSIDE A CHECKOUT OF THE LIVE RELEASE (55e1d06, v1.7.1), copied there
+ * THIS FILE RUNS INSIDE A CHECKOUT OF THE LIVE RELEASE (c34d1e7, v1.8.0), copied there
  * by `scripts/release/rollback-compat.sh`, so every `@/…` import below is the
  * LIVE code — the repository, the searchability wording and the preflight rule
  * as they are on the server today. It must therefore import only what exists
- * in 55e1d06, and it does: each of these was checked against that commit.
+ * in c34d1e7, and it does: each of these was checked against that commit.
  *
  * The database was migrated to the newest migration THIS release ships (0049)
  * and populated by it (phase 1). The question is the one a rollback asks: after
@@ -214,15 +214,15 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
       readFileSync(join(process.cwd(), 'src/db/migrations/meta/_journal.json'), 'utf8'),
     ) as { entries: { tag: string }[] };
     const shipped = journal.entries.map((entry) => entry.tag);
-    // 55e1d06 (v1.7.1) shipped up to 0055; this release adds 0056 (repeated dates; the submitted-line ledger).
-    expect(shipped).toHaveLength(56);
-    expect(shipped.at(-1)).toBe('0055_payroll_form_withdrawals');
-    expect(shipped).not.toContain('0056_timesheet_repeated_dates');
+    // c34d1e7 (v1.8.0) shipped up to 0056; this release adds 0057 (timesheets required per user).
+    expect(shipped).toHaveLength(57);
+    expect(shipped.at(-1)).toBe('0056_timesheet_repeated_dates');
+    expect(shipped).not.toContain('0057_user_timesheet_required');
 
     const rows = await db.execute<{ n: string }>(sql`select count(*)::text as n from drizzle.__drizzle_migrations`);
     const applied = Number(rows[0]?.n);
-    // 0056 applied beyond what the live release ships: the preflight warns, never fails.
-    expect(applied).toBe(57);
+    // 0057 applied beyond what the live release ships: the preflight warns, never fails.
+    expect(applied).toBe(58);
 
     const checks = checkMigrations(shipped, { applied, schemaPresent: true });
     expect(checks.every((check) => check.verdict !== 'fail')).toBe(true);
@@ -651,7 +651,7 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
    * these rows itself, so its period submission (ON CONFLICT on the current
    * row) works too. And 0053, which it has never heard of, changes none of it.
    */
-  it('meets the 0052 rows: reads both periods with the same dates, still writes lines (and 0053 changes nothing); its period submit is refused at 0056, writing nothing', async () => {
+  it('meets the 0052 rows: reads both periods with the same dates, still writes lines and periods (and 0053 changes nothing for it)', async () => {
     const B = BATCH_0052;
     const attendance = new PostgresAttendanceRepository(db);
     const tech = asUserId(IDS.technician);
@@ -666,18 +666,16 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
       updatedBy: tech, updatedAt: '2028-02-04T08:00:00.000Z',
     });
     expect(saved.overtimeHours).toBe(1);
-    // 0056 replaced the one-current-row-per-dates key its ON CONFLICT names: the live submit is refused, writing nothing.
-    // The rollback limitation recorded in docs/payroll-forms.md (v1.8.0 → v1.7.1): nothing is submitted until rolled forward.
+    // The live code (v1.8.0) knows 0056's one-UNSENT-row key: its period submission writes one new row.
     const before = await db.execute<{ n: string }>(sql`select count(*)::text as n from timesheet_periods`);
-    await expect(
-      attendance.submitPeriod({
-        id: '00000000-0000-4000-8000-000000000ce1', userId: tech, from: '2028-03-01', to: '2028-03-25', comment: '',
-        updatedBy: tech, updatedAt: '2028-03-26T08:00:00.000Z', submittedAt: '2028-03-26T08:00:00.000Z', submittedBy: tech,
-        snapshot: { technicianName: 'Sipho', from: '2028-03-01', to: '2028-03-25', comment: '', entries: [] },
-      }),
-    ).rejects.toThrow();
+    const sent = await attendance.submitPeriod({
+      id: '00000000-0000-4000-8000-000000000ce1', userId: tech, from: '2028-03-01', to: '2028-03-25', comment: '',
+      updatedBy: tech, updatedAt: '2028-03-26T08:00:00.000Z', submittedAt: '2028-03-26T08:00:00.000Z', submittedBy: tech,
+      snapshot: { technicianName: 'Sipho', from: '2028-03-01', to: '2028-03-25', comment: '', entries: [] },
+    });
+    expect(sent?.id).toBe('00000000-0000-4000-8000-000000000ce1');
     const after = await db.execute<{ n: string }>(sql`select count(*)::text as n from timesheet_periods`);
-    expect(after[0]?.n).toBe(before[0]?.n);
+    expect(Number(after[0]?.n)).toBe(Number(before[0]?.n) + 1);
   });
 
   /*
@@ -720,13 +718,10 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
   });
 
   /*
-   * 0056 (REPEAT-DATES-1). The live code (v1.7.1) has never seen two CURRENT submissions with the same dates. Rolled
-   * back to, it READS them — both payroll submissions, both sent timesheets, each with its own line — and the
-   * database keeps it safe: its Submit to Office names the one-current-row-per-dates keys 0056 replaced, so it is
-   * refused with nothing written (the limitation recorded in docs/payroll-forms.md), and the line ledger refuses a
-   * line already submitted whatever writes it.
+   * 0056 (REPEAT-DATES-1). The live code (v1.8.0) wrote these rows itself: it reads two current submissions with the
+   * same dates, each with its own line, and still writes a payroll submission.
    */
-  it('meets the 0056 rows: reads two current submissions with the same dates; its payroll submit is refused, writing nothing', async () => {
+  it('meets the 0056 rows: reads two current submissions with the same dates; still writes a payroll submission', async () => {
     const B = BATCH_0056;
     const tech = asUserId(IDS.technician);
     const payroll = new PostgresPayrollRepository(db);
@@ -738,15 +733,30 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
     expect(periods.map((period) => period.snapshot?.entries.map((entry) => entry.id)).sort()).toEqual([[B.firstLine], [B.secondLine]].sort());
     expect(await attendance.findPeriod(tech, B.from, B.to)).not.toBeNull();
     const before = await db.execute<{ n: string }>(sql`select count(*)::text as n from payroll_submissions`);
-    await expect(
-      payroll.createPayrollSubmission({
-        id: '00000000-0000-4000-8000-000000000fd1', userId: tech, from: '2028-10-01', to: '2028-10-25', financeMonth: '2028-10', timesheetRequired: false, timesheetPeriodId: null,
-        attendance: { technicianName: 'Sipho', from: '2028-10-01', to: '2028-10-25', days: [] },
-        fileNames: { timesheet: '', attendance: 'Sipho attendance.pdf' }, documents: [],
-        submittedAt: '2028-10-26T08:00:00.000Z', submittedBy: tech, supersededAt: null, supersededBy: null, supersededBySubmission: null,
-      }),
-    ).rejects.toThrow();
+    const saved = await payroll.createPayrollSubmission({
+      id: '00000000-0000-4000-8000-000000000fd1', userId: tech, from: '2028-10-01', to: '2028-10-25', financeMonth: '2028-10', timesheetRequired: false, timesheetPeriodId: null,
+      attendance: { technicianName: 'Sipho', from: '2028-10-01', to: '2028-10-25', days: [] },
+      fileNames: { timesheet: '', attendance: 'Sipho attendance.pdf' }, documents: [],
+      submittedAt: '2028-10-26T08:00:00.000Z', submittedBy: tech, supersededAt: null, supersededBy: null, supersededBySubmission: null,
+    });
+    expect(saved?.id).toBe('00000000-0000-4000-8000-000000000fd1');
     const after = await db.execute<{ n: string }>(sql`select count(*)::text as n from payroll_submissions`);
-    expect(after[0]?.n).toBe(before[0]?.n);
+    expect(Number(after[0]?.n)).toBe(Number(before[0]?.n) + 1);
+  });
+
+  /*
+   * 0057 (TS-USER-1). The live code (v1.8.0) has never heard of timesheet_required. Rolled back to, it reads the
+   * account (the column is simply unseen) and saves it without touching the column, so the setting the office made
+   * is still there when the release is rolled forward. Under v1.8.0 the role alone decides again.
+   */
+  it('meets the 0057 rows: reads and saves an account whose timesheets are disabled, leaving the setting as it is', async () => {
+    const users = new PostgresUserRepository(db);
+    const tech = asUserId(IDS.technician);
+    const found = await users.findById(tech);
+    expect(found?.role).toBe('technician');
+    await users.save({ ...found!, jobTitle: 'Rollback probe 0057' });
+    const [row] = await db.execute<{ timesheet_required: boolean; job_title: string }>(sql`select timesheet_required, job_title from users where id = ${tech}`);
+    expect(row?.job_title).toBe('Rollback probe 0057');
+    expect(row?.timesheet_required).toBe(false);
   });
 });
