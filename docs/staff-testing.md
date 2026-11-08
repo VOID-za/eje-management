@@ -58,7 +58,7 @@ saw and a screenshot), or **NOT RUN**. A blank is not a pass.
 | B5 | Scroll to the **bottom** of the In Progress job: *Complete job* is there (not at the top), with a summary of labour, km, parts and notes. Press it → through the steps → Review | One *Complete job* button only; the review lists what was captured |
 | B6 | Signature: customer name, surname, sign, *Confirm signature* | The signed job card PDF is shown, **with the photograph in it** |
 | B7 | *Submit job card* | Job goes to the office (**Office Handling**); the customer copy's delivery shows **failed — customer email is not configured**. That is the honest answer until EJE's Microsoft 365 is connected: nothing was emailed |
-| B8 | Office: Notifications → Inbox → *Mark handled* | Moves to **Awaiting PO** |
+| B8 | Office: Notifications → Inbox → *Open jobcard* → on the job, *Handle Jobcard* (INBOX-HANDLE-1, 8 November 2026: the Inbox row only opens the job) | Moves to **Awaiting PO**; the Inbox row is gone |
 | B9 | Enter the invoice number | Moves to **Invoiced**; it appears in Closed Jobs |
 | B10 | Office: transfer another job to a different technician | The receiving technician sees it; the job's Activity records the WhatsApp as **queued** with the approved assignment template |
 
@@ -634,7 +634,7 @@ Automated at 1440, 768 (touch) and 390 (touch) — `scripts/tester-fixes-check.m
 | R6 | Attendance: choose a From in last month and a To today; leave the page and return | Both months listed oldest first; the same From/To are back; Download PDF is named "… Atten Oct-Nov.pdf" and has no Notes column |
 | R7 | My Monthly Forms: submit last month; change a day; submit again | It submits again; the office sees the new version only |
 | R8 | Timesheets (Master): no Whose timesheet; send a period; change a line; Send again | Sent again; the office reads the latest; a two-month PDF is named "… Timesheet, Oct + Nov 2026.pdf" |
-| R9 | Office: a submitted job → Mark handled → try to save without a PO → save a PO → save the invoice number | Refused without a PO; then Awaiting Invoice No; then Invoiced, in the Invoiced tab with PO and invoice number |
+| R9 | Office: a submitted job → Handle Jobcard → try to save without a PO → save a PO → save the invoice number | Refused without a PO; then Awaiting Invoice No; then Invoiced, in the Invoiced tab with PO and invoice number |
 | R10 | Notifications: Jobcards, Messages, Forms | Each shows only its own; unread counts right; Monthly Forms has no Export CSV |
 
 ## S. The next critical batch (2 November 2026, night)
@@ -733,6 +733,17 @@ Automated at 1440, 768 (touch) and 390 (touch) — `scripts/payroll-forms-check.
 | V11 | Choose dates covering all of it; Submit | The dialog says it REPLACES it; *Replace and submit*; the old one is listed as replaced | yes | yes (acceptance-check) | NOT TESTED |
 | V12 | On a submission: View original; on a corrected one also View corrected version | Each opens and is labelled | yes | yes | NOT TESTED |
 | V13 | Print a long timesheet (over ~190 lines) on the office printer | Every page has the headings and Page X of Y; the totals are on the last page | yes (text and totals) | yes (preview) | NOT TESTED — **the printer** |
+
+## W. Post-v1.8.0 improvements (8 November 2026)
+
+Automated in `scripts/workflow-e2e.mjs` (W1, W4) and `scripts/forms-regression.mjs` at 1440, 768 (touch) and 390 (touch) (W2, W3); the rules in `src/application/job-schedule-edit.test.ts`, `src/application/office-lifecycle.test.ts` and the route suites. Not yet run on a real device.
+
+| # | Do this | Pass looks like | Automated | Physical |
+|---|---|---|---|---|
+| W1 | Office: a job → Job details → *Edit details*: change the scheduled date; save. Then *Clear the scheduled date*; save. Then set one again (JOB-SCHED-EDIT-1) | The job header, Job details and the Calendar show each new date at once; cleared reads "—" and leaves the calendar; each change is on Activity as from/to. A Service shows start and end; an end before the start is said and cannot be saved | yes | NOT TESTED |
+| W2 | Dark mode: New Job → Delivery Note (DN-DARK-1) | The Delivery Note panel is a dark green tint like the field inside it — no pale yellow-green block; light mode unchanged | yes (measured) | NOT TESTED |
+| W3 | New Job → Test & Repair → Parts booked in; and *Edit parts* on a Test & Repair job (TR-PARTS-ORDER-1) | Each part reads **Part number, Description, Quantity**, left to right (stacked in that order on a phone), and Tab goes the same way; saved values reopen in their own fields | yes | NOT TESTED |
+| W4 | Office: Notifications → Inbox → Jobcards; then the job (INBOX-HANDLE-1) | The Inbox row has no *Mark handled* — only *Open jobcard*. On the job, *Handle Jobcard* (or *Handle Jobcard (PO …)*) moves it on, says so, and is not offered again; the row leaves the Inbox | yes | NOT TESTED |
 
 ## Physical-device acceptance still outstanding (all of it, in one place)
 
