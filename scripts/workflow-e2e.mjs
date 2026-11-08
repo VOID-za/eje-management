@@ -1538,6 +1538,10 @@ await step('JOB-SCHED-EDIT-1: a Master moves EJE-1049’s booking from Edit deta
   await end.fill('2027-06-16');
   await page.getByTestId('save-job-details').click();
   await page.getByTestId('job-details-form').waitFor({ state: 'detached', timeout: 15000 });
+  // The job is read again after the save: wait (briefly) for the overview to show it, rather than racing the read.
+  await page
+    .waitForFunction(() => /2027/u.test(document.querySelector('[data-testid="job-overview-scheduled"]')?.textContent ?? ''), null, { timeout: 10000 })
+    .catch(() => undefined);
   const shown = await page.getByTestId('job-overview-scheduled').innerText();
   if (!shown.includes('2027') || !shown.includes('3 days')) throw new Error(`the overview shows "${shown}"`);
   const entry = await calendarEntryFor('EJE-1049', '2027-06-01', '2027-06-30');
