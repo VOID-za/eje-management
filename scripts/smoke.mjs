@@ -1573,7 +1573,7 @@ await step('confirming the delivery records it, and the job stays with the offic
   if ((await page.getByText('this job is closed', { exact: false }).count()) !== 0) {
     throw new Error('a confirmed delivery closed the job');
   }
-  await page.getByTestId('mark-handled').waitFor({ timeout: 10000 });
+  await page.getByTestId('handle-jobcard').waitFor({ timeout: 10000 });
   await page.screenshot({ path: `${shots}/05-with-the-office-after-delivery.png`, fullPage: false });
 });
 
@@ -2408,7 +2408,7 @@ await step('a technician sees the correction and cannot raise one', async () => 
 /*
  * THE OFFICE LIFECYCLE ON THE JOB PAGE. Issue #73, Batch 1. EJE-1048 was
  * submitted and its delivery confirmed above; it is with the office, and the
- * office finishes it here: Mark handled -> Awaiting PO -> Invoice No -> Invoiced.
+ * office finishes it here: Handle Jobcard -> Awaiting PO -> Invoice No -> Invoiced.
  */
 await step('the office handles a submitted job and invoices it, from the job page', async () => {
   await page.goto(`${BASE}/jobs/EJE-1048`, { waitUntil: 'networkidle' });
@@ -2417,7 +2417,7 @@ await step('the office handles a submitted job and invoices it, from the job pag
   // PO-FLOW-1: EJE-1048 was raised with the customer's PO (PO-88123), so
   // handling it skips Awaiting PO and records that PO — the panel says so first.
   await panel.getByTestId('handling-next-stage').getByText('already has PO PO-88123', { exact: false }).waitFor({ timeout: 8000 });
-  await panel.getByTestId('mark-handled').click();
+  await panel.getByTestId('handle-jobcard').click();
   await panel.getByText('Awaiting Invoice No').first().waitFor({ timeout: 10000 });
   await panel.getByText('PO-88123', { exact: false }).first().waitFor({ timeout: 8000 });
   if ((await panel.getByTestId('save-po-number').count()) !== 0) throw new Error('a job with its PO was asked for one');
@@ -2441,8 +2441,8 @@ await step('the office handles a submitted job and invoices it, from the job pag
 await step('an invoiced job is read-only', async () => {
   await page.goto(`${BASE}/jobs/EJE-1048`, { waitUntil: 'networkidle' });
   await page.getByText('Read-only — invoiced', { exact: false }).first().waitFor({ timeout: 8000 });
-  if ((await page.getByTestId('mark-handled').count()) !== 0) {
-    throw new Error('an invoiced job still offers Mark handled');
+  if ((await page.getByTestId('handle-jobcard').count()) !== 0) {
+    throw new Error('an invoiced job still offers Handle Jobcard');
   }
 });
 

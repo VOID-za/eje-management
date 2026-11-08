@@ -564,23 +564,49 @@ await step('confirming the delivery records it, and does NOT close EJE-1065', as
   }
 });
 
-await step('the Inbox holds EJE-1065 for office handling, and Mark handled moves it to Awaiting PO', async () => {
+/*
+ * INBOX-HANDLE-1 (8 November 2026): the Inbox row only OPENS the job card;
+ * it is handled on the job page, with Handle Jobcard, at every width.
+ */
+await step('the Inbox holds EJE-1065 for office handling, opens it, and Handle Jobcard on the job moves it to Awaiting PO', async () => {
   await visit('/notifications');
   // The office's tabs. INVOICED-CLOSED-1: no Invoiced tab — invoiced work is in Closed Jobs.
   for (const name of ['Inbox', 'Handled', 'Simulated Outbox', 'Awaiting PO', 'Awaiting Invoice No']) {
     await page.getByRole('tab', { name: new RegExp(`^${name}`) }).waitFor({ timeout: 10000 });
   }
   if ((await page.getByRole('tab', { name: /^Invoiced/ }).count()) !== 0) throw new Error('the office queue still has an Invoiced tab');
-  const card = page.getByTestId('office-handling-EJE-1065');
-  await card.waitFor({ timeout: 15000 });
+  for (const [width, height] of [[1440, 1000], [820, 1180], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    const card = page.getByTestId('office-handling-EJE-1065');
+    await card.waitFor({ timeout: 15000 });
+    if ((await card.getByRole('button').count()) !== 0) throw new Error(`the Inbox row still has a button at ${width}px`);
+    if ((await page.getByText(/Mark handled/i).count()) !== 0) throw new Error(`the Inbox still says Mark handled at ${width}px`);
+    if ((await card.getByTestId('queue-open-job-EJE-1065').getAttribute('href')) !== '/jobs/EJE-1065') {
+      throw new Error('the Inbox row does not open EJE-1065');
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+    if (overflow) throw new Error(`the Inbox overflows horizontally at ${width}px`);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  await page.getByTestId('queue-open-job-EJE-1065').click();
+  await page.waitForURL('**/jobs/EJE-1065', { timeout: 20000 });
+  const panel = page.getByTestId('office-lifecycle');
+  await panel.waitFor({ timeout: 15000 });
+  // Reviewed before it is handled: the issued job card is on the same page.
+  await panel.getByText('Submitted', { exact: true }).first().waitFor({ timeout: 10000 });
   // PO-FLOW-1: EJE-1065 was raised with an order number, which handling would
   // record as its PO. This walks the Awaiting PO path, so the office says the
-  // order number is not the PO — the queue offers exactly that.
-  const decline = card.getByTestId('queue-mark-handled-await-po-EJE-1065');
+  // order number is not the PO — the job page offers exactly that.
+  const decline = panel.getByTestId('handle-jobcard-await-po');
   if ((await decline.count()) > 0) await decline.click();
-  else await card.getByRole('button', { name: 'Mark handled', exact: true }).click();
-  await card.waitFor({ state: 'detached', timeout: 15000 });
+  else await panel.getByTestId('handle-jobcard').click();
+  await panel.getByTestId('handle-jobcard-done').waitFor({ timeout: 15000 });
+  await panel.getByTestId('po-number').waitFor({ timeout: 15000 });
+  if ((await panel.getByTestId('handle-jobcard').count()) !== 0) throw new Error('a handled job card still offers Handle Jobcard');
 
+  await visit('/notifications');
+  if ((await page.getByTestId('office-handling-EJE-1065').count()) !== 0) throw new Error('a handled job card is still in the Inbox');
   await page.getByRole('tab', { name: /^Awaiting PO/ }).click();
   await page.getByTestId('awaiting-po-EJE-1065').waitFor({ timeout: 15000 });
 });
@@ -1061,7 +1087,7 @@ await step('and nothing about EJE-1066 offers a signature step afterwards', asyn
 
 await step('the office handles and invoices the unsigned EJE-1066 like any submission (BD-22)', async () => {
   // Still signed in as the Master, on EJE-1066.
-  await page.getByTestId('mark-handled').click();
+  await page.getByTestId('handle-jobcard').click();
   await page.getByTestId('po-number').waitFor({ timeout: 15000 });
   await page.getByTestId('po-number').fill('PO-E2E-1066');
   await page.getByTestId('save-po-number').click();

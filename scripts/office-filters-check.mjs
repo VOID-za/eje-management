@@ -141,7 +141,7 @@ await check('PO-FLOW-1: a job raised with its PO is handled straight to Awaiting
   await panel.waitFor({ timeout: 20000 });
   const said = await panel.getByTestId('handling-next-stage').innerText();
   if (!said.includes('already has PO PO-88123')) fail(`the panel says: ${said}`);
-  await press(panel.getByTestId('mark-handled'));
+  await press(panel.getByTestId('handle-jobcard'));
   await panel.getByTestId('invoice-number').waitFor({ timeout: 15000 });
   const after = (await call('GET', '/api/jobs/EJE-1048')).json.data.view.job;
   if (after.status !== 'awaiting_invoice_no' || after.purchaseOrder?.number !== 'PO-88123') fail(`${after.status}, PO ${after.purchaseOrder?.number}`);

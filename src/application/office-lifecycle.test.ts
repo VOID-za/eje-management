@@ -590,3 +590,59 @@ describe('PO-FLOW-1: the stored PO decides whether a handled job waits for one',
     expect(canTransition('awaiting_po', 'invoiced')).toBe(false);
   });
 });
+
+/*
+ * INBOX-HANDLE-1 (8 November 2026): the Inbox no longer handles a job card;
+ * the job page's *Handle Jobcard* does, through this same operation. These
+ * pin what that button relies on: handled once, never twice — not even from a
+ * copy opened before somebody else handled it — and recorded with who and when.
+ */
+describe('INBOX-HANDLE-1: Handle Jobcard, from the job page', () => {
+  let harness: Harness;
+  beforeEach(() => {
+    harness = buildHarness();
+  });
+
+  it('handles an eligible job card exactly once, auditing the person and the time', async () => {
+    const job = await submitted(harness);
+    const handled = await handleJobCard(harness.as(coordinator), job);
+    expect(handled.status).toBe('awaiting_po');
+
+    const events = (await harness.repos.activity.list(job.id)).filter((event) => event.type === 'job_office_handled');
+    expect(events).toHaveLength(1);
+    expect(events[0]!.actorId).toBe(coordinator.id);
+    expect(events[0]!.occurredAt).toBe(handled.officeHandling?.handledAt);
+  });
+
+  it('refuses a second handling from a copy opened BEFORE the first — the stored status decides', async () => {
+    const opened = await submitted(harness);
+    await handleJobCard(harness.as(master), opened);
+    // A colleague's tab still holds the Office Handling copy.
+    expect(await codesOf(handleJobCard(harness.as(coordinator), opened))).toContain('not_in_office_handling');
+
+    const stored = await harness.repos.jobs.findById(opened.id);
+    expect(stored?.officeHandling?.handledBy).toBe(master.id);
+    const events = (await harness.repos.activity.list(opened.id)).filter((event) => event.type === 'job_office_handled');
+    expect(events).toHaveLength(1);
+  });
+
+  it('refuses a job card not in Office Handling, and a role that is not the office, changing nothing', async () => {
+    const open = await harness.repos.jobs.findByJobNumber('EJE-1052');
+    expect(await codesOf(handleJobCard(harness.as(master), open!))).toContain('not_in_office_handling');
+
+    const job = await submitted(harness);
+    expect(await codesOf(handleJobCard(harness.as(technician), job))).toContain('not_permitted');
+    const stored = await harness.repos.jobs.findById(job.id);
+    expect(stored?.status).toBe('office_handling');
+    expect(stored?.officeHandling).toBeNull();
+  });
+
+  it('takes the job card out of every office Inbox queue', async () => {
+    const job = await submitted(harness);
+    expect((await loadOfficeQueue(harness.repos, master))?.handling.map((row) => row.jobId)).toContain(job.id);
+    await handleJobCard(harness.as(master), job);
+    expect((await loadOfficeQueue(harness.repos, coordinator))?.handling.map((row) => row.jobId)).not.toContain(
+      job.id,
+    );
+  });
+});

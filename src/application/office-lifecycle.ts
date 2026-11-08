@@ -94,7 +94,7 @@ export const handleJobCard = async (
   /** The office says the job's order number is not its PO. */
   declineOrderNumber = false,
 ): Promise<Job> => {
-  assertOffice(context, 'mark a job card handled');
+  assertOffice(context, 'handle a job card');
   const job = await stored(context, given);
   if (poNumber !== undefined && poNumber.trim().length > 0) {
     const problem = poNumberProblem(poNumber);
@@ -111,7 +111,7 @@ export const handleJobCard = async (
     throw refuse(
       `${job.jobNumber} is not waiting for office handling.`,
       'not_in_office_handling',
-      `It is ${jobStatusLabel(job.status)}. Only a submitted job card that the office has not yet handled can be marked handled.`,
+      `It is ${jobStatusLabel(job.status)}. Only a submitted job card that the office has not yet handled can be handled.`,
     );
   }
   const now = context.services.clock.now();
@@ -283,7 +283,7 @@ export interface OfficeQueueRow {
   /**
    * PO-FLOW-1: the PO that handling this job would record — its order number,
    * when that is usable — so the queue can say so before the office presses
-   * Mark handled. Null when it would wait in Awaiting PO.
+   * Handle Jobcard on the job. Null when it would wait in Awaiting PO.
    */
   readonly poOnHandling: string | null;
 }

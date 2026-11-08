@@ -148,6 +148,24 @@ describe('the office lifecycle, over the API', () => {
     expect((await jobOf(master, job.jobNumber)).status).toBe('awaiting_invoice_no');
   });
 
+  // INBOX-HANDLE-1 (8 November 2026): the job page's Handle Jobcard, sent twice — by a double tap or two people.
+  it('handles a job card once: a second Handle Jobcard is refused with 422 and records nothing more', async () => {
+    const job = await submittedJob(master, tech);
+    const first = await coordinator.post<Job>(`/api/jobs/${job.id}/handle_office`, {});
+    expect(first.status, JSON.stringify(first.error)).toBe(200);
+    const second = await master.post(`/api/jobs/${job.id}/handle_office`, {});
+    expect(second.status).toBe(422);
+    expect(codes(second)).toContain('not_in_office_handling');
+
+    const screen = await master.get<{ view: { job: Job }; activity: readonly { type: string; actorId: string }[] }>(
+      `/api/jobs/${job.jobNumber}`,
+    );
+    expect(screen.data.view.job.status).toBe('awaiting_po');
+    const handled = screen.data.activity.filter((event) => event.type === 'job_office_handled');
+    expect(handled).toHaveLength(1);
+    expect(handled[0]!.actorId).toBe(first.data.officeHandling?.handledBy);
+  });
+
   it('refuses a body on handle_office, and a malformed invoice request, by schema', async () => {
     const job = await submittedJob(master, tech);
     expect((await master.post(`/api/jobs/${job.id}/handle_office`, { status: 'invoiced' })).status).toBe(400);

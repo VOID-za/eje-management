@@ -364,7 +364,7 @@ await check('Invoicing: a job raised with its PO is Handled → Awaiting Invoice
   const early = await call('POST', `/api/jobs/${jobId}/record_invoice`, { invoiceNumber: 'INV-SKIP' });
   if (early.status !== 422) fail(`an invoice number before handling answered ${early.status}`);
   // PO-FLOW-1: EJE-1058 was raised with its PO (PO-44988), so handling skips Awaiting PO.
-  await press(panel.getByTestId('mark-handled'));
+  await press(panel.getByTestId('handle-jobcard'));
   await panel.getByTestId('invoice-number').waitFor({ timeout: 15000 });
   if ((await panel.getByTestId('po-number').count()) !== 0) fail('a job with its PO was asked for one');
   await go('/notifications?tab=awaiting_invoice_no');

@@ -268,7 +268,7 @@ const NotificationsPageContent = () => {
       )}
 
       {tab === 'inbox' && box === 'jobcards' && officeQueue !== null && (
-        <OfficeHandlingList rows={officeQueue.handling} onChanged={query.refetch} />
+        <OfficeHandlingList rows={officeQueue.handling} />
       )}
 
       {tab === 'outbox' ? (

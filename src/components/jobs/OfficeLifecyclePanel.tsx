@@ -22,7 +22,13 @@ import { useCurrentUser } from '@/providers/AppProvider';
 /**
  * THE OFFICE LIFECYCLE ON THE JOB. Issue #73, Batch 1.
  *
- *   Office Handling --[Mark handled]--> Awaiting PO --[Invoice No + Save]--> Invoiced
+ *   Office Handling --[Handle Jobcard]--> Awaiting PO --[Invoice No + Save]--> Invoiced
+ *
+ * INBOX-HANDLE-1 (8 November 2026): this is the ONE place a job card is
+ * handled. The Inbox row only opens the job, so the office handles it with the
+ * document, the work, the photographs and the checklist on the same page. The
+ * button was "Mark handled"; it is now *Handle Jobcard*, the words the office
+ * uses, and the panel says when and by whom the card was submitted and signed.
  *
  * Shown on every submitted job. The actions are the office's
  * (`jobs.officeHandling`); everybody else who may see the job reads where it
@@ -58,6 +64,8 @@ export const OfficeLifecyclePanel = ({
     job.purchaseOrder?.number ??
     (job.orderNumber.trim().length > 0 && poNumberProblem(job.orderNumber) === null ? job.orderNumber.trim() : null);
   const [handlingPo, setHandlingPo] = useState('');
+  // INBOX-HANDLE-1: said once it is done, so a handled card is not handled "again" by a second tap.
+  const [handledNotice, setHandledNotice] = useState<string | null>(null);
   const handle = async (declineOrderNumber = false) => {
     const typed = declineOrderNumber ? '' : handlingPo.trim();
     if (typed.length > 0) {
@@ -65,8 +73,18 @@ export const OfficeLifecyclePanel = ({
       setPoError(problem);
       if (problem !== null) return;
     }
-    if (await operation.run(() => jobs.handleOffice(job.id, typed.length > 0 ? typed : undefined, declineOrderNumber))) {
+    setHandledNotice(null);
+    const handled = await operation.runFor(() =>
+      jobs.handleOffice(job.id, typed.length > 0 ? typed : undefined, declineOrderNumber),
+    );
+    if (handled !== null) {
       setHandlingPo('');
+      // The stage the SERVER moved it to, not the one this screen expected.
+      setHandledNotice(
+        `${job.jobNumber}'s job card is handled. It is now ${
+          handled.status === 'awaiting_invoice_no' ? 'Awaiting Invoice No' : 'Awaiting PO'
+        }.`,
+      );
       onChanged();
     }
   };
@@ -114,6 +132,16 @@ export const OfficeLifecyclePanel = ({
         }
       />
 
+      {handledNotice !== null && operation.error === null && (
+        <p
+          role="status"
+          className="mt-4 rounded-[var(--radius-control)] border border-verdant-200 bg-verdant-50 px-3 py-2 text-sm font-medium text-verdant-700"
+          data-testid="handle-jobcard-done"
+        >
+          {handledNotice}
+        </p>
+      )}
+
       {operation.error !== null && (
         <div className="mt-4">
           <RuleViolationNotice
@@ -128,6 +156,18 @@ export const OfficeLifecyclePanel = ({
         className="mt-4"
         columns={3}
         items={[
+          // INBOX-HANDLE-1: what is being handled — when it was submitted, and who signed it.
+          {
+            label: 'Submitted',
+            value: job.submittedAt === null ? 'Not recorded' : formatDateTime(job.submittedAt),
+          },
+          {
+            label: 'Customer signature',
+            value:
+              job.signature === null
+                ? 'Not signed'
+                : `${job.signature.customerName} ${job.signature.customerSurname}, ${formatDateTime(job.signature.signedAt)}`,
+          },
           {
             label: 'Handled',
             value:
@@ -174,8 +214,9 @@ export const OfficeLifecyclePanel = ({
               />
             </div>
           )}
-          <Button loading={operation.running} onClick={() => void handle()} data-testid="mark-handled">
-            {existingPo !== null && job.purchaseOrder === null ? `Mark handled with PO ${existingPo}` : 'Mark handled'}
+          {/* INBOX-HANDLE-1: "Handle Jobcard", here and nowhere else; `loading` disables it while the request runs. */}
+          <Button loading={operation.running} onClick={() => void handle()} data-testid="handle-jobcard">
+            {existingPo !== null && job.purchaseOrder === null ? `Handle Jobcard (PO ${existingPo})` : 'Handle Jobcard'}
           </Button>
           {/* PO-FLOW-1: the order number is free text — "TBC" is not a PO, and a PO is never replaced. */}
           {existingPo !== null && job.purchaseOrder === null && (
@@ -183,7 +224,7 @@ export const OfficeLifecyclePanel = ({
               variant="secondary"
               loading={operation.running}
               onClick={() => void handle(true)}
-              data-testid="mark-handled-await-po"
+              data-testid="handle-jobcard-await-po"
             >
               Not the PO — wait for it
             </Button>

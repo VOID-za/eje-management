@@ -11,7 +11,7 @@ import {
   poNumberProblem,
 } from '@/domain';
 import type { OfficeQueueRow } from '@/application/office-lifecycle';
-import { Badge, Button, Card, EmptyState, Icon, TextField } from '@/components/ui';
+import { Badge, Button, ButtonLink, Card, EmptyState, Icon, TextField } from '@/components/ui';
 import { RuleViolationNotice } from '@/components/jobs/RuleViolationNotice';
 import { jobs } from '@/api/endpoints';
 import { useOperation } from '@/hooks/useOperation';
@@ -42,14 +42,19 @@ const JobHeading = ({ row }: { readonly row: OfficeQueueRow }) => (
   </div>
 );
 
-/** Inbox: submitted job cards waiting for the office. */
-export const OfficeHandlingList = ({
-  rows,
-  onChanged,
-}: {
-  readonly rows: readonly OfficeQueueRow[];
-  readonly onChanged: () => void;
-}) => (
+/**
+ * Inbox: submitted job cards waiting for the office.
+ *
+ * INBOX-HANDLE-1 (8 November 2026): A LIST TO OPEN, NOT TO ACT FROM. Each row
+ * used to carry "Mark handled", so a job card could be handled without anybody
+ * opening it — without seeing the work, the photographs, the checklist or the
+ * signed document the customer holds. The row now only opens the job, where
+ * *Handle Jobcard* sits beside everything it is handled on
+ * (`OfficeLifecyclePanel`). The operation and its route are unchanged: the job
+ * page uses them, and the server refuses a wrong state, a second handling or
+ * the wrong role whichever screen sends it.
+ */
+export const OfficeHandlingList = ({ rows }: { readonly rows: readonly OfficeQueueRow[] }) => (
   <section className="mb-6" data-testid="office-handling-list">
     <h2 className="mb-2 text-sm font-semibold tracking-wide text-steel-600 uppercase">
       Office handling — {rows.length} {rows.length === 1 ? 'job card' : 'job cards'}
@@ -60,7 +65,7 @@ export const OfficeHandlingList = ({
       <ul className="space-y-3">
         {rows.map((row) => (
           <li key={row.jobId}>
-            <HandlingRow row={row} onChanged={onChanged} />
+            <HandlingRow row={row} />
           </li>
         ))}
       </ul>
@@ -68,65 +73,33 @@ export const OfficeHandlingList = ({
   </section>
 );
 
-const HandlingRow = ({
-  row,
-  onChanged,
-}: {
-  readonly row: OfficeQueueRow;
-  readonly onChanged: () => void;
-}) => {
-  const operation = useOperation();
-  return (
-    <Card data-testid={`office-handling-${row.jobNumber}`}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <JobHeading row={row} />
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone="amber" size="sm">
-            {jobStatusLabel(row.status)}
+const HandlingRow = ({ row }: { readonly row: OfficeQueueRow }) => (
+  <Card data-testid={`office-handling-${row.jobNumber}`}>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <JobHeading row={row} />
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone="amber" size="sm">
+          {jobStatusLabel(row.status)}
+        </Badge>
+        {/* PO-FLOW-1: say which PO handling would record; the choice is made on the job. */}
+        {row.poOnHandling !== null && (
+          <Badge tone="blue" size="sm">
+            PO {row.poOnHandling} on the job
           </Badge>
-          {/* PO-FLOW-1: say which PO handling records, and let the office refuse it. */}
-          {row.poOnHandling !== null && (
-            <Badge tone="blue" size="sm">
-              PO {row.poOnHandling} on the job
-            </Badge>
-          )}
-          <Button
-            size="sm"
-            loading={operation.running}
-            onClick={async () => {
-              if (await operation.run(() => jobs.handleOffice(row.jobId))) onChanged();
-            }}
-            data-testid={`queue-mark-handled-${row.jobNumber}`}
-          >
-            {row.poOnHandling !== null ? `Mark handled with PO ${row.poOnHandling}` : 'Mark handled'}
-          </Button>
-          {row.poOnHandling !== null && (
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={operation.running}
-              onClick={async () => {
-                if (await operation.run(() => jobs.handleOffice(row.jobId, undefined, true))) onChanged();
-              }}
-              data-testid={`queue-mark-handled-await-po-${row.jobNumber}`}
-            >
-              Not the PO — wait for it
-            </Button>
-          )}
-        </div>
+        )}
+        {/* INBOX-HANDLE-1: open the job card to review and handle it there. */}
+        <ButtonLink
+          href={`/jobs/${row.jobNumber}`}
+          size="sm"
+          aria-label={`Open jobcard ${row.jobNumber} to review and handle it`}
+          data-testid={`queue-open-job-${row.jobNumber}`}
+        >
+          Open jobcard
+        </ButtonLink>
       </div>
-      {operation.error !== null && (
-        <div className="mt-3">
-          <RuleViolationNotice
-            title="It was not marked handled"
-            message={operation.error}
-            violations={operation.violations}
-          />
-        </div>
-      )}
-    </Card>
-  );
-};
+    </div>
+  </Card>
+);
 
 /**
  * THE TWO NUMBER STEPS. INV-FLOW-1 (2 November 2026): Awaiting PO takes the
@@ -147,7 +120,7 @@ const STEP = {
     problem: poNumberProblem,
     failed: 'The PO number was not saved',
     emptyTitle: 'Nothing is awaiting a PO',
-    emptyText: 'A job card the office has marked handled appears here until its PO number is recorded.',
+    emptyText: 'A job card the office has handled appears here until its PO number is recorded.',
   },
   invoice: {
     list: 'awaiting-invoice-list',
