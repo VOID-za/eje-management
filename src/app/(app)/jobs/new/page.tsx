@@ -786,8 +786,17 @@ const NewJobPage = () => {
                 still looking for the part number on the casting.
               */}
               {/* DELIVERY-NOTE-1: the delivery date; the parts, collection and signature follow on the Delivery Note itself. */}
+              {/*
+                DN-DARK-1 (8 November 2026): the panel's tint is the THEMED green
+                (`verdant`), as the Test & Repair panel below uses the themed
+                violet. It was Tailwind's own `green-50`/`green-200`, which no
+                palette block maps — so dark mode kept the pale light-mode
+                green, a yellowish slab behind a dark date field. The field
+                inside is the shared `TextField`, so its border, focus, error
+                and disabled states already follow the theme.
+              */}
               {definition.capturesDeliveryDate && (
-                <div className="mt-4 rounded-[var(--radius-control)] border border-green-200 bg-green-50 p-4" data-testid="delivery-note-details">
+                <div className="mt-4 rounded-[var(--radius-control)] border border-verdant-200 bg-verdant-50 p-4" data-testid="delivery-note-details">
                   <p className="text-sm font-semibold text-steel-800">Delivery Note</p>
                   <p className="mt-1 text-sm text-steel-700">
                     Proof of delivery — no technician, no pricing, never invoiced. Once raised, add the parts, record how they were

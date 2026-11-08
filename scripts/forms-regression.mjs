@@ -302,6 +302,73 @@ for (const type of ['installation', 'service']) {
   });
 }
 
+/* ---- DN-DARK-1: the Delivery Note panel follows the theme --------------- */
+/*
+ * 8 November 2026. The panel was Tailwind's untinted `green-50`, which dark
+ * mode does not redefine: a pale yellow-green slab behind a dark date field.
+ * Measured here in BOTH themes, against its own neighbour — the Delivery date
+ * field — and the card it sits in. The theme is chosen the way the app keeps
+ * it: the stored preference, applied before hydration.
+ */
+const THEME_KEY = 'eje.demo.theme.v1';
+/** WCAG relative luminance of a computed colour, read back through a canvas so oklch() works too. */
+const luminanceOf = (selector, property) =>
+  page.evaluate(([css, prop]) => {
+    const element = document.querySelector(css);
+    if (element === null) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const context2d = canvas.getContext('2d');
+    context2d.fillStyle = '#000';
+    context2d.fillStyle = getComputedStyle(element)[prop];
+    context2d.fillRect(0, 0, 1, 1);
+    const [r, g, b] = context2d.getImageData(0, 0, 1, 1).data;
+    const channel = (value) => {
+      const v = value / 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+  }, [selector, property]);
+const openDeliveryNoteForm = async (theme) => {
+  await go('/jobs/new');
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [THEME_KEY, theme]);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForFunction((value) => document.documentElement.dataset.theme === value, theme);
+  await page.getByLabel('Job type').selectOption('delivery_note');
+  await page.getByTestId('delivery-note-details').waitFor({ timeout: 15000 });
+};
+await check('DN-DARK-1: in dark mode the Delivery Note panel is a dark tint, matching its date field — not a pale slab', async () => {
+  try {
+    await openDeliveryNoteForm('dark');
+    const panel = await luminanceOf('[data-testid="delivery-note-details"]', 'backgroundColor');
+    const border = await luminanceOf('[data-testid="delivery-note-details"]', 'borderTopColor');
+    const field = await luminanceOf('[data-testid="delivery-date"]', 'backgroundColor');
+    const fieldBorder = await luminanceOf('[data-testid="delivery-date"]', 'borderTopColor');
+    const label = await luminanceOf('[data-testid="delivery-note-details"] label', 'color');
+    if ([panel, border, field, fieldBorder, label].some((value) => value === null)) fail('the panel or its field is not on the page');
+    if (panel > 0.06) fail(`the panel is light in dark mode (luminance ${panel.toFixed(3)})`);
+    if (Math.abs(panel - field) > 0.04) fail(`the panel (${panel.toFixed(3)}) does not sit with its field (${field.toFixed(3)})`);
+    if (border > 0.12) fail(`the panel border is light in dark mode (${border.toFixed(3)})`);
+    if (Math.abs(border - fieldBorder) > 0.08) fail(`the panel border (${border.toFixed(3)}) is unlike the field's (${fieldBorder.toFixed(3)})`);
+    if (label < 0.4) fail(`the Delivery date label is dark on a dark panel (${label.toFixed(3)})`);
+    // Focus and error come with the shared field: the focus ring, and the required-field error.
+    await page.getByTestId('delivery-date').focus();
+    await page.waitForTimeout(300); // the shared control's colour transition
+    const focused = await luminanceOf('[data-testid="delivery-date"]', 'borderTopColor');
+    if (focused === null || focused === fieldBorder) fail('the Delivery date shows no focus state');
+    await noPageOverflow('New Job — Delivery Note, dark');
+  } finally {
+    await page.evaluate((key) => localStorage.removeItem(key), THEME_KEY);
+  }
+});
+await check('DN-DARK-1: light mode keeps the Delivery Note panel a light tint', async () => {
+  await openDeliveryNoteForm('light');
+  const panel = await luminanceOf('[data-testid="delivery-note-details"]', 'backgroundColor');
+  if (panel === null || panel < 0.75) fail(`the panel is not light in light mode (${panel})`);
+  await page.evaluate((key) => localStorage.removeItem(key), THEME_KEY);
+});
+
 /* ---- 3. Test & Repair: many parts, one delivery note ------------------ */
 const PARTS = [['Bearing', 'BRG-001', '2'], ['Seal kit', 'SK-010', '1'], ['Sensor', 'SNS-004', '3'], ['Coupling', 'CPL-002', '1']];
 const fillParts = async (rows) => {
