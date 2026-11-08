@@ -4956,7 +4956,8 @@ await step('a Master disables and enables Timesheets for a technician; the list 
     if (choice === 'disabled') {
       // What Sipho meets while disabled: no Timesheets in his sidebar, the page says so, and he is otherwise unchanged.
       try {
-        await signInAs(page, 'Sipho Mahlangu', { greeting: /Sipho/, timeout: 15000 });
+        await signInAs(page, 'Sipho Mahlangu');
+        await page.goto(`${BASE}/dashboard`, { waitUntil: 'networkidle' });
         if ((await page.locator('nav a[href="/timesheets"]').count()) !== 0) throw new Error('Timesheets is still in a disabled technician’s sidebar');
         await page.goto(`${BASE}/timesheets`, { waitUntil: 'networkidle' });
         await page.getByTestId('timesheet-not-required').filter({ hasText: 'not required for your account' }).waitFor({ timeout: 10000 });
