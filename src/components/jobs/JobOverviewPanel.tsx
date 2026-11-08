@@ -264,7 +264,8 @@ export const JobOverviewPanel = ({
                           <ol className="list-decimal space-y-0.5 pl-5" data-testid="repair-items-list">
                             {repairItemsOf(job).map((item, index) => (
                               <li key={index} data-testid="repair-items-list-row">
-                                {[item.description, item.partNumber, item.quantity === null ? '' : `× ${item.quantity}`]
+                                {/* TR-PARTS-ORDER-1: part number, description, quantity — the editor's order. */}
+                                {[item.partNumber, item.description, item.quantity === null ? '' : `× ${item.quantity}`]
                                   .filter((part) => part.length > 0)
                                   .join(' · ')}
                               </li>

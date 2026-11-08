@@ -308,12 +308,49 @@ const fillParts = async (rows) => {
   for (const [index, [description, part, quantity]] of rows.entries()) {
     if (index > 0) await press(page.getByTestId('repair-item-add'));
     const row = page.getByTestId('repair-item-row').nth(index);
-    await row.getByTestId('repair-item-description').fill(description);
+    // TR-PARTS-ORDER-1: filled in the order the row now reads.
     await row.getByTestId('repair-item-part-number').fill(part);
+    await row.getByTestId('repair-item-description').fill(description);
     await row.getByTestId('repair-item-quantity').fill(quantity);
   }
 };
 const listedParts = () => page.getByTestId('repair-items-list-row').allInnerTexts();
+/*
+ * TR-PARTS-ORDER-1 (8 November 2026): Part number, Description, Quantity — on
+ * screen (side by side from sm, stacked on a phone) and on the keyboard.
+ */
+const assertPartFieldOrder = async (where) => {
+  const row = page.getByTestId('repair-item-row').first();
+  const ids = ['repair-item-part-number', 'repair-item-description', 'repair-item-quantity'];
+  const boxes = [];
+  for (const id of ids) boxes.push(await row.getByTestId(id).boundingBox());
+  if (boxes.some((box) => box === null)) fail(`${where}: a part field is not on screen`);
+  const sideBySide = Math.abs(boxes[0].y - boxes[1].y) < 4;
+  const ordered = sideBySide
+    ? boxes[0].x < boxes[1].x && boxes[1].x < boxes[2].x
+    : boxes[0].y < boxes[1].y && boxes[1].y < boxes[2].y;
+  if (!ordered) fail(`${where}: the part fields are not Part number, Description, Quantity on screen (${JSON.stringify(boxes)})`);
+  if (width >= 640 && !sideBySide) fail(`${where}: the part fields stack at ${width}px`);
+  if (!touch) {
+    await row.getByTestId(ids[0]).focus();
+    for (const next of ids.slice(1)) {
+      await page.keyboard.press('Tab');
+      const focused = await page.evaluate(() => document.activeElement?.getAttribute('data-testid'));
+      if (focused !== next) fail(`${where}: Tab went to ${focused}, expected ${next}`);
+    }
+  }
+};
+await check('Test & Repair: Parts Booked In read Part number, Description, Quantity — on screen and by Tab', async () => {
+  await go('/jobs/new');
+  await page.getByLabel('Job type').selectOption('test_and_repair');
+  await page.getByTestId('repair-item-row').first().waitFor({ timeout: 15000 });
+  const labels = await page.getByTestId('repair-item-row').first().locator('label').allInnerTexts();
+  if (JSON.stringify(labels.map((text) => text.trim())) !== JSON.stringify(['Part number', 'Description', 'Quantity'])) {
+    fail(`the labels read ${JSON.stringify(labels)}`);
+  }
+  await assertPartFieldOrder('New Job');
+  await noPageOverflow('New Job — Parts booked in');
+});
 await check('Test & Repair: a new job is raised with several parts and their own quantities', async () => {
   await go('/jobs/new');
   await page.getByLabel('Job type').selectOption('test_and_repair');
@@ -328,10 +365,17 @@ await check('Test & Repair: a new job is raised with several parts and their own
   await page.getByTestId('repair-items-list').waitFor({ timeout: 15000 });
   const rows = await listedParts();
   if (rows.length !== 2 || !rows[0].includes('BRG-001') || !rows[1].includes('SK-010')) fail(`listed ${JSON.stringify(rows)}`);
+  // TR-PARTS-ORDER-1: each value saved to its own field — the job reads them back in the same order.
+  if (rows[0].trim() !== 'BRG-001 · Bearing · × 2') fail(`the first part reads "${rows[0]}"`);
+  const job = (await get(`/api/jobs/${page.url().split('/').pop().split('?')[0]}`)).json.data.view.job;
+  const first = job.repairItem;
+  if (first?.partNumber !== 'BRG-001' || first?.description !== 'Bearing' || first?.quantity !== 2) fail(`stored ${JSON.stringify(first)}`);
 });
 await check('Test & Repair: four parts added on the job, saved, and all four reopen in order', async () => {
   await go('/jobs/EJE-1067');
   await press(page.getByTestId('edit-repair-items'));
+  await page.getByTestId('repair-item-row').first().waitFor({ timeout: 15000 });
+  await assertPartFieldOrder('the job’s Parts booked in dialog'); // TR-PARTS-ORDER-1
   await fillParts(PARTS);
   await press(page.getByTestId('save-repair-items'));
   await page.getByTestId('save-repair-items').waitFor({ state: 'detached', timeout: 15000 });

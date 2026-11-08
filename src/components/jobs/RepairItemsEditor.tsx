@@ -43,7 +43,7 @@ export const repairItemsFromDrafts = (drafts: readonly RepairItemDraft[]): Repai
  * THE PARTS BOOKED IN, ROW BY ROW. TR-PARTS-1 (the tester, 31 October 2026).
  *
  * Any number of parts — Add another part, correct any row, Remove one — each
- * with a description, a part number where there is one, and its own quantity.
+ * with a part number where there is one, a description, and its own quantity.
  * Used on the New Job form and on a Test & Repair job (`RepairItemsDialog`), so
  * the two can never disagree about what a part is. A row with only a quantity
  * is flagged: a part has to say what it is.
@@ -80,15 +80,14 @@ export const RepairItemsEditor = ({
                   Remove
                 </Button>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_7rem]">
-                <TextField
-                  label="Description"
-                  value={draft.description}
-                  maxLength={500}
-                  hint={unnamed ? 'Say what the part is when it is known.' : undefined}
-                  onChange={(event) => update(draft.key, { description: event.target.value })}
-                  data-testid="repair-item-description"
-                />
+              {/*
+                TR-PARTS-ORDER-1 (8 November 2026): Part number, Description,
+                Quantity — in the markup, so the screen, the tab order and a
+                phone's stacked fields all read the same way, and the order the
+                delivery note and job card print them in. Each field still
+                writes its own property; only the order on screen moved.
+              */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_7rem]">
                 <TextField
                   label="Part number"
                   value={draft.partNumber}
@@ -96,6 +95,14 @@ export const RepairItemsEditor = ({
                   hint="Where there is one."
                   onChange={(event) => update(draft.key, { partNumber: event.target.value })}
                   data-testid="repair-item-part-number"
+                />
+                <TextField
+                  label="Description"
+                  value={draft.description}
+                  maxLength={500}
+                  hint={unnamed ? 'Say what the part is when it is known.' : undefined}
+                  onChange={(event) => update(draft.key, { description: event.target.value })}
+                  data-testid="repair-item-description"
                 />
                 <TextField
                   label="Quantity"
