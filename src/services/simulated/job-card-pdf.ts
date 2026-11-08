@@ -199,11 +199,10 @@ const parties = (sheet: Sheet, model: JobCardModel): void => {
   sheet.move(GAP.section);
 };
 
-const fault = (sheet: Sheet, model: JobCardModel): void => {
-  // Nothing to report, so no heading and no empty box. See the model.
-  if (model.faultDescription === null) return;
-  sheet.sectionTitle('Reported fault');
-  const lines = PdfBuilder.wrap(model.faultDescription, CONTENT_WIDTH - 18, SIZE.body);
+/** A section title over the screen's bordered, tinted box of text. */
+const boxedText = (sheet: Sheet, title: string, text: string): void => {
+  sheet.sectionTitle(title);
+  const lines = PdfBuilder.wrap(text, CONTENT_WIDTH - 18, SIZE.body);
   const boxHeight = lines.length * GAP.line + 12;
   sheet.need(boxHeight + 6);
 
@@ -215,6 +214,12 @@ const fault = (sheet: Sheet, model: JobCardModel): void => {
     sheet.move(GAP.line);
   }
   sheet.move(GAP.section - 3);
+};
+
+const fault = (sheet: Sheet, model: JobCardModel): void => {
+  // Nothing to report, so no heading and no empty box. See the model.
+  if (model.faultDescription === null) return;
+  boxedText(sheet, 'Reported fault', model.faultDescription);
 };
 
 /**
@@ -383,9 +388,13 @@ const charges = (sheet: Sheet, model: JobCardModel): void => {
  * Part numbers and quantities, and nothing that is a price. The model decides
  * whether this block exists at all, so no renderer can put it on the wrong copy.
  */
-const collection = (sheet: Sheet, model: JobCardModel): void => {
-  if (model.collection === null) return;
-  sheet.sectionTitle(model.collection.heading);
+/**
+ * The price-less goods table: part, quantity, a count of items and the note
+ * saying why there are no prices. Drawn for a courier's copy and, since
+ * INSTALL-DN-1, for the items an Installation Delivery Note lists.
+ */
+const goodsTable = (sheet: Sheet, block: NonNullable<JobCardModel['collection']>): void => {
+  sheet.sectionTitle(block.heading);
 
   sheet.need(30);
   sheet.pdf.rect(MARGIN, sheet.cursor - 5, CONTENT_WIDTH, 16, BAND);
@@ -406,7 +415,7 @@ const collection = (sheet: Sheet, model: JobCardModel): void => {
   sheet.rule(RULE, 0.6);
   sheet.move(GAP.line);
 
-  for (const line of model.collection.lines) {
+  for (const line of block.lines) {
     const width = COL_AMOUNT - MARGIN - 80;
     const text =
       line.description.length > 0 ? `${line.partNumber} — ${line.description}` : line.partNumber;
@@ -441,20 +450,125 @@ const collection = (sheet: Sheet, model: JobCardModel): void => {
    * the suppression exists to prevent.
    */
   sheet.need(20);
-  sheet.pdf.text(MARGIN, sheet.cursor, model.collection.totalLabel, {
+  sheet.pdf.text(MARGIN, sheet.cursor, block.totalLabel, {
     font: 'bold',
     size: SIZE.body,
     colour: INK,
   });
   sheet.pdf.text(
-    COL_AMOUNT - textWidth(model.collection.totalQuantity, SIZE.body, 'bold'),
+    COL_AMOUNT - textWidth(block.totalQuantity, SIZE.body, 'bold'),
     sheet.cursor,
-    model.collection.totalQuantity,
+    block.totalQuantity,
     { font: 'bold', size: SIZE.body, colour: INK },
   );
   sheet.move(GAP.line + 2);
 
-  sheet.paragraph(model.collection.priceNote, { size: SIZE.tiny, colour: MUTED });
+  sheet.paragraph(block.priceNote, { size: SIZE.tiny, colour: MUTED });
+  sheet.move(GAP.section - 6);
+};
+
+const collection = (sheet: Sheet, model: JobCardModel): void => {
+  if (model.collection === null) return;
+  goodsTable(sheet, model.collection);
+};
+
+/**
+ * THE INSTALLATION DELIVERY NOTE'S OWN SECTIONS. INSTALL-DN-1.
+ *
+ * What was installed (the job's description, then the items it recorded, in
+ * the courier note's price-less goods table), and the labour: each line's
+ * technician, date, work and hours, the hours recorded, and when the work,
+ * the checklist and the sign-off were completed. No column here is a price,
+ * a rate or an amount — the model carries none to draw.
+ */
+const installationDelivered = (sheet: Sheet, model: JobCardModel): void => {
+  const block = model.installation;
+  if (block === undefined) return;
+  if (block.description !== null) boxedText(sheet, 'Installation', block.description);
+  if (block.items.length > 0) {
+    goodsTable(sheet, {
+      heading: 'Items delivered and installed',
+      lines: block.items,
+      totalLabel: 'Items',
+      totalQuantity: block.itemCount,
+      priceNote: block.priceNote,
+    });
+  }
+};
+
+const installationLabour = (sheet: Sheet, model: JobCardModel): void => {
+  const block = model.installation;
+  if (block === undefined) return;
+  sheet.sectionTitle('Labour and completion');
+
+  const TECH = MARGIN;
+  const DATE = MARGIN + 130;
+  const WORK = MARGIN + 205;
+  const HOURS = RIGHT;
+  const headings = () => {
+    sheet.pdf.rect(MARGIN, sheet.cursor - 5, CONTENT_WIDTH, 16, BAND);
+    sheet.rule(RULE, 0.6);
+    sheet.move(-1);
+    for (const [x, label] of [
+      [TECH, 'Technician'],
+      [DATE, 'Date'],
+      [WORK, 'Work'],
+    ] as const) {
+      sheet.pdf.text(x, sheet.cursor, label, { font: 'bold', size: SIZE.small, colour: BODY });
+    }
+    sheet.pdf.text(HOURS - textWidth('Hours', SIZE.small, 'bold'), sheet.cursor, 'Hours', {
+      font: 'bold',
+      size: SIZE.small,
+      colour: BODY,
+    });
+    sheet.move(11);
+    sheet.rule(RULE, 0.6);
+    sheet.move(GAP.line);
+  };
+
+  if (block.labour.length === 0) {
+    sheet.paragraph('No labour is recorded on this job.', { colour: MUTED });
+  } else {
+    sheet.need(30);
+    headings();
+    for (const line of block.labour) {
+      const work = PdfBuilder.wrap(line.work.length > 0 ? line.work : '—', HOURS - 50 - WORK, SIZE.body);
+      const who = PdfBuilder.wrap(line.technician, DATE - TECH - 8, SIZE.body);
+      const height = Math.max(work.length, who.length);
+      if (sheet.wouldOverflow(height * GAP.line + 8)) {
+        sheet.need(height * GAP.line + 8);
+        headings();
+      }
+      const rowTop = sheet.cursor;
+      sheet.pdf.text(DATE, rowTop, line.date, { size: SIZE.body, colour: BODY });
+      sheet.pdf.text(HOURS - textWidth(line.hours, SIZE.body, 'bold'), rowTop, line.hours, {
+        size: SIZE.body,
+        font: 'bold',
+        colour: INK,
+      });
+      for (let index = 0; index < height; index += 1) {
+        if (index > 0) sheet.move(GAP.line);
+        if (who[index] !== undefined) sheet.pdf.text(TECH, sheet.cursor, who[index]!, { size: SIZE.body, colour: BODY });
+        if (work[index] !== undefined) sheet.pdf.text(WORK, sheet.cursor, work[index]!, { size: SIZE.body, colour: BODY });
+      }
+      sheet.move(7);
+      sheet.rule(RULE_SOFT, 0.5);
+      sheet.move(GAP.line - 2);
+    }
+    sheet.need(20);
+    sheet.pdf.text(WORK, sheet.cursor, 'Hours recorded', { font: 'bold', size: SIZE.body, colour: INK });
+    sheet.pdf.text(HOURS - textWidth(block.hoursRecorded, SIZE.body, 'bold'), sheet.cursor, block.hoursRecorded, {
+      font: 'bold',
+      size: SIZE.body,
+      colour: INK,
+    });
+    sheet.move(GAP.line + 6);
+  }
+
+  labelValueRows(sheet, block.completion, MARGIN, CONTENT_WIDTH);
+  sheet.move(4);
+  // Said once: under the items when there are any, otherwise here.
+  if (block.items.length === 0) sheet.paragraph(block.priceNote, { size: SIZE.tiny, colour: MUTED });
   sheet.move(GAP.section - 6);
 };
 
@@ -616,11 +730,29 @@ const checklist = (sheet: Sheet, model: JobCardModel): void => {
  * format the writer cannot embed — gets the same cell with a plain statement
  * of why, so the document never shows an empty frame that reads as a picture.
  */
-const PHOTO_COLUMNS = 3;
 const PHOTO_GAP = 8.4; // gap-3
-const PHOTO_CELL_WIDTH = (CONTENT_WIDTH - PHOTO_GAP * (PHOTO_COLUMNS - 1)) / PHOTO_COLUMNS;
-const PHOTO_CELL_HEIGHT = (PHOTO_CELL_WIDTH * 3) / 4; // aspect-4/3
 const PHOTO_CAPTION_LEADING = 9;
+
+interface PhotoGrid {
+  readonly columns: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+const photoGrid = (columns: number): PhotoGrid => {
+  const width = (CONTENT_WIDTH - PHOTO_GAP * (columns - 1)) / columns;
+  return { columns, width, height: (width * 3) / 4 }; // aspect-4/3
+};
+
+/** The job card's grid: three across, as on screen. */
+const JOB_CARD_PHOTOS = photoGrid(3);
+/**
+ * INSTALL-DN-1: the Installation Delivery Note's photographs are its evidence
+ * of the installation, so they are drawn two across — half the content width
+ * each, readable on paper. More photographs make more pages, never smaller
+ * ones; a row is never split across a page.
+ */
+const INSTALLATION_PHOTOS = photoGrid(2);
 
 const photoCell = (
   sheet: Sheet,
@@ -628,19 +760,20 @@ const photoCell = (
   prepared: PreparedPhoto | undefined,
   x: number,
   top: number,
+  grid: PhotoGrid,
 ): void => {
-  const bottom = top - PHOTO_CELL_HEIGHT;
-  sheet.pdf.rect(x, bottom, PHOTO_CELL_WIDTH, PHOTO_CELL_HEIGHT, BAND);
+  const bottom = top - grid.height;
+  sheet.pdf.rect(x, bottom, grid.width, grid.height, BAND);
 
   if (prepared?.kind === 'image') {
     const natural = displaySize(prepared.image);
-    const scale = Math.min(PHOTO_CELL_WIDTH / natural.width, PHOTO_CELL_HEIGHT / natural.height);
+    const scale = Math.min(grid.width / natural.width, grid.height / natural.height);
     const width = natural.width * scale;
     const height = natural.height * scale;
     sheet.pdf.image(
       prepared.image,
-      x + (PHOTO_CELL_WIDTH - width) / 2,
-      bottom + (PHOTO_CELL_HEIGHT - height) / 2,
+      x + (grid.width - width) / 2,
+      bottom + (grid.height - height) / 2,
       width,
       height,
     );
@@ -655,8 +788,8 @@ const photoCell = (
       colour: MUTED,
     });
     for (const line of [
-      ...PdfBuilder.wrap(reason, PHOTO_CELL_WIDTH - inset * 2, SIZE.tiny),
-      ...PdfBuilder.wrap(photo.fileName, PHOTO_CELL_WIDTH - inset * 2, SIZE.tiny),
+      ...PdfBuilder.wrap(reason, grid.width - inset * 2, SIZE.tiny),
+      ...PdfBuilder.wrap(photo.fileName, grid.width - inset * 2, SIZE.tiny),
     ]) {
       y -= PHOTO_CAPTION_LEADING;
       if (y < bottom + inset) break;
@@ -664,39 +797,40 @@ const photoCell = (
     }
   }
   // The cell's hairline, drawn last so the photograph sits inside it.
-  sheet.pdf.line(x, top, x + PHOTO_CELL_WIDTH, top, 0.5, RULE);
-  sheet.pdf.line(x, bottom, x + PHOTO_CELL_WIDTH, bottom, 0.5, RULE);
+  sheet.pdf.line(x, top, x + grid.width, top, 0.5, RULE);
+  sheet.pdf.line(x, bottom, x + grid.width, bottom, 0.5, RULE);
   sheet.pdf.line(x, bottom, x, top, 0.5, RULE);
-  sheet.pdf.line(x + PHOTO_CELL_WIDTH, bottom, x + PHOTO_CELL_WIDTH, top, 0.5, RULE);
+  sheet.pdf.line(x + grid.width, bottom, x + grid.width, top, 0.5, RULE);
 };
 
 const photographs = (
   sheet: Sheet,
   model: JobCardModel,
   images: ReadonlyMap<string, PreparedPhoto> | undefined,
+  grid: PhotoGrid = JOB_CARD_PHOTOS,
 ): void => {
   if (model.photos.length === 0) return;
   sheet.sectionTitle('Photographs');
-  for (let start = 0; start < model.photos.length; start += PHOTO_COLUMNS) {
-    const row = model.photos.slice(start, start + PHOTO_COLUMNS);
+  for (let start = 0; start < model.photos.length; start += grid.columns) {
+    const row = model.photos.slice(start, start + grid.columns);
     const captions = row.map((photo) =>
       photo.caption.trim().length === 0
         ? []
-        : PdfBuilder.wrap(photo.caption, PHOTO_CELL_WIDTH, SIZE.tiny),
+        : PdfBuilder.wrap(photo.caption, grid.width, SIZE.tiny),
     );
     const captionLines = Math.max(0, ...captions.map((lines) => lines.length));
-    const rowHeight = PHOTO_CELL_HEIGHT + (captionLines === 0 ? 0 : 4 + captionLines * PHOTO_CAPTION_LEADING);
+    const rowHeight = grid.height + (captionLines === 0 ? 0 : 4 + captionLines * PHOTO_CAPTION_LEADING);
     // A row is never split across a page: a photograph cut in half is worse
     // than white space at the foot of a page.
     sheet.need(rowHeight + SIZE.small);
     const top = sheet.cursor + SIZE.small;
     row.forEach((photo, column) => {
-      const x = MARGIN + column * (PHOTO_CELL_WIDTH + PHOTO_GAP);
-      photoCell(sheet, photo, images?.get(photo.id), x, top);
+      const x = MARGIN + column * (grid.width + PHOTO_GAP);
+      photoCell(sheet, photo, images?.get(photo.id), x, top, grid);
       captions[column]!.forEach((line, index) => {
         sheet.pdf.text(
           x,
-          top - PHOTO_CELL_HEIGHT - 4 - SIZE.tiny - index * PHOTO_CAPTION_LEADING,
+          top - grid.height - 4 - SIZE.tiny - index * PHOTO_CAPTION_LEADING,
           line,
           { size: SIZE.tiny, colour: MUTED },
         );
@@ -890,6 +1024,27 @@ export const renderJobCardPdf = (
 ): RenderedPdf => {
   const model = buildJobCardModel({ ...source, generatedAt });
   const sheet = new Sheet();
+
+  if (model.installation !== undefined) {
+    /*
+     * THE INSTALLATION DELIVERY NOTE. INSTALL-DN-1: the same letterhead,
+     * parties, write-up, checklist, photographs and acceptance as the job
+     * card, drawn by the same functions, in the delivery note's order — what
+     * was installed, the work, the labour, the checklist, the photographs,
+     * the sign-off — and with no charges block, because the model has none.
+     */
+    header(sheet, model);
+    parties(sheet, model);
+    installationDelivered(sheet, model);
+    work(sheet, model);
+    installationLabour(sheet, model);
+    notes(sheet, model);
+    checklist(sheet, model);
+    photographs(sheet, model, source.photoImages, INSTALLATION_PHOTOS);
+    acceptance(sheet, model);
+    footers(sheet, model, fileName, source.job.finalDocument?.provenance === 'simulated');
+    return { bytes: sheet.pdf.toBytes(), pageCount: sheet.pdf.pageCount };
+  }
 
   header(sheet, model);
   parties(sheet, model);

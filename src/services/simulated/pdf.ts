@@ -1,6 +1,10 @@
 import type { Job } from '@/domain';
 import { renderJobCardPdf } from './job-card-pdf';
 import { renderCorrectionPdf } from './correction-pdf';
+import {
+  installationDeliveryNoteFileName,
+  presentsAsInstallationDeliveryNote,
+} from '@/lib/job-card/installation-note';
 import type { IsoDateTime } from '@/domain';
 import type {
   Clock,
@@ -30,7 +34,12 @@ export class SimulatedPdfService implements PdfService {
       // The final copy gets its own key: a preview must never be able to
       // overwrite the document that was issued to the customer.
       storageKey: final ? `jobcards/final/${job.jobNumber}.pdf` : `jobcards/${job.jobNumber}.pdf`,
-      fileName: `${job.jobNumber}-${final ? 'Final-' : ''}Job-Card.pdf`,
+      // INSTALL-DN-1: an Installation's document is its Delivery Note, and
+      // its name says so. An Installation issued before then keeps the job
+      // card's name it was issued under (`presentsAsInstallationDeliveryNote`).
+      fileName: presentsAsInstallationDeliveryNote(job)
+        ? installationDeliveryNoteFileName(job.jobNumber, final)
+        : `${job.jobNumber}-${final ? 'Final-' : ''}Job-Card.pdf`,
       pageCount,
       generatedAt: this.clock.now(),
       // This application rendered it. The bytes are real; see

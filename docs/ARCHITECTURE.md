@@ -136,6 +136,33 @@ same way: the job stores what it was judged against, and the read path uses it.
   the name in a cursive face. Splitting that decision between the two renderers
   is exactly what produced an empty box on paper.
 
+  **An Installation's document is its Delivery Note** (INSTALL-DN-1, the owner,
+  8 November 2026). The job stays an Installation in every respect — type,
+  mandatory checklist, workflow, assignment, status, audit, the prices kept on
+  the job and the invoice — but the customer-facing document is a price-less
+  *Delivery Note — Installation*, named `EJE-NNNN[-Final]-Installation-Delivery-Note.pdf`.
+  One function decides, `presentsAsInstallationDeliveryNote` in
+  `src/lib/job-card/installation-note.ts`, and everything asks it: the model
+  (`buildJobCardModel` adds the `installation` block and withholds the charges,
+  the VAT number and the pricing footer), the PDF writer
+  (`src/services/simulated/job-card-pdf.ts`, which draws it in this order: the
+  letterhead and job number; customer, site and contact; machine; job details
+  with order and reference numbers, the installation and completion dates and
+  every technician; the installation's description; the items delivered and
+  installed — part, description, quantity; the work carried out; labour and
+  completion — technician, date, work, hours, the hours recorded, when the work,
+  the checklist and the sign-off were completed; customer-facing notes; the
+  installation checklist as completed; the photographs, two across, a row never
+  split across a page; the customer's acceptance), the file name
+  (`SimulatedPdfService`), the preview button, the customer email's document
+  title and the unsigned copy's email. So the preview, the download, the issued
+  copy, the email attachment and the offline-signature identity are the same
+  document. An Installation issued as a job card BEFORE the release carries the
+  job card's file name on its final-document record, and that record decides:
+  its stored bytes are returned exactly as written, and a seeded one with no
+  bytes is backfilled as the job card it was. Every other job type is
+  unchanged, prices included. `installation-delivery-note.test.ts` holds it.
+
   `loadFinalDocumentFile` is the one way to obtain the file. It takes a **job
   number**, never a storage key, so a caller can only ever be handed the
   document recorded on that job; it applies the same access rule as seeing the

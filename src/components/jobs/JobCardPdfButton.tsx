@@ -11,6 +11,10 @@ import { DeliveryNoteDocument } from './DeliveryNoteDocument';
 import { getJobTypeDefinition } from '@/domain';
 import { buildDeliveryNoteModel, deliveryNoteFileName } from '@/lib/job-card/delivery-note';
 import { renderDeliveryNotePdf } from '@/services/simulated/delivery-note-pdf';
+import {
+  INSTALLATION_DELIVERY_NOTE_TITLE,
+  presentsAsInstallationDeliveryNote,
+} from '@/lib/job-card/installation-note';
 import { JobCardDocument } from './JobCardDocument';
 import { PartsCollectionNote } from './PartsCollectionNote';
 
@@ -53,7 +57,8 @@ export const JobCardPdfButton = ({
       </Button>
       <DocumentPreviewDialog
         open={open}
-        title={`${view.job.jobNumber} — ${!getJobTypeDefinition(view.job.jobType).priced ? 'Delivery Note' : view.job.jobType === 'parts' ? 'Parts Collection Note' : 'Job Card'}`}
+        // INSTALL-DN-1: an Installation previews as its Delivery Note (the model and the PDF decide the same way).
+        title={`${view.job.jobNumber} — ${!getJobTypeDefinition(view.job.jobType).priced ? 'Delivery Note' : view.job.jobType === 'parts' ? 'Parts Collection Note' : presentsAsInstallationDeliveryNote(view.job) ? INSTALLATION_DELIVERY_NOTE_TITLE : 'Job Card'}`}
         description="From what is saved on the job now. Looking at it changes nothing."
         loadPdf={async () => {
           // DELIVERY-NOTE-1: a Delivery Note previews as itself — price-less — never as a job card.

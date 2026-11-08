@@ -31,6 +31,7 @@ import { WorkflowError } from './errors';
 import { ensureSystemEmailTemplates } from './email-templates';
 // The selection and the checksum are shared with the unsigned copy (UNSIGNED-ATT-1).
 import { selectedCustomerDocuments, sha256Hex } from './email-attachments';
+import { presentsAsInstallationDeliveryNote } from '@/lib/job-card/installation-note';
 
 /**
  * THE SIGNED JOB CARD, EMAILED AUTOMATICALLY. INT-EMAIL-3/4 (the owner,
@@ -81,8 +82,17 @@ const refuse = (message: string, code: string, detail: string): WorkflowError =>
 export const signedJobCardKey = (job: Pick<Job, 'id'>, storageKey: string): string =>
   `${SIGNED_JOB_CARD_EVENT}:${job.id}:${storageKey}`;
 
+/**
+ * INSTALL-DN-1: an Installation issued as its Delivery Note is sent as one —
+ * "EJE-1050 — Signed Delivery Note — Installation". An Installation issued
+ * before then was a job card, and its email still says so.
+ */
 export const documentTitleFor = (job: Job): string =>
-  job.jobType === 'parts' ? (job.courierCollection ? 'Delivery Note' : 'Parts Collection Note') : 'Signed Job Card';
+  job.jobType === 'parts'
+    ? (job.courierCollection ? 'Delivery Note' : 'Parts Collection Note')
+    : presentsAsInstallationDeliveryNote(job)
+      ? 'Signed Delivery Note'
+      : 'Signed Job Card';
 
 export interface JobCardRecipient {
   /** The address as recorded. May be empty or not an address — that is checked, not guessed. */

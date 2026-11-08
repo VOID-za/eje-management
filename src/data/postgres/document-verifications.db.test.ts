@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import * as schema from '@/db/schema';
 import { asUserId } from '@/domain';
+import { presentsAsInstallationDeliveryNote } from '@/lib/job-card/installation-note';
 import { PostgresJobRepository } from './job-repository';
 import { openTestDatabase, testDatabaseUrl, truncateAll } from './test-database';
 import { IDS, jobFixture, seedBaseline } from './test-fixtures';
@@ -226,5 +227,43 @@ describeDb('an issued document on PostgreSQL', () => {
     // Either guard answering is correct — the document is immutable AND the
     // observation references it. What must not happen is a silent removal.
     expect(message).toMatch(/immutable historical record|final_document_verifications/u);
+  });
+
+  /**
+   * WHICH DOCUMENT AN INSTALLATION WAS ISSUED AS, KEPT BY THE DATABASE.
+   * INSTALL-DN-1. The decision reads the issued file name on the job's own
+   * record, so that name must come back from PostgreSQL exactly as written: an
+   * Installation issued as its Delivery Note reads as one, and one issued as a
+   * job card before the release reads as the job card it was.
+   */
+  it('keeps the file name an Installation was issued under, which decides its document', async () => {
+    for (const [fileName, deliveryNote] of [
+      ['EJE-9801-Final-Installation-Delivery-Note.pdf', true],
+      ['EJE-9802-Final-Job-Card.pdf', false],
+    ] as const) {
+      const jobNumber = fileName.slice(0, 8);
+      const job = jobFixture(jobNumber, {
+        jobType: 'installation',
+        status: 'awaiting_delivery',
+        finalDocument: {
+          fileName,
+          storageKey: `jobcards/final/${jobNumber}.pdf`,
+          pageCount: 3,
+          generatedAt: '2026-11-08T09:00:00.000Z',
+          generatedBy: asUserId(IDS.master),
+          renderedLocally: false,
+          issuedTo: 'accounts@example-test.co.za',
+          sizeBytes: BYTES,
+          checksumSha256: HASH,
+          renderer: 4,
+          provenance: 'genuine',
+        },
+      });
+      await jobs.save(job);
+      const read = await jobs.findById(job.id);
+      expect(read?.jobType).toBe('installation');
+      expect(read?.finalDocument?.fileName).toBe(fileName);
+      expect(presentsAsInstallationDeliveryNote(read!)).toBe(deliveryNote);
+    }
   });
 });

@@ -141,6 +141,50 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
         </section>
       )}
 
+      {/* INSTALL-DN-1: what an Installation Delivery Note says was installed — no prices. */}
+      {model.installation !== undefined && model.installation.description !== null && (
+        <section className="mt-6" data-testid="installation-description">
+          <SectionTitle>Installation</SectionTitle>
+          <p className="rounded border border-steel-200 bg-steel-50 p-3 text-steel-700">
+            {model.installation.description}
+          </p>
+        </section>
+      )}
+      {model.installation !== undefined && model.installation.items.length > 0 && (
+        <section className="mt-6" data-testid="installation-items">
+          <SectionTitle>Items delivered and installed</SectionTitle>
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="border-y border-steel-300 bg-steel-50 text-left">
+                <th className="py-2 pr-2 font-semibold">Part</th>
+                <th className="w-20 py-2 text-right font-semibold">Quantity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {model.installation.items.map((item, index) => (
+                <tr key={`${item.partNumber}-${index}`} className="border-b border-steel-100">
+                  <td className="py-2 pr-2">
+                    <span className="font-mono">{item.partNumber}</span>
+                    {item.description.length > 0 && (
+                      <span className="text-steel-500"> — {item.description}</span>
+                    )}
+                  </td>
+                  <td className="tabular py-2 text-right font-medium">{item.quantity}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td className="py-1.5 font-bold text-steel-900">Items</td>
+                <td className="tabular py-1.5 text-right font-bold text-steel-900">
+                  {model.installation.itemCount}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </section>
+      )}
+
       {model.workBlocks.length > 0 && (
         <section className="mt-6 space-y-4">
           <SectionTitle>Work carried out</SectionTitle>
@@ -155,6 +199,53 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
               <p className="mt-1 whitespace-pre-line text-steel-700">{block.value}</p>
             </div>
           ))}
+        </section>
+      )}
+
+      {/* INSTALL-DN-1: the labour — technician, date, work, hours — and never a rate or an amount. */}
+      {model.installation !== undefined && (
+        <section className="mt-6" data-testid="installation-labour">
+          <SectionTitle>Labour and completion</SectionTitle>
+          {model.installation.labour.length === 0 ? (
+            <p className="text-steel-500">No labour is recorded on this job.</p>
+          ) : (
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="border-y border-steel-300 bg-steel-50 text-left">
+                  <th className="py-2 pr-2 font-semibold">Technician</th>
+                  <th className="py-2 pr-2 font-semibold">Date</th>
+                  <th className="py-2 pr-2 font-semibold">Work</th>
+                  <th className="w-20 py-2 text-right font-semibold">Hours</th>
+                </tr>
+              </thead>
+              <tbody>
+                {model.installation.labour.map((line, index) => (
+                  <tr key={`${line.technician}-${index}`} className="border-b border-steel-100">
+                    <td className="py-2 pr-2">{line.technician}</td>
+                    <td className="py-2 pr-2">{line.date}</td>
+                    <td className="py-2 pr-2">{line.work}</td>
+                    <td className="tabular py-2 text-right font-medium">{line.hours}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={3} className="py-1.5 text-right font-bold text-steel-900">
+                    Hours recorded
+                  </td>
+                  <td className="tabular py-1.5 text-right font-bold text-steel-900">
+                    {model.installation.hoursRecorded}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+          <dl className="mt-3 space-y-0.5 text-steel-600">
+            {model.installation.completion.map((row) => (
+              <Row key={row.label} {...row} />
+            ))}
+          </dl>
+          <p className="mt-2 text-xs text-steel-500">{model.installation.priceNote}</p>
         </section>
       )}
 
@@ -377,7 +468,8 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
       {model.photos.length > 0 && (
         <section className="mt-6">
           <SectionTitle>Photographs</SectionTitle>
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {/* INSTALL-DN-1: two across on the Installation Delivery Note, as on its PDF. */}
+          <ul className={`grid grid-cols-2 gap-3 ${model.installation !== undefined ? "" : "sm:grid-cols-3"}`}>
             {model.photos.map((photo) => (
               <li key={photo.id}>
                 <DocumentPhoto

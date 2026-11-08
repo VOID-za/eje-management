@@ -15,6 +15,10 @@ import { WorkflowError } from './errors';
 import { audit } from './audit';
 import { deliveryFailureKindOf } from '@/services/ports';
 import { emailDocumentsProblem, selectedCustomerDocuments } from './email-attachments';
+import {
+  INSTALLATION_DELIVERY_NOTE_TITLE,
+  presentsAsInstallationDeliveryNote,
+} from '@/lib/job-card/installation-note';
 
 /**
  * SENDING A JOB CARD THE CUSTOMER DID NOT SIGN. BD-06, DELIV-7, AUD-4.
@@ -68,11 +72,12 @@ const REASON_LIMIT = 2000;
 const SENDING_STALE_AFTER_MS = 10 * 60 * 1000;
 
 /** The subject and body of an UNSIGNED copy. One place, so retries match. */
+/** INSTALL-DN-1: an Installation's copy is its Delivery Note, and says so. */
 const unsignedDocumentMail = (job: Job, documents: readonly string[]) => ({
-  subject: `${job.jobNumber} — Job Card (issued without signature)`,
+  subject: `${job.jobNumber} — ${presentsAsInstallationDeliveryNote(job) ? INSTALLATION_DELIVERY_NOTE_TITLE : 'Job Card'} (issued without signature)`,
   body:
     `Good day,\n\n` +
-    `Please find attached the job card for ${job.jobNumber}` +
+    `Please find attached the ${presentsAsInstallationDeliveryNote(job) ? 'installation delivery note' : 'job card'} for ${job.jobNumber}` +
     (documents.length === 0 ? '.\n\n' : `, with: ${documents.join(', ')}.\n\n`) +
     'This copy was issued WITHOUT a customer signature. The document itself records that, ' +
     'and why. If anything on it is not as you understood it, please reply to this message.\n\n' +

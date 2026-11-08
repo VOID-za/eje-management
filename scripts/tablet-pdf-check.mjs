@@ -633,6 +633,32 @@ await step('TABLET: a courier collection offers its price-less Delivery Note, in
   await previewPage.getByTestId('preview-close').click();
 });
 
+/*
+ * INSTALL-DN-1 (the owner, 8 November 2026): an Installation's document is its
+ * Delivery Note — titled so, named so, and carrying no price, rate, VAT or
+ * total. EJE-1050 is a seeded Installation not yet issued, so its preview is
+ * the document it will be issued as.
+ */
+await step('TABLET: an Installation previews as its price-less Delivery Note — Installation (INSTALL-DN-1)', async () => {
+  await previewPage.goto(`${BASE}/jobs/EJE-1050/review`, { waitUntil: 'networkidle' });
+  writes.length = 0;
+  await previewPage.getByTestId('job-card-pdf-button').click();
+  await viewerDrew(previewPage, 'document-preview');
+  await previewPage.getByText('EJE-1050 — Delivery Note — Installation').first().waitFor({ timeout: 10000 });
+  const file = await downloadOf(previewPage, previewPage.getByTestId('preview-download'));
+  silentDownloads = 0; // asked for
+  if (file.name !== 'EJE-1050-Installation-Delivery-Note.pdf') throw new Error(`downloaded ${file.name}`);
+  const text = (await pdfTextIn(previewPage, file.bytes)).text;
+  if (!/DELIVERY\s*NOTE/u.test(text) || !text.includes('INSTALLATION')) throw new Error('the document is not titled a Delivery Note — Installation');
+  if (/JOB\s*CARD/u.test(text)) throw new Error('the Installation still presents as a job card');
+  if (!text.includes('EJE-1050') || !text.includes('PO-44920')) throw new Error('the job number or order number is missing');
+  for (const leak of [/R[\s ]?\d[\d\s ]*,\d{2}/u, /\bVAT\b/u, /\bSubtotal\b/iu, /\bTotal\b/iu, /\bRate\b/iu, /\bAmount\b/iu]) {
+    if (leak.test(text)) throw new Error(`the Installation Delivery Note shows a price (${leak})`);
+  }
+  if (writes.length !== 0) throw new Error(`previewing sent ${writes.join(', ')}`);
+  await previewPage.getByTestId('preview-close').click();
+});
+
 await step('TABLET: the Time Sheet preview has exactly Date, Customer, OT, D/T, Callout, Int Km, Cust Km (PDF-01)', async () => {
   await signInAs(previewPage, 'Sipho Mahlangu', { base: BASE, greeting: /Sipho/ });
   await previewPage.goto(`${BASE}/timesheets`, { waitUntil: 'networkidle' });

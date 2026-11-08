@@ -36,6 +36,12 @@ export const FINAL_DOCUMENT_CONTENT_TYPE = 'application/pdf';
  *
  * v4: the customer-facing photographs are drawn — the photograph itself, in a
  * grid — where v3 printed only a list of their captions.
+ *
+ * Still v4 with INSTALL-DN-1 (8 November 2026), deliberately: no job card
+ * draws differently. The Installation Delivery Note is a new document, drawn
+ * only for an Installation not yet issued or issued as one; an Installation
+ * issued — or backfilled — as a job card is still drawn as that job card
+ * (`presentsAsInstallationDeliveryNote`), so no stored file goes stale.
  */
 export const RENDERER_VERSION = 4;
 

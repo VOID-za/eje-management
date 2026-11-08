@@ -34,6 +34,7 @@ import {
 } from '@/domain';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/format';
 import { courierSignatureReference } from './delivery-note';
+import { INSTALLATION_DELIVERY_NOTE_TITLE, presentsAsInstallationDeliveryNote } from './installation-note';
 
 /**
  * The EJE job card, as one canonical document.
@@ -234,6 +235,38 @@ export interface JobCardModel {
     readonly rows: readonly LabelValue[];
   } | null;
 
+  /**
+   * THE INSTALLATION DELIVERY NOTE'S OWN SECTIONS. INSTALL-DN-1 (the owner,
+   * 8 November 2026). Present ONLY on an Installation's Delivery Note
+   * (`presentsAsInstallationDeliveryNote`), and absent — not null — on every
+   * other document, so the canonical identity of every other job type's
+   * document (BD-23, which drops undefined keys) is exactly what it was.
+   *
+   * Every value is the job's own: what it was raised for, the parts it
+   * recorded (number, description, quantity — never a price), each labour line
+   * (technician, date, work, hours — never a rate or an amount), and when the
+   * installation, the checklist and the sign-off were completed.
+   */
+  readonly installation?: {
+    readonly description: string | null;
+    readonly items: readonly {
+      readonly partNumber: string;
+      readonly description: string;
+      readonly quantity: string;
+    }[];
+    readonly itemCount: string;
+    readonly labour: readonly {
+      readonly technician: string;
+      readonly date: string;
+      readonly work: string;
+      readonly hours: string;
+    }[];
+    readonly hoursRecorded: string;
+    readonly completion: readonly LabelValue[];
+    /** Says, on the document, why there are no prices on it. */
+    readonly priceNote: string;
+  };
+
   readonly footerLines: readonly string[];
 }
 
@@ -350,6 +383,8 @@ const checklistSignatureValue = (
   role: ChecklistSignatureRole,
   job: Job,
   users: readonly User[],
+  /** INSTALL-DN-1: the document the customer signs — "job card" or "delivery note". */
+  documentName = 'job card',
 ): string => {
   const completedBy =
     job.checklist?.completedBy == null
@@ -369,7 +404,7 @@ const checklistSignatureValue = (
     case 'customer_signature':
       return job.signature === null
         ? ''
-        : `Signed on this job card, ${formatDateTime(job.signature.signedAt)} (see Customer acceptance)`;
+        : `Signed on this ${documentName}, ${formatDateTime(job.signature.signedAt)} (see Customer acceptance)`;
   }
 };
 
@@ -486,7 +521,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
       ? null
       : evaluateChecklist(checklistTemplate, job.checklist);
 
-  return {
+  const jobCard: JobCardModel = {
     // A courier's copy is the separate Delivery Note now (PARTS-04); this
     // document is the priced one either way.
     documentTitle: job.jobType === 'parts' ? 'Parts Collection Note' : 'Job Card',
@@ -832,5 +867,112 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
           ]
         : []),
     ],
+  };
+
+  if (!presentsAsInstallationDeliveryNote(job)) return jobCard;
+
+  /*
+   * THE INSTALLATION DELIVERY NOTE. INSTALL-DN-1 (the owner, 8 November 2026).
+   *
+   * The same job, the same canonical sections — customer, site, machine, job
+   * details, the work written up, the customer-facing notes, the checklist as
+   * completed, the photographs and the acceptance — under its own title, with
+   * the installation's own sections, and with EVERYTHING FINANCIAL WITHHELD:
+   * no charges block (rates, amounts, subtotal, VAT, total), no VAT number in
+   * the letterhead, no "Priced at the rates…" footer. The prices stay on the
+   * job for the office and the invoice; the document is what changes.
+   */
+  const userName = (id: string): string => {
+    const user = users.find((candidate) => candidate.id === id);
+    return user === undefined ? 'Unknown technician' : userFullName(user);
+  };
+  const technicians = [job.primaryTechnicianId, ...job.additionalTechnicianIds]
+    .filter((id): id is NonNullable<typeof id> => id !== null && id !== undefined)
+    .filter((id, index, all) => all.indexOf(id) === index)
+    .map(userName);
+  const hours = job.labour.reduce((sum, entry) => sum + entry.hours, 0);
+  const checklistCompletedBy =
+    job.checklist?.completedBy == null ? null : userName(job.checklist.completedBy);
+  const answered = progress === null ? '' : ` — ${progress.answered} of ${progress.total} items answered`;
+  return {
+    ...jobCard,
+    documentTitle: INSTALLATION_DELIVERY_NOTE_TITLE,
+    company: { ...jobCard.company, registrationLine: `Reg. ${settings.companyRegistration}` },
+    jobDetails: jobCard.jobDetails.flatMap((row) => {
+      if (row.label === 'Scheduled') {
+        return [
+          { label: 'Installation date', value: row.value },
+          ...(job.completedAt == null ? [] : [{ label: 'Completed', value: formatDate(job.completedAt.slice(0, 10)) }]),
+        ];
+      }
+      if (row.label === 'Technician') {
+        return [
+          {
+            label: technicians.length > 1 ? 'Technicians' : 'Technician',
+            value: technicians.length === 0 ? 'Unassigned' : technicians.join(', '),
+          },
+        ];
+      }
+      return [row];
+    }),
+    // Printed as the installation's own description, below.
+    faultDescription: null,
+    charges: null,
+    collection: null,
+    checklist:
+      jobCard.checklist === null || checklistTemplate === null
+        ? null
+        : {
+            ...jobCard.checklist,
+            signatures: (checklistTemplate.layout?.signatures ?? []).map((line) => ({
+              label: line.label,
+              value: checklistSignatureValue(line.role, job, users, 'delivery note'),
+            })),
+          },
+    installation: {
+      description: job.faultDescription.trim().length > 0 ? job.faultDescription : null,
+      items: job.parts.map((part) => ({
+        partNumber: part.partNumber,
+        description: part.description,
+        quantity: String(part.quantity),
+      })),
+      itemCount: String(job.parts.reduce((sum, part) => sum + part.quantity, 0)),
+      labour: job.labour.map((entry) => ({
+        technician: userName(entry.technicianId),
+        date: formatDate(entry.date),
+        work: entry.description,
+        hours: `${entry.hours.toFixed(2)} hrs`,
+      })),
+      hoursRecorded: `${hours.toFixed(2)} hrs`,
+      completion: [
+        {
+          label: 'Work completed',
+          value: job.completedAt == null ? 'Not yet completed' : formatDateTime(job.completedAt),
+        },
+        {
+          label: 'Installation checklist',
+          value:
+            job.checklist === null
+              ? 'Not started'
+              : `${job.checklist.completedAt === null ? 'In progress' : 'Completed'}${answered}`,
+        },
+        ...(checklistCompletedBy === null || job.checklist?.completedAt == null
+          ? []
+          : [{ label: 'Checklist by', value: `${checklistCompletedBy}, ${formatDateTime(job.checklist.completedAt)}` }]),
+        {
+          label: 'Customer sign-off',
+          value:
+            job.signature !== null
+              ? `${job.signature.customerName} ${job.signature.customerSurname}, ${formatDateTime(job.signature.signedAt)}`
+              : latestRefusal === null
+                ? 'Not yet signed'
+                : 'Refused — see Customer acceptance',
+        },
+      ],
+      priceNote:
+        'An installation delivery note carries no prices. Charges for this installation are invoiced separately by EJE.',
+    },
+    // The job card's own first line; the pricing line is the one withheld.
+    footerLines: jobCard.footerLines.slice(0, 1),
   };
 };

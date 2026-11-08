@@ -104,7 +104,7 @@ export const EMAIL_PLACEHOLDERS: readonly PlaceholderDefinition[] = [
   { key: 'completion_date', label: 'Completion date', source: 'The date the job was completed (for example 1 November 2026).', example: '1 November 2026' },
   { key: 'order_number', label: 'Order number', source: 'The customer’s order number on the job. Blank when there is none.', example: 'PO-55120' },
   { key: 'reference', label: 'Reference', source: 'The customer’s reference number on the job. Blank when there is none.', example: 'REF-9931' },
-  { key: 'document_title', label: 'Document title', source: '“Signed Job Card”, or “Delivery Note” / “Parts Collection Note” for a parts job.', example: 'Signed Job Card' },
+  { key: 'document_title', label: 'Document title', source: '“Signed Job Card”; “Signed Delivery Note” for an Installation (INSTALL-DN-1); “Delivery Note” / “Parts Collection Note” for a parts job.', example: 'Signed Job Card' },
 ];
 
 const KNOWN = new Set<string>(EMAIL_PLACEHOLDERS.map((placeholder) => placeholder.key));
