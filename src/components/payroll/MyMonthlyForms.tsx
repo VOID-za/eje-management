@@ -406,13 +406,13 @@ export const MyMonthlyForms = () => {
             {state.corrections.map((entry) => <CorrectionRow key={entry.draftId} entry={entry} />)}
           </ul>
         )}
-        {completesTimesheet(user.role) && <TimesheetCorrectionRequests />}
+        {completesTimesheet(user) && <TimesheetCorrectionRequests />}
       </Card>
 
       <Card className="mb-5" data-testid="my-monthly-history">
         <p className="text-sm font-semibold text-steel-900">History</p>
         <p className="text-xs text-steel-500">
-          {completesTimesheet(user.role)
+          {completesTimesheet(user)
             ? 'Every timesheet and attendance form you submitted to the office, newest first — read only, each PDF exactly as it went.'
             : 'Every attendance form you submitted to the office, newest first — read only, each PDF exactly as it went.'}
         </p>

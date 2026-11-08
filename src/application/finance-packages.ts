@@ -387,7 +387,7 @@ export const loadPayrollMonth = async (context: OperationContext, month: string)
         ? { timesheet: mine.map((period) => period.fileNames.timesheet).filter((name) => name !== '').join(', '), attendance: mine.map((period) => period.fileNames.attendance).join(', ') }
         : forms.fileNames,
       timesheetRequired: forms.timesheetRequired || mine.some((period) => period.timesheetRequired),
-      timesheetVersion: periods.length === 0 && !completesTimesheet(person.role)
+      timesheetVersion: periods.length === 0 && !completesTimesheet(person)
         ? forms.timesheet.versionInForce
         : periods.length === 0
           ? 'No timesheet submitted ending in this month'

@@ -116,6 +116,8 @@ export const USER_COMMANDS: CommandRegistry = {
         role: roles,
         // PAY-03: the name on the monthly PDFs. Optional: a client from before keeps the stored one.
         documentName: z.string().max(60).nullable().optional(),
+        // TS-USER-1: whether they must keep a timesheet. Optional: a client from before keeps the stored setting.
+        timesheetRequired: z.boolean().optional(),
       })
       .strict(),
     async run(context, input, target) {
@@ -130,6 +132,7 @@ export const USER_COMMANDS: CommandRegistry = {
         ...stored,
         ...input,
         documentName: input.documentName === undefined ? stored.documentName ?? null : input.documentName,
+        timesheetRequired: input.timesheetRequired === undefined ? stored.timesheetRequired ?? true : input.timesheetRequired,
       });
     },
   }),

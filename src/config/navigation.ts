@@ -13,6 +13,8 @@ export interface NavigationItem {
    * what each role may do; this only decides what the sidebar offers.
    */
   readonly roles?: readonly UserRole[];
+  /** TS-USER-1: shown only to a person who keeps a timesheet (their role AND their own setting). */
+  readonly keepsTimesheet?: boolean;
   /** Marks a section heading in the sidebar. */
   readonly group: 'work' | 'records' | 'system';
 }
@@ -81,7 +83,8 @@ export const NAVIGATION: readonly NavigationItem[] = [
    */
   { href: '/attendance', label: 'Attendance', icon: 'user', group: 'work' },
   // TS-ROLE-1: a Coordinator keeps no timesheet (the tester, 30 October and 1 November 2026); the server refuses it too.
-  { href: '/timesheets', label: 'Timesheets', icon: 'clock', group: 'work', roles: ['master', 'technician', 'apprentice'] },
+  // TS-USER-1 (8 November 2026): and only for a person whose own setting requires one.
+  { href: '/timesheets', label: 'Timesheets', icon: 'clock', group: 'work', roles: ['master', 'technician', 'apprentice'], keepsTimesheet: true },
   /*
    * PAY-01…08, split on 30 October 2026 (the tester): EVERYBODY has their own
    * month — My Monthly Forms — and the office (Master, Coordinator) also has

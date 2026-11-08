@@ -148,7 +148,7 @@ export const loadMonthlyForms = async (
       sent: exactSent !== null,
       versionInForce:
         !timesheetRequired
-          ? completesTimesheet(person.role)
+          ? completesTimesheet(person)
             ? 'Submitted from the Timesheets page by payday, for the real pay period — not with the monthly forms'
             : 'Not required — the Office keeps no timesheet' :
         exactSent === null ? 'Not sent yet' : versionInForce(exactSent, corrections).correction === null ? 'Original submission' : `Correction ${versionInForce(exactSent, corrections).correction!.sequence} accepted`,

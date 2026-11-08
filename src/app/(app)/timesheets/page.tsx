@@ -80,7 +80,7 @@ const linkedRange = (): DateRange | null => {
  */
 const TimesheetsPage = () => {
   const user = useCurrentUser();
-  const keeps = completesTimesheet(user.role);
+  const keeps = completesTimesheet(user);
   const personId = keeps ? user.id : null;
   const today = businessToday();
 
@@ -266,8 +266,15 @@ const TimesheetsPage = () => {
       />
       {!keeps && (
         <p role="status" className="mb-4 text-sm text-steel-600" data-testid="timesheet-not-required">
-          The Office does not complete a timesheet — only attendance. Everybody&apos;s submitted timesheets are on{' '}
-          <a href="/payroll" className="font-medium text-eje-700 underline">EJE Monthly Forms</a>.
+          {user.role === 'coordinator' ? (
+            <>
+              The Office does not complete a timesheet — only attendance. Everybody&apos;s submitted timesheets are on{' '}
+              <a href="/payroll" className="font-medium text-eje-700 underline">EJE Monthly Forms</a>.
+            </>
+          ) : (
+            // TS-USER-1: the office set this account to attendance only.
+            <>Timesheets are not required for your account — only attendance. Ask the office if that is wrong.</>
+          )}
         </p>
       )}
 

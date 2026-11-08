@@ -152,6 +152,35 @@ describeDb('payroll forms on PostgreSQL (migration 0052)', () => {
     expect(changed.error?.violations[0]?.code).toBe('timesheet_line_submitted');
   });
 
+  it('0057 (TS-USER-1): timesheets required per user — stored, defaulting to required; disabled, every timesheet route refuses; the Office keeps none', async () => {
+    const [before] = await db.select().from(schema.users).where(eq(schema.users.id, IDS.technician));
+    expect(before?.timesheetRequired).toBe(true);
+    const office = await signIn('christene@example-test.co.za');
+    const tech = await signIn('sipho@example-test.co.za');
+    const stored = await office.get<{ firstName: string; lastName: string; email: string; mobile: string; jobTitle: string; role: string }>(`/api/users/${IDS.technician}`);
+    const body = { firstName: stored.data?.firstName ?? 'Sipho', lastName: stored.data?.lastName ?? 'Mahlangu', email: 'sipho@example-test.co.za', mobile: stored.data?.mobile ?? '', jobTitle: stored.data?.jobTitle ?? '', role: 'technician' };
+    // A technician cannot change it, for himself or anybody.
+    expect((await tech.post(`/api/users/${IDS.technician}/update`, { ...body, timesheetRequired: false })).status).toBeGreaterThanOrEqual(400);
+    const off = await office.post(`/api/users/${IDS.technician}/update`, { ...body, timesheetRequired: false });
+    expect(off.status, JSON.stringify(off.error)).toBe(200);
+    const [after] = await db.select().from(schema.users).where(eq(schema.users.id, IDS.technician));
+    expect(after?.timesheetRequired).toBe(false);
+    expect(after?.role).toBe('technician');
+    // Direct requests, whatever the screen shows: refused.
+    const refusedLine = await tech.post(`/api/timesheets/${IDS.technician}/lines`, { id: crypto.randomUUID(), date: '2026-11-05', typed: typed('1'), expectedRevision: null });
+    expect(refusedLine.error?.violations[0]?.code).toBe('timesheet_not_required');
+    const refusedComplete = await completeForm(tech, IDS.technician, 'timesheet', '2026-11-01', '2026-11-25');
+    expect(refusedComplete.error?.violations[0]?.code).toBe('timesheet_not_required');
+    expect(await db.select().from(schema.timesheetEntries).where(eq(schema.timesheetEntries.userId, IDS.technician))).toHaveLength(0);
+    // Attendance alone is submitted.
+    const sent = await submitForms<{ submission: { timesheetRequired: boolean } }>(tech, IDS.technician, '2026-11-01', '2026-11-25');
+    expect(sent.status, JSON.stringify(sent.error)).toBe(200);
+    expect(sent.data.submission.timesheetRequired).toBe(false);
+    // An older client that does not send the setting keeps it as stored.
+    expect((await office.post(`/api/users/${IDS.technician}/update`, body)).status).toBe(200);
+    expect((await db.select().from(schema.users).where(eq(schema.users.id, IDS.technician)))[0]?.timesheetRequired).toBe(false);
+  });
+
   it('two submissions racing for the same open line: exactly one carries it; the other is refused or carries none — never both', async () => {
     const tech = await signIn('sipho@example-test.co.za');
     await tech.post(`/api/timesheets/${IDS.technician}/lines`, { id: crypto.randomUUID(), date: '2026-11-05', typed: typed('1', 'L-RACE'), expectedRevision: null });

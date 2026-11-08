@@ -596,8 +596,19 @@ export const can = (role: UserRole, capability: Capability): boolean =>
  * corrections. The server asks this before every write to a timesheet, before
  * the person opens their own, and when a month is submitted.
  */
-export const completesTimesheet = (role: UserRole): boolean =>
+export const roleKeepsTimesheet = (role: UserRole): boolean =>
   role === 'master' || role === 'technician' || role === 'apprentice';
+
+/**
+ * WHETHER THIS PERSON KEEPS A TIMESHEET. TS-USER-1 (the owner, 8 November 2026): the role decides who MAY keep one
+ * (`roleKeepsTimesheet` — never the Office), and the person's own setting on the Users page decides whether they
+ * must (`timesheetRequired`; absent means required, as every account was before the setting). Disabling it never
+ * changes what the role may do otherwise — a Senior Tech keeps every Senior Tech permission. The ONE rule: the
+ * server asks it before every timesheet write, completion, submission and read of one's own sheet; the screens ask
+ * it to decide what to show.
+ */
+export const completesTimesheet = (person: Pick<User, 'role'> & { readonly timesheetRequired?: boolean | null | undefined }): boolean =>
+  roleKeepsTimesheet(person.role) && person.timesheetRequired !== false;
 
 /**
  * WHO A JOB MAY BE GIVEN TO. JOB-ASSIGN-ST-1 (7 November 2026).

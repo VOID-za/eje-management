@@ -4,6 +4,7 @@ import {
   can,
   deriveInitials,
   findEmailClash,
+  formAwaits,
   manageUserRefusal,
   roleLabel,
   userFullName,
@@ -192,8 +193,28 @@ export const updateUser = async (context: OperationContext, user: User): Promise
       { code: 'invalid_document_name', message: 'Use letters or numbers, e.g. JC or RUAN.' },
     ]);
   }
+  /*
+   * TS-USER-1 (the owner, 8 November 2026): whether this person must keep a timesheet. Set by whoever may edit the
+   * account; it changes nothing else the role may do. Never switched while a timesheet of theirs is half-way — a
+   * completed one waiting on My Monthly Forms, or a correction of one open — so no form is left stranded: it is
+   * submitted (or withdrawn and its correction completed) first.
+   */
+  const timesheetRequired = user.timesheetRequired ?? existing.timesheetRequired ?? true;
+  const timesheetChanged = timesheetRequired !== (existing.timesheetRequired ?? true);
+  if (timesheetChanged && !timesheetRequired) {
+    const [forms, drafts] = await Promise.all([context.repos.payroll.listFormCompletions(existing.id), context.repos.payroll.listCorrectionDrafts(existing.id)]);
+    if (forms.some((form) => form.kind === 'timesheet' && formAwaits(form)) || drafts.some((draft) => draft.kind === 'timesheet' && draft.completedId === null)) {
+      throw new WorkflowError(`${userFullName(existing)} has a timesheet waiting to be submitted.`, [
+        {
+          code: 'timesheet_in_progress',
+          message: 'Their completed timesheet (or its correction) is on My Monthly Forms. It is submitted with their attendance first; then timesheets can be disabled.',
+        },
+      ]);
+    }
+  }
   const saved = await context.repos.users.save({
     ...user,
+    timesheetRequired,
     documentName,
     initials:
       user.initials.trim().length > 0
@@ -213,6 +234,15 @@ export const updateUser = async (context: OperationContext, user: User): Promise
    * Coordinator, and when?" — and that is the question an administrator will
    * actually be asked.
    */
+  if (timesheetChanged) {
+    await audit(context, {
+      jobId: null,
+      type: 'user_updated',
+      summary: `Timesheets ${timesheetRequired ? 'required' : 'not required'}: ${userFullName(saved)}`,
+      detail: `Timesheets required changed from ${timesheetRequired ? 'Disabled to Enabled' : 'Enabled to Disabled'} for ${userFullName(saved)}, by ${userFullName(context.actor)}.`,
+      changes: [{ field: 'Timesheets required', from: timesheetRequired ? 'Disabled' : 'Enabled', to: timesheetRequired ? 'Enabled' : 'Disabled' }],
+    });
+  }
   if (roleChanged) {
     await audit(context, {
       jobId: null,

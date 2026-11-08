@@ -3,6 +3,7 @@ import {
   asUserId,
   can,
   completesTimesheet,
+  roleKeepsTimesheet,
   userFullName,
   type AttendancePeriodSnapshot,
   type AttendanceSnapshotDay,
@@ -235,7 +236,7 @@ export const loadPayrollForms = async (
   assertMayReadAttendanceOf(context, technicianId);
   assertPayrollPeriod(from, to);
   const person = await findPayrollPerson(context, technicianId);
-  const timesheetRequired = completesTimesheet(person.role);
+  const timesheetRequired = completesTimesheet(person);
   const today = businessToday(new Date(context.services.clock.now()));
   const owner = context.actor.id === person.id;
   const [records, names, current, working] = await Promise.all([
@@ -405,7 +406,7 @@ export const loadPayrollFormDocument = async (
   const person = await findPayrollPerson(context, technicianId);
   const names = await namesFor(context, person, from, to);
   if (kind === 'attendance') return workingAttendanceDocument(context, person, from, to, names.names.attendance);
-  if (!completesTimesheet(person.role)) {
+  if (!completesTimesheet(person)) {
     throw refuse('This person keeps no timesheet.', 'timesheet_not_required', 'The Office submits attendance only.');
   }
   // The office reads anybody's; the owner their own (the timesheet's own rule decides).
@@ -430,7 +431,7 @@ export const renamePayrollDocument = async (
   assertOwnForms(context, userId);
   if (kind !== 'timesheet' && kind !== 'attendance') throw refuse('That is not one of the forms.', 'invalid_kind', 'Timesheet or attendance.');
   const person = await findPayrollPerson(context, technicianId);
-  if (kind === 'timesheet' && !completesTimesheet(person.role)) {
+  if (kind === 'timesheet' && !completesTimesheet(person)) {
     throw refuse('You keep no timesheet.', 'timesheet_not_required', 'Only your attendance is submitted.');
   }
   const stored = await context.repos.payroll.listDocumentNames(userId);
@@ -770,7 +771,8 @@ export const listPayrollHistory = async (context: OperationContext, technicianId
     });
   }
   // Newest SUBMITTED first (HISTORY-ONE-1) — by when it went, not by its dates; a person who keeps no timesheet sees no timesheet document.
-  const keeps = completesTimesheet(person.role);
+  // By the ROLE (TS-USER-1): a person whose timesheets were disabled later still sees the ones they submitted.
+  const keeps = roleKeepsTimesheet(person.role);
   return views
     .map((view) => (keeps ? view : { ...view, documents: view.documents.filter((document) => document.kind !== 'timesheet') }))
     .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt) || b.to.localeCompare(a.to));
@@ -797,7 +799,7 @@ export const loadSubmittedPayrollDocument = async (
 ): Promise<{ readonly fileName: string; readonly bytes: Uint8Array; readonly pageCount: number; readonly sha256: string }> => {
   const submission = await findReadablePayrollSubmission(context, submissionId);
   // FORMS-OWN-1: a person who keeps no timesheet reads attendance only of their own (the office's review is not this).
-  if (kind === 'timesheet' && submission.userId === context.actor.id && !completesTimesheet(context.actor.role)) {
+  if (kind === 'timesheet' && submission.userId === context.actor.id && !roleKeepsTimesheet(context.actor.role)) {
     throw refuse('That submission has no such form.', 'document_not_found', 'Your forms are attendance only.');
   }
   const document = submission.documents.find((candidate) => candidate.kind === kind);

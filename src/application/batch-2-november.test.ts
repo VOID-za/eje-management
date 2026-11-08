@@ -252,7 +252,7 @@ describe('ROLE-APP-1 / ROLE-LABEL-1: the Apprentice, and the renamed roles', () 
     expect(can('apprentice', 'settings.rates')).toBe(false);
     expect(can('apprentice', 'standby.manage')).toBe(false);
     expect(isFieldRole('apprentice')).toBe(true);
-    expect(completesTimesheet('apprentice')).toBe(true);
+    expect(completesTimesheet({ role: 'apprentice' })).toBe(true);
   });
 
   it('the visible names change, the stored values do not', () => {

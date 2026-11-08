@@ -44,6 +44,8 @@ export const users = pgTable(
     jobTitle: text('job_title').notNull().default(''),
     /** PAY-03, migration 0040. The name on the monthly PDFs; null = first name. */
     documentName: text('document_name'),
+    /** TS-USER-1, migration 0057. Whether this person must keep a timesheet; true for every account before it. */
+    timesheetRequired: boolean('timesheet_required').notNull().default(true),
 
     /*
      * ---- credentials ----

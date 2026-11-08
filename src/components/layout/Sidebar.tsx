@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { can } from '@/domain';
+import { can, completesTimesheet } from '@/domain';
 import { NAV_GROUP_LABELS, NAVIGATION, type NavigationItem } from '@/config/navigation';
 import { Icon, type IconName } from '@/components/ui';
 import { cn } from '@/lib/cn';
@@ -28,7 +28,8 @@ export const Sidebar = ({
     (item) =>
       (item.capability === undefined ||
         (currentUser !== null && can(currentUser.role, item.capability))) &&
-      (item.roles === undefined || (currentUser !== null && item.roles.includes(currentUser.role))),
+      (item.roles === undefined || (currentUser !== null && item.roles.includes(currentUser.role))) &&
+      (item.keepsTimesheet !== true || (currentUser !== null && completesTimesheet(currentUser))),
   );
 
   // The MOST SPECIFIC item is the current one: /payroll/mine is My Monthly

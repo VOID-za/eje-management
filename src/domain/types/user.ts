@@ -42,6 +42,11 @@ export interface User {
    * ("JC", "RUAN"), set by the office. Absent: the first name, upper-case.
    */
   readonly documentName?: string | null;
+  /**
+   * TS-USER-1, migration 0057. Whether this person must keep a timesheet, set by the office on the Users page.
+   * Absent or true: required (as before); false: attendance only, whatever their role. The Office keeps none anyway.
+   */
+  readonly timesheetRequired?: boolean;
 }
 
 export const userFullName = (user: Pick<User, 'firstName' | 'lastName'>): string =>

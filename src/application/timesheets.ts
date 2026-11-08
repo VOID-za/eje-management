@@ -267,12 +267,19 @@ export const buildTimesheetDays = (input: {
  * stay in the record untouched; the office can still read them.
  */
 export const assertKeepsTimesheet = (context: OperationContext): void => {
-  if (completesTimesheet(context.actor.role)) return;
-  throw refuse(
-    'The Office does not complete a timesheet.',
-    'timesheet_not_required',
-    'The Office works no overtime and keep no timesheet; only attendance. Senior Techs, Technicians and Apprentices complete both.',
-  );
+  if (completesTimesheet(context.actor)) return;
+  // TS-USER-1 (8 November 2026): the person's own setting too, not only the role.
+  throw context.actor.role === 'coordinator'
+    ? refuse(
+        'The Office does not complete a timesheet.',
+        'timesheet_not_required',
+        'The Office works no overtime and keep no timesheet; only attendance. Senior Techs, Technicians and Apprentices complete both.',
+      )
+    : refuse(
+        'Timesheets are not required for your account.',
+        'timesheet_not_required',
+        'The office has set your account to attendance only (Users → Timesheets required: Disabled). Ask the office if that is wrong.',
+      );
 };
 
 /** Office: anybody's timesheet. Everybody else: their own and nobody else's. */
@@ -1563,11 +1570,11 @@ export const listTimesheetPeople = async (
 ): Promise<readonly TimesheetPerson[]> => {
   // TS-ROLE-1: nobody lists a Coordinator's sheet — they keep none — and a
   // Coordinator is offered only the technicians' and Masters' sheets, to read.
-  const own = completesTimesheet(context.actor.role) ? [personOf(context.actor)] : [];
+  const own = completesTimesheet(context.actor) ? [personOf(context.actor)] : [];
   if (!can(context.actor.role, 'timesheets.viewAll')) return own;
   const users = await context.repos.users.list();
   const others = users
-    .filter((user) => user.active && user.id !== context.actor.id && completesTimesheet(user.role))
+    .filter((user) => user.active && user.id !== context.actor.id && completesTimesheet(user))
     .sort((a, b) => a.firstName.localeCompare(b.firstName) || a.lastName.localeCompare(b.lastName))
     .map(personOf);
   return [...own, ...others];

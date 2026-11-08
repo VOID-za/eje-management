@@ -1,0 +1,16 @@
+-- 0057 — whether a person must keep a timesheet, set per user on the Users page (TS-USER-1), 8 November 2026.
+--
+-- The owner's decision (8 November 2026): not every employee keeps a timesheet;
+-- some never work overtime. The ROLE still decides who MAY keep one (never the
+-- Office); this setting decides whether the person MUST. It changes nothing
+-- else the role may do.
+--
+-- ADDITIVE. One column, NOT NULL DEFAULT true: every existing account keeps
+-- exactly the behaviour it had (a Senior Tech, Technician or Apprentice keeps a
+-- timesheet; the Office keeps none by its role, whatever the column says). No
+-- row is otherwise updated or deleted.
+--
+-- ROLLBACK. v1.8.0 does not know the column and never writes it; the default
+-- fills it for any account it creates. Under v1.8.0 everybody whose role keeps
+-- a timesheet keeps one again until rolled forward.
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "timesheet_required" boolean DEFAULT true NOT NULL;

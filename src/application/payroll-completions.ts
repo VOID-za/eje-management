@@ -243,7 +243,7 @@ export const loadMyCompletedForms = async (context: OperationContext, technician
   const userId = asUserId(technicianId);
   assertMayReadForms(context, userId);
   const person = await findPayrollPerson(context, technicianId);
-  const timesheetRequired = completesTimesheet(person.role);
+  const timesheetRequired = completesTimesheet(person);
   const [awaiting, current] = await Promise.all([awaitingOf(context, userId), currentSubmissions(context, person)]);
   const { readiness, text } = readinessOf(timesheetRequired, awaiting.timesheet, awaiting.attendance, {
     timesheet: awaiting.draftOf('timesheet') !== null,
@@ -335,9 +335,9 @@ const checkCompletion = async (context: OperationContext, technicianId: string, 
   const kind = assertKind(kindText);
   assertPayrollPeriod(from, to);
   const person = await findPayrollPerson(context, technicianId);
-  const timesheetRequired = completesTimesheet(person.role);
+  const timesheetRequired = completesTimesheet(person);
   if (kind === 'timesheet' && !timesheetRequired) {
-    throw refuse('You keep no timesheet.', 'timesheet_not_required', 'The Office completes and submits attendance only.');
+    throw refuse('You keep no timesheet.', 'timesheet_not_required', 'Your forms are attendance only (the Office, or an account whose timesheets are disabled on the Users page).');
   }
   const [state, awaiting, names] = await Promise.all([
     loadPayrollForms(context, technicianId, from, to),
@@ -666,7 +666,7 @@ export const submitCompletedForms = async (context: OperationContext, technician
   const userId = asUserId(technicianId);
   assertOwnForm(context, userId);
   const person = await findPayrollPerson(context, technicianId);
-  const timesheetRequired = completesTimesheet(person.role);
+  const timesheetRequired = completesTimesheet(person);
   await holdFormLock(context, userId, 'attendance');
   if (timesheetRequired) await holdFormLock(context, userId, 'timesheet');
   const awaiting = await awaitingOf(context, userId);

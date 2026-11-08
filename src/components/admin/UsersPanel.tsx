@@ -11,6 +11,7 @@ import {
   canChangeRole,
   canManageUser,
   disabledUsers,
+  roleKeepsTimesheet,
   roleLabel,
   userFullName,
   type User,
@@ -100,6 +101,21 @@ export const UsersPanel = ({
           {roleLabel(row.role)}
         </Badge>
       ),
+    },
+    {
+      // TS-USER-1 (8 November 2026): whether this person must keep a timesheet — the role allowing it, and their own setting.
+      key: 'timesheets',
+      header: 'Timesheets',
+      render: (row) =>
+        !roleKeepsTimesheet(row.role) ? (
+          <span className="text-xs text-steel-500" data-testid="user-timesheets" data-state="not_applicable">Not applicable — attendance only</span>
+        ) : (
+          <span data-testid="user-timesheets" data-state={row.timesheetRequired === false ? 'disabled' : 'enabled'}>
+            <Badge tone={row.timesheetRequired === false ? 'outline' : 'green'} size="sm">
+              {row.timesheetRequired === false ? 'Not required' : 'Required'}
+            </Badge>
+          </span>
+        ),
     },
     { key: 'email', header: 'Email', secondary: true, render: (row) => row.email },
     { key: 'mobile', header: 'Mobile', secondary: true, render: (row) => row.mobile },
@@ -303,6 +319,8 @@ const UserEditor = ({
   const [jobTitle, setJobTitle] = useState(existing?.jobTitle ?? 'Field Service Technician');
   // PAY-03: the name on the monthly PDFs and their file names ("JC" → "JC TIMESHEET OCT.pdf").
   const [documentName, setDocumentName] = useState(existing?.documentName ?? '');
+  // TS-USER-1: whether they must keep a timesheet; every account did before the setting.
+  const [timesheetRequired, setTimesheetRequired] = useState(existing?.timesheetRequired !== false);
   // What this actor is allowed to create. A Master may add an office
   // Coordinator or a technician; a Coordinator may add technicians only, so she
   // cannot promote herself by creating an account and signing in as it.
@@ -338,6 +356,7 @@ const UserEditor = ({
             mobile: mobile.trim(),
             jobTitle: jobTitle.trim(),
             documentName: documentName.trim() === '' ? null : documentName.trim(),
+            timesheetRequired,
             // Unchanged unless this actor may set it, and the operation checks
             // that again rather than trusting what arrives.
             role: settable.length > 1 ? role : existing.role,
@@ -418,6 +437,24 @@ const UserEditor = ({
               hint={`Names the monthly PDFs: "${(documentName.trim() || existing.firstName).toUpperCase()} TIMESHEET OCT.pdf". Empty uses the first name.`}
               onChange={(event) => setDocumentName(event.target.value)}
               data-testid="user-document-name"
+            />
+          )}
+          {existing !== null && (
+            <SelectField
+              label="Timesheets required"
+              value={roleKeepsTimesheet(role) ? (timesheetRequired ? 'enabled' : 'disabled') : 'disabled'}
+              disabled={!roleKeepsTimesheet(role)}
+              onChange={(event) => setTimesheetRequired(event.target.value === 'enabled')}
+              options={[
+                { value: 'enabled', label: 'Enabled — completes a timesheet and attendance' },
+                { value: 'disabled', label: 'Disabled — attendance only' },
+              ]}
+              hint={
+                roleKeepsTimesheet(role)
+                  ? 'Disabled: no timesheet is asked of them or counted as outstanding; everything else their role does is unchanged.'
+                  : 'The Office keeps attendance only, whatever this says.'
+              }
+              data-testid="user-timesheets-required"
             />
           )}
         </div>

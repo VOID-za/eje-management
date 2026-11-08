@@ -4935,6 +4935,29 @@ await step('a Master moves a technician to Coordinator and back', async () => {
   if (!(await row().innerText()).includes('Technician')) throw new Error('role did not revert');
 });
 
+/*
+ * TS-USER-1 (8 November 2026): Timesheets required, per user, on the Users page — shown in the list, set in the
+ * editor, kept after saving, and enabled again; the role stays as it was.
+ */
+await step('a Master disables and enables Timesheets for a technician; the list says so; the role is unchanged', async () => {
+  const row = () => page.getByRole('row').filter({ hasText: 'Sipho Mahlangu' }).first();
+  const state = async () => row().getByTestId('user-timesheets').getAttribute('data-state');
+  if ((await state()) !== 'enabled') throw new Error(`Sipho's timesheets read ${await state()} before any change`);
+  for (const [choice, expected] of [['disabled', 'disabled'], ['enabled', 'enabled']]) {
+    await row().getByRole('button', { name: 'Manage' }).click();
+    await page.getByRole('menuitem', { name: 'Edit user and role' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.waitFor({ timeout: 8000 });
+    await dialog.getByTestId('user-timesheets-required').selectOption(choice);
+    await dialog.getByRole('button', { name: 'Save changes' }).click();
+    await dialog.waitFor({ state: 'detached', timeout: 10000 });
+    await page.waitForFunction((want) => document.querySelector('tr [data-testid="user-timesheets"]') !== null && [...document.querySelectorAll('tr')].some((tr) => tr.textContent?.includes('Sipho Mahlangu') && tr.querySelector('[data-testid="user-timesheets"]')?.getAttribute('data-state') === want), expected, { timeout: 10000 });
+    if (!(await row().innerText()).includes('Technician')) throw new Error('the role changed with the timesheet setting');
+  }
+  const office = page.getByRole('row').filter({ hasText: 'Christene' }).first();
+  if ((await office.count()) > 0 && (await office.getByTestId('user-timesheets').getAttribute('data-state')) !== 'not_applicable') throw new Error('the Office is offered a timesheet');
+});
+
 await step('the role change is on the activity trail, with both roles', async () => {
   await page.goto(`${BASE}/activity`, { waitUntil: 'networkidle' });
   await page.getByText('from Technician to Office', { exact: false })
