@@ -137,6 +137,15 @@ export const USER_COMMANDS: CommandRegistry = {
     },
   }),
 
+  // TS-USER-1: "Timesheets required" on its own — the operation decides who may, and when.
+  set_timesheet_required: command({
+    schema: z.object({ required: z.boolean() }).strict(),
+    async run(context, input, target) {
+      const stored = await loadUser(context, target);
+      return users.setTimesheetRequired(context.operation, stored.id, input.required);
+    },
+  }),
+
   set_active: command({
     schema: z.object({ active: z.boolean() }).strict(),
     async run(context, input, target) {

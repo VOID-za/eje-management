@@ -253,6 +253,8 @@ export interface SafeUser {
   readonly jobTitle: string;
   readonly active: boolean;
   readonly createdAt: string;
+  /** TS-USER-1. Absent from a server before v1.9.0: required. */
+  readonly timesheetRequired?: boolean;
 }
 
 export const auth = {
@@ -1057,6 +1059,9 @@ export const users = {
     command<User>(`/api/users/${segment(userId)}/update`, input),
   setActive: (userId: string, active: boolean) =>
     command<User>(`/api/users/${segment(userId)}/set_active`, { active }),
+  /** TS-USER-1: "Timesheets required" on its own. */
+  setTimesheetRequired: (userId: string, required: boolean) =>
+    command<User>(`/api/users/${segment(userId)}/set_timesheet_required`, { required }),
   sendPasswordReset: (userId: string) =>
     command<{ sentTo: string; simulated: boolean }>(
       `/api/users/${segment(userId)}/send_password_reset`,

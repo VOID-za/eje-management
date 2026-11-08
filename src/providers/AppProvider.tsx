@@ -107,6 +107,8 @@ const toUser = (safe: SafeUser): User => ({
   jobTitle: safe.jobTitle,
   active: safe.active,
   createdAt: safe.createdAt,
+  // TS-USER-1: the sidebar, Timesheets and My Monthly Forms ask completesTimesheet(user) with it.
+  timesheetRequired: safe.timesheetRequired !== false,
 });
 
 export const AppProvider = ({ children }: { readonly children: ReactNode }) => {

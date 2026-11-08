@@ -3,6 +3,7 @@ import {
   asUserId,
   can,
   deriveInitials,
+  canSetTimesheetRequired,
   findEmailClash,
   formAwaits,
   manageUserRefusal,
@@ -201,17 +202,7 @@ export const updateUser = async (context: OperationContext, user: User): Promise
    */
   const timesheetRequired = user.timesheetRequired ?? existing.timesheetRequired ?? true;
   const timesheetChanged = timesheetRequired !== (existing.timesheetRequired ?? true);
-  if (timesheetChanged && !timesheetRequired) {
-    const [forms, drafts] = await Promise.all([context.repos.payroll.listFormCompletions(existing.id), context.repos.payroll.listCorrectionDrafts(existing.id)]);
-    if (forms.some((form) => form.kind === 'timesheet' && formAwaits(form)) || drafts.some((draft) => draft.kind === 'timesheet' && draft.completedId === null)) {
-      throw new WorkflowError(`${userFullName(existing)} has a timesheet waiting to be submitted.`, [
-        {
-          code: 'timesheet_in_progress',
-          message: 'Their completed timesheet (or its correction) is on My Monthly Forms. It is submitted with their attendance first; then timesheets can be disabled.',
-        },
-      ]);
-    }
-  }
+  if (timesheetChanged) await assertMaySetTimesheetRequired(context, existing, timesheetRequired);
   const saved = await context.repos.users.save({
     ...user,
     timesheetRequired,
@@ -234,15 +225,7 @@ export const updateUser = async (context: OperationContext, user: User): Promise
    * Coordinator, and when?" — and that is the question an administrator will
    * actually be asked.
    */
-  if (timesheetChanged) {
-    await audit(context, {
-      jobId: null,
-      type: 'user_updated',
-      summary: `Timesheets ${timesheetRequired ? 'required' : 'not required'}: ${userFullName(saved)}`,
-      detail: `Timesheets required changed from ${timesheetRequired ? 'Disabled to Enabled' : 'Enabled to Disabled'} for ${userFullName(saved)}, by ${userFullName(context.actor)}.`,
-      changes: [{ field: 'Timesheets required', from: timesheetRequired ? 'Disabled' : 'Enabled', to: timesheetRequired ? 'Enabled' : 'Disabled' }],
-    });
-  }
+  if (timesheetChanged) await auditTimesheetRequired(context, saved, timesheetRequired);
   if (roleChanged) {
     await audit(context, {
       jobId: null,
@@ -251,6 +234,65 @@ export const updateUser = async (context: OperationContext, user: User): Promise
       detail: `Changed ${userFullName(saved)} from ${roleLabel(existing.role)} to ${roleLabel(saved.role)}, by ${userFullName(context.actor)}.`,
     });
   }
+  return saved;
+};
+
+/**
+ * TS-USER-1: may this actor set this person's "Timesheets required" now? Who (`canSetTimesheetRequired`), and never
+ * switched off half-way: not while a completed timesheet (or its correction draft) waits on My Monthly Forms, nor
+ * while a correction of a submitted timesheet waits for the office — those are finished first, so nothing is stranded.
+ */
+const assertMaySetTimesheetRequired = async (context: OperationContext, target: User, required: boolean): Promise<void> => {
+  if (!canSetTimesheetRequired(context.actor, target)) {
+    throw new WorkflowError(`You cannot change whether ${target.id === context.actor.id ? 'you keep' : `${userFullName(target)} keeps`} a timesheet.`, [
+      {
+        code: 'timesheet_setting_not_permitted',
+        message: 'It is set by somebody who administers the account: the Office for Technicians and Apprentices, a Senior Tech for anybody else — never by the person themselves.',
+      },
+    ]);
+  }
+  if (required) return;
+  const [forms, drafts, periods] = await Promise.all([
+    context.repos.payroll.listFormCompletions(target.id),
+    context.repos.payroll.listCorrectionDrafts(target.id),
+    context.repos.attendance.listSubmissions(target.id),
+  ]);
+  const corrections = (await Promise.all(periods.map((period) => context.repos.attendance.listCorrections(period.id)))).flat();
+  if (
+    forms.some((form) => form.kind === 'timesheet' && formAwaits(form)) ||
+    drafts.some((draft) => draft.kind === 'timesheet' && draft.completedId === null) ||
+    corrections.some((correction) => correction.status === 'pending')
+  ) {
+    throw new WorkflowError(`${userFullName(target)} has a timesheet still in progress.`, [
+      {
+        code: 'timesheet_in_progress',
+        message: 'A completed timesheet (or its correction) waits on My Monthly Forms, or a correction of a submitted one waits for the office. Finish it first; then timesheets can be disabled.',
+      },
+    ]);
+  }
+};
+
+const auditTimesheetRequired = (context: OperationContext, saved: User, required: boolean) =>
+  audit(context, {
+    jobId: null,
+    type: 'user_updated',
+    summary: `Timesheets ${required ? 'required' : 'not required'}: ${userFullName(saved)}`,
+    detail: `Timesheets required changed from ${required ? 'Disabled to Enabled' : 'Enabled to Disabled'} for ${userFullName(saved)}, by ${userFullName(context.actor)}.`,
+    changes: [{ field: 'Timesheets required', from: required ? 'Disabled' : 'Enabled', to: required ? 'Enabled' : 'Disabled' }],
+  });
+
+/**
+ * SET "TIMESHEETS REQUIRED" ALONE (TS-USER-1) — for an account the actor may set it on but not otherwise edit
+ * (a Senior Tech setting another Senior Tech's). The same rules as the editor; an unchanged value writes nothing.
+ */
+export const setTimesheetRequired = async (context: OperationContext, userId: string, required: boolean): Promise<User> => {
+  assertManagesUsers(context);
+  const existing = await context.repos.users.findById(asUserId(userId));
+  if (existing === null) throw new WorkflowError('That user no longer exists.');
+  if ((existing.timesheetRequired ?? true) === required) return existing;
+  await assertMaySetTimesheetRequired(context, existing, required);
+  const saved = await context.repos.users.save({ ...existing, timesheetRequired: required });
+  await auditTimesheetRequired(context, saved, required);
   return saved;
 };
 

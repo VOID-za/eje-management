@@ -73,6 +73,8 @@ export interface SafeUser {
   readonly jobTitle: string;
   readonly active: boolean;
   readonly createdAt: string;
+  /** TS-USER-1: whether they must keep a timesheet — the screens decide what to offer from it (the server decides again). */
+  readonly timesheetRequired: boolean;
 }
 
 export const toSafeUser = (user: User): SafeUser => ({
@@ -86,4 +88,5 @@ export const toSafeUser = (user: User): SafeUser => ({
   jobTitle: user.jobTitle,
   active: user.active,
   createdAt: user.createdAt,
+  timesheetRequired: user.timesheetRequired !== false,
 });

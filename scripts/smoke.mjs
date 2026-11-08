@@ -4953,6 +4953,18 @@ await step('a Master disables and enables Timesheets for a technician; the list 
     await dialog.waitFor({ state: 'detached', timeout: 10000 });
     await page.waitForFunction((want) => document.querySelector('tr [data-testid="user-timesheets"]') !== null && [...document.querySelectorAll('tr')].some((tr) => tr.textContent?.includes('Sipho Mahlangu') && tr.querySelector('[data-testid="user-timesheets"]')?.getAttribute('data-state') === want), expected, { timeout: 10000 });
     if (!(await row().innerText()).includes('Technician')) throw new Error('the role changed with the timesheet setting');
+    if (choice === 'disabled') {
+      // What Sipho meets while disabled: no Timesheets in his sidebar, the page says so, and he is otherwise unchanged.
+      await signInAs(page, 'Sipho Mahlangu', { greeting: /Sipho/, timeout: 15000 });
+      if ((await page.locator('nav a[href="/timesheets"]').count()) !== 0) throw new Error('Timesheets is still in a disabled technician’s sidebar');
+      await page.goto(`${BASE}/timesheets`, { waitUntil: 'networkidle' });
+      await page.getByTestId('timesheet-not-required').filter({ hasText: 'not required for your account' }).waitFor({ timeout: 10000 });
+      if ((await page.locator('nav a[href="/jobs"]').count()) === 0) throw new Error('a disabled technician lost his Jobs');
+      await signInAsMasterIfNeeded();
+      await page.goto(`${BASE}/admin`, { waitUntil: 'networkidle' });
+      await page.getByRole('tab', { name: 'Users', exact: true }).click();
+      await row().waitFor({ timeout: 10000 });
+    }
   }
   const office = page.getByRole('row').filter({ hasText: 'Christene' }).first();
   if ((await office.count()) > 0 && (await office.getByTestId('user-timesheets').getAttribute('data-state')) !== 'not_applicable') throw new Error('the Office is offered a timesheet');

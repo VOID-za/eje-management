@@ -10,6 +10,7 @@ import {
   assignableRolesFor,
   canChangeRole,
   canManageUser,
+  canSetTimesheetRequired,
   disabledUsers,
   roleKeepsTimesheet,
   roleLabel,
@@ -72,6 +73,8 @@ export const UsersPanel = ({
   const [list, setList] = useState<ListId>('active');
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [confirming, setConfirming] = useState<{ user: User; enable: boolean } | null>(null);
+  // TS-USER-1: "Timesheets required" on its own, for an account this actor may set it on but not edit (another Senior Tech).
+  const [timesheetToggle, setTimesheetToggle] = useState<{ user: User; required: boolean } | null>(null);
   const [resetting, setResetting] = useState<User | null>(null);
   const [resetSentTo, setResetSentTo] = useState<string | null>(null);
 
@@ -139,6 +142,14 @@ export const UsersPanel = ({
          * hidden from the list.
          */
         const items = [];
+        if (!canManageUser(actor, row) && canSetTimesheetRequired(actor, row)) {
+          items.push({
+            id: 'timesheets',
+            label: row.timesheetRequired === false ? 'Enable timesheets' : 'Disable timesheets',
+            icon: <Icon name="clock" className="size-4" />,
+            onSelect: () => setTimesheetToggle({ user: row, required: row.timesheetRequired === false }),
+          });
+        }
         if (canManageUser(actor, row)) {
           if (isFieldRole(row.role)) {
             items.push({
@@ -273,6 +284,27 @@ export const UsersPanel = ({
       />
 
       <ConfirmDialog
+        open={timesheetToggle !== null}
+        title={timesheetToggle?.required === true ? 'Enable timesheets?' : 'Disable timesheets?'}
+        message={
+          timesheetToggle === null
+            ? ''
+            : timesheetToggle.required
+              ? `${userFullName(timesheetToggle.user)} will complete a timesheet with their attendance again.`
+              : `${userFullName(timesheetToggle.user)} will submit attendance only. Nothing else their role does changes.`
+        }
+        confirmLabel={timesheetToggle?.required === true ? 'Enable timesheets' : 'Disable timesheets'}
+        busy={operation.running}
+        onConfirm={async () => {
+          if (timesheetToggle === null) return;
+          const ok = await operation.run(() => userApi.setTimesheetRequired(timesheetToggle.user.id, timesheetToggle.required));
+          setTimesheetToggle(null);
+          if (ok) onChanged();
+        }}
+        onCancel={() => setTimesheetToggle(null)}
+      />
+
+      <ConfirmDialog
         open={resetting !== null}
         title="Send a password reset?"
         message={
@@ -356,7 +388,8 @@ const UserEditor = ({
             mobile: mobile.trim(),
             jobTitle: jobTitle.trim(),
             documentName: documentName.trim() === '' ? null : documentName.trim(),
-            timesheetRequired,
+            // Sent only when this actor may set it (never on one's own account); the operation checks again.
+            ...(canSetTimesheetRequired(actor, existing) ? { timesheetRequired } : {}),
             // Unchanged unless this actor may set it, and the operation checks
             // that again rather than trusting what arrives.
             role: settable.length > 1 ? role : existing.role,
@@ -443,16 +476,18 @@ const UserEditor = ({
             <SelectField
               label="Timesheets required"
               value={roleKeepsTimesheet(role) ? (timesheetRequired ? 'enabled' : 'disabled') : 'disabled'}
-              disabled={!roleKeepsTimesheet(role)}
+              disabled={!roleKeepsTimesheet(role) || !canSetTimesheetRequired(actor, existing)}
               onChange={(event) => setTimesheetRequired(event.target.value === 'enabled')}
               options={[
                 { value: 'enabled', label: 'Enabled — completes a timesheet and attendance' },
                 { value: 'disabled', label: 'Disabled — attendance only' },
               ]}
               hint={
-                roleKeepsTimesheet(role)
-                  ? 'Disabled: no timesheet is asked of them or counted as outstanding; everything else their role does is unchanged.'
-                  : 'The Office keeps attendance only, whatever this says.'
+                !roleKeepsTimesheet(role)
+                  ? 'The Office keeps attendance only, whatever this says.'
+                  : !canSetTimesheetRequired(actor, existing)
+                    ? 'Set by somebody who administers the account — never by the person themselves.'
+                    : 'Disabled: no timesheet is asked of them or counted as outstanding; everything else their role does is unchanged.'
               }
               data-testid="user-timesheets-required"
             />

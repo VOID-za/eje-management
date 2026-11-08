@@ -150,7 +150,7 @@ export const loadMonthlyForms = async (
         !timesheetRequired
           ? completesTimesheet(person)
             ? 'Submitted from the Timesheets page by payday, for the real pay period — not with the monthly forms'
-            : 'Not required — the Office keeps no timesheet' :
+            : person.role === 'coordinator' ? 'Not required — the Office keeps no timesheet' : 'Not required — timesheets disabled for this account' :
         exactSent === null ? 'Not sent yet' : versionInForce(exactSent, corrections).correction === null ? 'Original submission' : `Correction ${versionInForce(exactSent, corrections).correction!.sequence} accepted`,
       correctionPending: corrections.some((correction) => correction.status === 'pending'),
       blockingPeriods: blocking.map((other) => formatPeriod(other.from, other.to)),

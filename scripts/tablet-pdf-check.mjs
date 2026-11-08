@@ -649,8 +649,10 @@ await step('TABLET: an Installation previews as its price-less Delivery Note —
   silentDownloads = 0; // asked for
   if (file.name !== 'EJE-1050-Installation-Delivery-Note.pdf') throw new Error(`downloaded ${file.name}`);
   const text = (await pdfTextIn(previewPage, file.bytes)).text;
-  if (!/DELIVERY\s*NOTE/u.test(text) || !text.includes('INSTALLATION')) throw new Error('the document is not titled a Delivery Note — Installation');
-  if (/JOB\s*CARD/u.test(text)) throw new Error('the Installation still presents as a job card');
+  // pdf.js may split a title into spaced letters or other cases: compare without spaces, in capitals.
+  const squashed = text.replace(/\s+/gu, '').toUpperCase();
+  if (!squashed.includes('DELIVERYNOTE') || !squashed.includes('INSTALLATION')) throw new Error(`the document is not titled a Delivery Note — Installation: ${text.slice(0, 200)}`);
+  if (squashed.includes('JOBCARD')) throw new Error(`the Installation still presents as a job card: ${text.slice(0, 200)}`);
   if (!text.includes('EJE-1050') || !text.includes('PO-44920')) throw new Error('the job number or order number is missing');
   for (const leak of [/R[\s ]?\d[\d\s ]*,\d{2}/u, /\bVAT\b/u, /\bSubtotal\b/iu, /\bTotal\b/iu, /\bRate\b/iu, /\bAmount\b/iu]) {
     if (leak.test(text)) throw new Error(`the Installation Delivery Note shows a price (${leak})`);

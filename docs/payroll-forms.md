@@ -454,9 +454,12 @@ first 92.
 Not everybody keeps a timesheet: some people never work overtime. On the Users
 page each account shows **Timesheets: Required / Not required** (the Office:
 *Not applicable — attendance only*), and the editor has **Timesheets required:
-Enabled / Disabled**. Whoever may edit the account sets it (the Office for
-Technicians and Apprentices; a Senior Tech for their own account — no Senior
-Tech edits another's, as before). Each change is on the audit trail, old → new.
+Enabled / Disabled**. It is set by somebody who administers the account —
+the Office for Technicians and Apprentices; a Senior Tech for anybody else,
+another Senior Tech included (this one setting, through *Manage → Disable /
+Enable timesheets*; a Senior Tech account is otherwise not editable by another)
+— and never by the person themselves, like a role. Each change is on the audit
+trail, old → new.
 
 - **The rule** (`completesTimesheet(person)`): the ROLE decides who may keep a
   timesheet (Senior Tech, Technician, Apprentice — never the Office); the
@@ -469,7 +472,8 @@ Tech edits another's, as before). Each change is on the audit trail, old → new
   changes — a Senior Tech keeps every Senior Tech permission, job assignment
   included. Timesheets they submitted before stay in their History.
 - **Never switched off half-way**: refused (`timesheet_in_progress`) while a
-  completed timesheet (or its correction) waits on My Monthly Forms.
+  completed timesheet (or its correction draft) waits on My Monthly Forms, or
+  a correction of a submitted timesheet waits for the office.
 - **Existing accounts** keep exactly what they had: migration 0057 adds
   `users.timesheet_required` NOT NULL DEFAULT true.
 
