@@ -149,7 +149,10 @@ describeDb('the attendance and timesheet reset (FORMS-RESET-1)', () => {
     // The audit trail: every earlier event kept, and one more — the reset itself.
     const trail = await db.select().from(schema.auditEvents);
     expect(trail.length).toBe(audits + 1);
-    expect(trail.filter((event) => event.type === 'forms_reset')).toHaveLength(1);
+    const resetEvents = trail.filter((event) => event.type === 'forms_reset');
+    expect(resetEvents).toHaveLength(1);
+    // An object, not a JSON string inside jsonb (the production run of 9 November stored the latter).
+    expect(resetEvents[0]?.metadata).toMatchObject({ archiveSha256: result.archiveSha256, keyFingerprint: result.keyFingerprint });
     // The archive: no plaintext beside it; it decrypts to every row and file.
     const archiveDir = readdirSync(archives).map((name) => join(archives, name))[0]!;
     expect(readdirSync(archiveDir).sort()).toEqual([`${result.archive.split(/[\\/]/u).pop()}`, 'report.json'].sort());

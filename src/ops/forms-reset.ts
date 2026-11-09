@@ -351,7 +351,7 @@ export const resetForms = async (sql: Sql, options: ResetOptions): Promise<Reset
         values (${randomUUID()}, ${now.toISOString()}, 'Operator (FORMS-RESET-1)', 'forms_reset',
           'Attendance and timesheet forms reset for a new testing cycle (the owner, 9 November 2026)',
           ${`Every attendance and timesheet form record removed and archived encrypted (${name}): ${removed}. Users, jobs, customers, machines and the audit trail kept.`},
-          'forms_reset', ${JSON.stringify({ archive: name, archiveSha256: encrypted.sha256, keyFingerprint: fingerprint, counts: before, files: files.length })}::jsonb)`;
+          'forms_reset', ${JSON.stringify({ archive: name, archiveSha256: encrypted.sha256, keyFingerprint: fingerprint, counts: before, files: files.length })}::text::jsonb)`;
 
       const outcome = { before, after, auditCopied, files, othersUnchanged: Object.keys(othersBefore).length };
       if (options.dryRun) throw new DryRunDone(outcome);
