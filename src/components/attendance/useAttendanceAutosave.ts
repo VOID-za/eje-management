@@ -42,7 +42,8 @@ export const useAttendanceAutosave = (scope: 'mine') => {
     const started = new AttendanceAutosaver({
       send: (input, options) => attendance.record(input, options),
       classify,
-      storageKey: `eje:attendance-autosave:${scope}:${user.id}`,
+      // FORMS-RESET-1 (v2): a change queued in this browser before the forms were reset is not replayed into the clean slate.
+      storageKey: `eje:attendance-autosave:v2:${scope}:${user.id}`,
       online: () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false),
       onChange: () => setTick((tick) => tick + 1),
       onSaved: () => invalidate(),

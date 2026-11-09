@@ -53,7 +53,8 @@ export const useTimesheetAutosave = (personId: string | null, onSaved: () => voi
       removeLine: (id, options) => timesheets.removeLine(personId, id, options),
       saveComment: (comment, expected, options) => timesheets.saveWorkingComment(personId, comment, expected, options),
       classify,
-      storageKey: `eje:timesheet-autosave:${personId}`,
+      // FORMS-RESET-1 (v2): a change queued in this browser before the forms were reset is not replayed into the clean slate.
+      storageKey: `eje:timesheet-autosave:v2:${personId}`,
       online: () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false),
       onChange: () => setTick((tick) => tick + 1),
       onSaved: () => {
