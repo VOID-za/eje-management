@@ -32,6 +32,72 @@ release is bigger than its commits say, `stage-release.ps1 -Bump minor` (or
 `major`) raises the step. The commit remains what identifies a deployment;
 `/api/health` reports both.
 
+## RELEASED — `0eaa023` = v1.9.1, the attendance and timesheet reset and two v1.9.0 follow-ups (FORMS-RESET-1, TS-USER-1, TR-PARTS-ORDER-1, 9 November 2026)
+
+Released 9 November 2026 at 20:16:56 UTC (healthy at 20:16:58), from branch `claude/v190-jobs-docs-timesheet-setting`,
+through `stage-release.ps1 -ExpectPending none` after the read-only check passed.
+- **Before it:** `96dee20` v1.9.0, healthy, 58 migrations. It is kept as the rollback target.
+- **Version:** 1.9.1 from the commits (`fix`/`chore` → patch).
+- **No migration**; the schema is unchanged.
+- **Deployed, not approved.**
+
+- **What changed:**
+  - **FORMS-RESET-1** — `npm run forms:reset` (`src/ops/forms-reset.ts`). It archives every attendance and timesheet
+    form record (encrypted), deletes them in one locked transaction, and proves it. The browser queues of unsent
+    attendance and timesheet changes move to a new storage key, so nothing queued before the reset is replayed.
+    `docs/forms-reset-2026-11-09.md`.
+  - **TS-USER-1** — switching timesheets off now holds the person's form locks, as completing and submitting do. A
+    timesheet completed at that moment can no longer slip past the in-progress check. (This was a race the review of
+    9 November found.)
+  - **TR-PARTS-ORDER-1** — the job card's "Part N received" line now reads Part number — Description × Quantity, like
+    the editor. Documents issued before keep their stored bytes.
+- **Independent reviews:**
+  - **Of v1.9.0, against its requirements:** no blocking defect; the two findings above were fixed.
+  - **Of the reset tool:** no critical finding. One HIGH: a lost COMMIT acknowledgement could have deleted the only
+    archive. It was fixed: an executed run never removes the archive it wrote. The MEDIUM and LOW findings were fixed:
+    - browser replays after the reset;
+    - plaintext only in the private temporary directory;
+    - the archive fsynced before the delete;
+    - triggers looked up by schema;
+    - the audit copy counted;
+    - the cached form responses kept rather than deleted.
+  - **The CI test then caught two more:**
+    - the deferred foreign keys must be checked before the triggers are restored;
+    - the JSON metadata parameter.
+- **CI run 42683074007 on `0eaa023`: success, all 3 jobs.**
+
+  | Area | Result |
+  |---|---|
+  | Unit | 4 110 passed |
+  | PostgreSQL | 529 passed, including the 5 reset tests |
+  | Rollback prepare / probe | 17/17, 21/21 |
+  | Browser | 61/61 steps |
+  | Routes | 35 |
+  | Tablet audit | 567 page views |
+
+  The browser suites passed at 1440, 768 and 390.
+
+  The PostgreSQL job failed once on an infrastructure fault (`curl: (55)` while fetching the PostgreSQL apt key, before
+  any test) and passed when re-run. An earlier run on `3e27975` failed to start its database job at all.
+- **Fresh backup, proven before the reset:** `/var/backups/eje/eje-eje_production-2026-11-09T20-16-37Z`.
+  - Both files intact and authentic; key MATCH (`23dba6772da10057`).
+  - **RESTORE-TESTED** (jobs 119, users 7, customers 11, machines 19, final documents 64, signatures 80, audit events
+    1 194, 242 documents).
+- **The reset**, explicitly authorised by the owner, ran at 20:19:45 UTC.
+  - It ran first as a dry run on production, which was rolled back.
+  - Every attendance and timesheet form record is now 0, including the seven open lines, which are in the archive (7/7).
+  - Of 93 tables, 82 are byte-identical. The 11 that changed: the 9 form tables, the 20 form notifications, and one
+    `forms_reset` audit event.
+  - Archive: `/var/backups/eje/forms-reset-archive-2026-11-09T20-19-45Z/`, verified.
+  - Full record: `docs/forms-reset-2026-11-09.md`.
+- **Live, read only: 11/11** (desktop and phone; Master, Coordinator, Technician). Every form view and API is empty,
+  and the pages are ready.
+- **Server:** health ok, v1.9.1, email `refuse`, demonstration mode on, 0 errors in the service log since the switch.
+  Rollback target: `/opt/eje/releases/96dee20`.
+
+**Rolling back** to `96dee20` (v1.9.0) is code only, at the same schema. The forms stay reset: a rollback does not
+bring them back. Only a restore of the backup above would, and that would also undo everything done since.
+
 ## RELEASED — `96dee20` = v1.9.0, the post-v1.8.0 improvements (JOB-SCHED-EDIT-1, INSTALL-DN-1, DN-DARK-1, TR-PARTS-ORDER-1, TS-USER-1, INBOX-HANDLE-1, 8 November 2026)
 
 Released 8 November 2026 21:58:55 UTC (healthy 21:58:58) from branch `claude/v190-jobs-docs-timesheet-setting` through `stage-release.ps1 -ExpectPending 0057_user_timesheet_required`, after the read-only check passed. Before it: `c34d1e7` v1.8.0, healthy, 57 migrations, kept as the rollback target. Version 1.9.0 from the commits (`feat` → minor). **Deployed, not approved.**

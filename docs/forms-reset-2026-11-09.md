@@ -88,6 +88,83 @@ with `jsonb_populate_record` if the owner ever asks. **The restore path is the f
 before the reset** (below). It holds the whole database and the document store as they were, and it was
 restore-tested before the reset ran.
 
-## The production run
+## The production run — 9 November 2026
 
-_Recorded below after the run._
+**Done on v1.9.1 (`0eaa023`), 20:19:45 UTC. Run by the app's own database role (the tables' owner, not a superuser)
+through the release's code, under systemd with the production environment.**
+
+1. **Release, with a fresh backup proved first.** v1.9.1 went through `stage-release.ps1 -ExpectPending none`; the
+   database schema was not touched (58 migrations).
+   - Backup `/var/backups/eje/eje-eje_production-2026-11-09T20-16-37Z`: both files intact and authentic.
+   - Key **MATCH** (`23dba6772da10057`).
+   - **RESTORE-TESTED** into a scratch database, which was then dropped: jobs 119, users 7, customers 11, machines 19,
+     final documents 64, job media 37, signatures 80, audit events 1 194, 242 documents.
+   - Switched 20:16:56 UTC; healthy 20:16:58.
+2. **Inventory** (`--inventory`), identical to the read-only inventory taken at 19:40.
+3. **The seven open lines** read with their row hashes just before the reset. Unchanged since 8 November.
+4. **Dry run** on production: every step, including the archive, its decryption and verification, the delete and the
+   proofs. It reached 0 in every form table, with **78 other tables identical**, then **rolled back**.
+5. **Execute** with `--expect` the inventory: **RESET COMMITTED**.
+6. **Independent checks, afterwards** (below).
+
+### Before and after
+
+| Record | Before | After |
+|---|---:|---:|
+| Attendance days (`attendance`) | 102 | **0** |
+| Timesheet lines (`timesheet_entries`), including the seven open lines | 48 | **0** |
+| Timesheets, sent or not (`timesheet_periods`) | 15 | **0** |
+| Submitted-line ledger (`timesheet_submitted_lines`) | 28 | **0** |
+| Monthly submissions (`monthly_submissions`) | 7 | **0** |
+| Completed forms — awaiting, withdrawn or submitted (`payroll_form_completions`) | 3 | **0** (0 withdrawn after) |
+| Removed-line ids (`timesheet_line_removals`) | 4 | **0** |
+| Working comments (`timesheet_working_comments`) | 2 | **0** |
+| Daily comments, 0033 (`timesheet_comments`) | 1 | **0** |
+| Payroll submissions, timesheet corrections, correction drafts, line drafts, PDF names, 0037 months | 0 | **0** |
+| Office notifications about forms | 20 | **0** |
+| Stored form PDFs (`payroll-completions/`) | 3 (6 files) | **0** (the folder is gone) |
+| Finance packages | 0 | 0 |
+
+### Afterwards, checked independently
+
+- **The database**, queried directly and read only, at 20:22 UTC:
+  - every form table reads 0;
+  - **none of the seven line ids** is in `timesheet_entries`;
+  - the 10 guard triggers are all enabled again (`O`), exactly as before;
+  - the 198 form audit events are all still there, plus one `forms_reset` event at 20:19:45.522;
+  - all 7 users are unchanged, every one still with Timesheets required.
+- **Every table's full-row fingerprint compared with 20:18, before the reset: 82 of 93 tables byte-identical.** The 11
+  that changed are exactly these:
+  - the 9 non-empty form tables, now 0;
+  - `notifications`, 190 → 170: the 20 form notices, and nothing else;
+  - `audit_events`, +1: the reset's own event.
+
+  So these are unchanged byte for byte: jobs (119), users (7), customers (11), machines (19), sites, contacts,
+  documents, signatures, checklists, availability, standby, sessions, the idempotency cache and the rest.
+- **The archive**: `/var/backups/eje/forms-reset-archive-2026-11-09T20-19-45Z/forms-reset-archive-2026-11-09T20-19-45Z.tar.enc`.
+  - 307 228 bytes, 0600 in a 0700 directory owned by `eje`, encrypted AES-256-GCM with the backup key
+    (`23dba6772da10057`).
+  - SHA-256 `1fbce7cd6d45fd34c753bec744683ee88caa1ec1642ad573f04bb8a26d56bec0`, the same in `report.json` and in the
+    audit event.
+  - `--verify` decrypted it again: every table count and all 6 file checksums match.
+  - A separate decryption found **all seven open lines in it, 7/7**, with the dates, customers and hours recorded on
+    8 November, among the 48 archived lines of 4 people.
+  - No plaintext was left behind. The archive name never matches backup retention, so it is not pruned.
+- **The application**, read only (11 of 11 checks passed, desktop and phone), as the demo Master (Senior Tech),
+  Coordinator and Technician:
+  - health ok, PostgreSQL reachable, email `refuse`, demonstration mode on, v1.9.1;
+  - no timesheet submission, no pending correction and no form notification in any office view;
+  - each person's own History, open lines and completed forms are empty, and every attendance day from 15 August to
+    today reads unrecorded and unlocked;
+  - the Coordinator is still attendance only;
+  - the Timesheets, My Monthly Forms, Attendance, Payroll and Notifications pages open with no error, and the
+    technician's Timesheets page shows its days, ready.
+- **The service log: 0 errors** since the switch.
+
+**One imperfection, recorded, not rewritten:** the `forms_reset` audit event's `metadata` holds its JSON as a string
+inside `jsonb` (a double encoding by the client), not as an object. Its content is complete (archive name, checksum,
+key fingerprint, counts), and the audit trail is append-only, so it stays as written. The tool now casts through
+`text`, and the test checks for an object.
+
+**What the checks themselves wrote:** the live checks signed in the three demonstration accounts. They ran twice (the
+first run had mistakes in the check script itself), so 12 sign-ins, each audited, and nothing else. The reset tool's own event is the only other write.

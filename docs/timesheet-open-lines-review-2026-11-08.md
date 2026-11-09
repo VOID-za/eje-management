@@ -1,5 +1,13 @@
 # The seven open timesheet lines on submitted dates — investigation, 8 November 2026
 
+> **9 November 2026: CLEARED BY THE RESET, PRESERVED IN THE ARCHIVE.**
+> - The owner decided the attendance and timesheet reset (FORMS-RESET-1), which covers these seven lines by name.
+> - They were read unchanged (same row hashes) just before it ran.
+> - The reset removed them from the operational system, with every other form record.
+> - A separate decryption of the encrypted archive found all seven in it
+>   (`/var/backups/eje/forms-reset-archive-2026-11-09T20-19-45Z/`, 7/7).
+> - Details: `docs/forms-reset-2026-11-09.md`. The investigation below is kept as written.
+
 Asked for by the owner on 8 November 2026 after the v1.8.0 report. **Read only: none of these records, nor the
 submitted timesheets, was changed, moved, merged, submitted, processed or deleted.** Each line was read with its row
 hash (`md5` of the whole row) before the work, before the v1.9.0 release and after it: byte-identical all three
