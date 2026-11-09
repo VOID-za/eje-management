@@ -15,6 +15,7 @@ import {
 import type { OperationContext } from './context';
 import { audit } from './audit';
 import { WorkflowError } from './errors';
+import { holdFormLock } from './form-locks';
 import { sanitiseDocumentName } from '@/lib/payroll-files';
 
 /**
@@ -252,6 +253,9 @@ const assertMaySetTimesheetRequired = async (context: OperationContext, target: 
     ]);
   }
   if (required) return;
+  // Held as completing and submitting hold them, in the same order: a timesheet completed while this reads cannot slip past it.
+  await holdFormLock(context, target.id, 'attendance');
+  await holdFormLock(context, target.id, 'timesheet');
   const [forms, drafts, periods] = await Promise.all([
     context.repos.payroll.listFormCompletions(target.id),
     context.repos.payroll.listCorrectionDrafts(target.id),
