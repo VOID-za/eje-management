@@ -78,8 +78,18 @@ describeDb('the attendance and timesheet reset (FORMS-RESET-1)', () => {
     const done = await completeForm<{ id: string }>(tech, IDS.technician, 'attendance', shift(today, -3), shift(today, -1));
     expect(done.status, JSON.stringify(done.error)).toBe(200);
     expect((await tech.post(`/api/payroll/forms/${IDS.technician}/withdraw`, { completionId: done.data.id })).status).toBe(200);
+    // Its correction, completed for the same dates: a completion that `corrects_id` the withdrawn one.
+    const corrected = await completeForm(tech, IDS.technician, 'attendance', shift(today, -3), shift(today, -1));
+    expect(corrected.status, JSON.stringify(corrected.error)).toBe(200);
     expect((await completeForm(tech, IDS.technician, 'timesheet', shift(today, -3), shift(today, -1))).status).toBe(200);
-    // An old daily comment (0033) and a legacy month (0037), as an old database holds them.
+    // A name given to the next working PDF.
+    const renamed = await tech.post(`/api/payroll/forms/${IDS.technician}/rename`, { kind: 'attendance', name: 'Sipho next.pdf' });
+    expect(renamed.status, JSON.stringify(renamed.error)).toBe(200);
+    // A monthly submission (PAY-02, retired by PAYROLL-ONE-1 but held by production), an old daily comment (0033)
+    // and a legacy month (0037), as an old database holds them.
+    // A notification that is not about a form, which must stay.
+    await db.insert(schema.notifications).values({ id: crypto.randomUUID(), recipientId: IDS.technician, type: 'job_assigned', title: 'EJE-1001 assigned to you', channels: ['in_app'] });
+    await db.insert(schema.monthlySubmissions).values({ id: crypto.randomUUID(), userId: IDS.coordinator, month: '2026-01', timesheetPeriodId: null, attendanceSnapshot: { days: [] }, submittedAt: new Date().toISOString(), submittedBy: IDS.coordinator });
     await db.insert(schema.timesheetComments).values({ id: crypto.randomUUID(), userId: IDS.otherTechnician, workDate: shift(today, -30), comment: 'Old.', updatedBy: IDS.otherTechnician, commentedAt: new Date().toISOString() });
     await db.insert(schema.timesheetMonths).values({ id: crypto.randomUUID(), userId: IDS.otherTechnician, month: '2026-01', comment: '', updatedBy: IDS.otherTechnician, commentedAt: new Date().toISOString() });
   };
@@ -104,11 +114,12 @@ describeDb('the attendance and timesheet reset (FORMS-RESET-1)', () => {
     await fillEveryForm();
     const client = db.$client;
     const before = await countForms(client);
-    for (const table of FORM_TABLES.filter((name) => !['timesheet_line_drafts', 'payroll_document_names', 'monthly_submissions'].includes(name))) {
+    // Every form table holds rows (a line draft only exists while a line is half-typed in a browser).
+    for (const table of FORM_TABLES.filter((name) => name !== 'timesheet_line_drafts')) {
       expect(before[table], table).toBeGreaterThan(0);
     }
+    expect((await db.select().from(schema.payrollFormCompletions)).some((form) => form.correctsId !== null)).toBe(true);
     expect(before['notifications (form)']).toBeGreaterThan(0);
-    expect(before['api_idempotency (form)']).toBeGreaterThan(0);
     const files = formStorageFiles(storage);
     expect(files.length).toBeGreaterThanOrEqual(4);
     const others = await fingerprintOthers(client);
@@ -180,6 +191,27 @@ describeDb('the attendance and timesheet reset (FORMS-RESET-1)', () => {
     await expect(resetForms(db.$client, { archiveRoot: archives, storageRoot: storage, key: KEY, dryRun: false })).rejects.toThrow(/Finance package/u);
     expect(await countForms(db.$client)).toEqual(before);
     expect(existsSync(join(storage, 'payroll-submissions'))).toBe(true);
+  });
+
+  it('a delete that fails rolls everything back — rows, guard triggers, stored PDFs — and an executed run keeps the archive it wrote', async () => {
+    await fillEveryForm();
+    // Something outside the forms that references a form row: the foreign key, still enforced, refuses the delete.
+    await db.execute(sql`create table reset_probe (attendance_id uuid references attendance(id))`);
+    try {
+      await db.execute(sql`insert into reset_probe select id from attendance limit 1`);
+      const before = await countForms(db.$client);
+      const files = formStorageFiles(storage);
+      await expect(resetForms(db.$client, { archiveRoot: archives, storageRoot: storage, key: KEY, dryRun: false, expect: before })).rejects.toThrow(/reset_probe|foreign key/u);
+      expect(await countForms(db.$client)).toEqual(before);
+      expect(formStorageFiles(storage)).toEqual(files);
+      const [guard] = await db.$client<{ enabled: string }[]>`select tgenabled::text as enabled from pg_trigger where tgname = 'payroll_form_completions_guard'`;
+      expect(guard?.enabled).toBe('O');
+      const kept = readdirSync(archives);
+      expect(kept).toHaveLength(1);
+      expect(readdirSync(join(archives, kept[0]!)).filter((file) => file.endsWith('.tar.enc'))).toHaveLength(1);
+    } finally {
+      await db.execute(sql`drop table reset_probe`);
+    }
   });
 
   it('refuses when a stored form PDF a row names is missing, changing nothing', async () => {

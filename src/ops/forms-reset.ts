@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, copyFileSync } from 'node:fs';
+import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import postgres, { type Sql, type TransactionSql } from 'postgres';
 import { decryptFile, encryptFile, keyFingerprint, readBackupKey } from '@/db/backup/crypto';
@@ -24,7 +25,7 @@ import { readStorageConfiguration } from '@/services/production/file-storage';
  *      it is archived and cleared, so the archive is exactly what was deleted.
  *   2. Read every row of every form table, plus the records that only exist
  *      because of a form (the office's "timesheet submitted / correction"
- *      notifications, the cached responses of form requests), plus — as a copy
+ *      notifications), plus — as a copy
  *      only — the form audit events, which stay in the audit trail untouched.
  *   3. Copy the stored form PDFs, write a manifest, tar, encrypt with the backup
  *      key (AES-256-GCM, `src/db/backup/crypto.ts`), then DECRYPT IT AGAIN and
@@ -67,10 +68,16 @@ export const FORM_TABLES = [
 
 export type FormTable = (typeof FORM_TABLES)[number];
 
-/** Rows of shared tables that exist only because of a form. Archived and deleted. */
+/**
+ * Rows of shared tables that exist only because of a form. Archived and deleted.
+ *
+ * NOT the cached responses of form requests (`api_idempotency`): they are a
+ * 24-hour replay cache, not form records. Kept, a browser retrying a request it
+ * sent before the reset is answered from the cache and creates nothing; deleted,
+ * the retry would run again and bring an old form back.
+ */
 export const ASSOCIATED = {
   notifications: `type in ('timesheet_submitted', 'timesheet_correction_requested', 'timesheet_correction_decided')`,
-  api_idempotency: `operation ~ '^(attendance|timesheets|payroll)\\.'`,
 } as const;
 
 /** Copied into the archive as evidence; NEVER deleted — the audit trail is append-only. */
@@ -106,6 +113,7 @@ export interface ResetResult {
   readonly auditCopied: number;
   readonly files: readonly string[];
   readonly filesRemoved: number;
+  readonly filesLeft: readonly string[];
   readonly othersUnchanged: number;
 }
 
@@ -196,7 +204,7 @@ interface Manifest {
   readonly kind: 'eje-forms-reset-archive';
   readonly createdAt: string;
   readonly database: string;
-  readonly migrations: number;
+  readonly migrations: number | null;
   readonly counts: Counts;
   readonly auditCopied: number;
   readonly files: Record<string, string>;
@@ -204,16 +212,24 @@ interface Manifest {
 
 /**
  * Reads, archives, deletes and proves, in one transaction. Throws (and rolls
- * back) on any refusal; the archive of a refused run is removed with it.
+ * back) on any refusal. An executed run's encrypted archive is NEVER removed
+ * once written — a commit whose acknowledgement was lost must not take the
+ * only copy with it; a refused run that wrote none leaves nothing behind.
+ *
+ * The plaintext is assembled in the OS temporary directory, never beside the
+ * backups: run under systemd's PrivateTmp, it disappears with the unit even if
+ * the process is killed half-way.
  */
 export const resetForms = async (sql: Sql, options: ResetOptions): Promise<ResetResult> => {
   const log = options.log ?? (() => undefined);
   const now = options.now ?? new Date();
   const name = `forms-reset-archive-${stamp(now)}`;
   const archiveDir = join(resolve(options.archiveRoot), name);
-  const work = join(archiveDir, 'plain');
   if (existsSync(archiveDir)) throw new ResetRefused(`${archiveDir} already exists.`);
-  mkdirSync(work, { recursive: true, mode: 0o700 });
+  mkdirSync(archiveDir, { recursive: true, mode: 0o700 });
+  const scratch = mkdtempSync(join(tmpdir(), 'eje-forms-reset-'));
+  const work = join(scratch, 'plain');
+  mkdirSync(work, { mode: 0o700 });
   const archive = join(archiveDir, `${name}.tar.enc`);
   const fingerprint = keyFingerprint(options.key);
   let committed = false;
@@ -237,8 +253,12 @@ export const resetForms = async (sql: Sql, options: ResetOptions): Promise<Reset
         }
       }
       const othersBefore = await fingerprintOthers(tx);
-      const [identity] = await tx<{ database: string; migrations: number }[]>`
-        select current_database() as database, (select count(*)::int from drizzle.__drizzle_migrations) as migrations`;
+      const [identity] = await tx<{ database: string; journal: boolean }[]>`
+        select current_database() as database, to_regclass('drizzle.__drizzle_migrations') is not null as journal`;
+      // The migration count, where the database keeps a journal (a test database built from the schema has none).
+      const migrations = identity!.journal
+        ? Number((await tx<{ count: number }[]>`select count(*)::int as count from drizzle.__drizzle_migrations`)[0]?.count ?? 0)
+        : null;
 
       // 2. Every row, exactly as stored.
       mkdirSync(join(work, 'tables'), { mode: 0o700 });
@@ -268,26 +288,37 @@ export const resetForms = async (sql: Sql, options: ResetOptions): Promise<Reset
         copyFileSync(join(options.storageRoot, file), target);
         fileSums[`storage/${file}`] = sha256(target);
       }
-      const manifest: Manifest = { kind: 'eje-forms-reset-archive', createdAt: now.toISOString(), database: identity!.database, migrations: identity!.migrations, counts: archived, auditCopied, files: fileSums };
+      const manifest: Manifest = { kind: 'eje-forms-reset-archive', createdAt: now.toISOString(), database: identity!.database, migrations, counts: archived, auditCopied, files: fileSums };
       writeFileSync(join(work, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
 
-      const tarball = join(archiveDir, 'plain.tar');
+      const tarball = join(scratch, 'plain.tar');
       run('tar', ['-cf', tarball, '-C', work, '.']);
       const encrypted = await encryptFile(tarball, archive, options.key);
       rmSync(tarball, { force: true });
       rmSync(work, { recursive: true, force: true });
+      // On the disk before anything is deleted: the archive, and its directory entry.
+      for (const path of [archive, archiveDir]) {
+        const handle = openSync(path, 'r');
+        try {
+          fsyncSync(handle);
+        } finally {
+          closeSync(handle);
+        }
+      }
       log(`archive  ${archive} (${encrypted.bytes} bytes, key ${fingerprint})`);
 
       // The archive is proved readable BEFORE anything is deleted.
-      await verifyArchive(archive, options.key, manifest);
+      await verifyArchive(archive, options.key, manifest, scratch);
       log('archive  decrypted again: every table count and every file checksum match');
 
       // 4. Delete. The guards are the database's own refusal of exactly this; they come back as they were.
       const triggers = async () =>
         tx<{ name: string; enabled: string }[]>`
-          select tgrelid::regclass::text || '.' || tgname as name, tgenabled::text as enabled from pg_trigger
-          where not tgisinternal and tgrelid::regclass::text in ${tx(FORM_TABLES as unknown as string[])} order by 1`;
+          select c.relname || '.' || t.tgname as name, t.tgenabled::text as enabled
+          from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
+          where not t.tgisinternal and n.nspname = 'public' and c.relname in ${tx(FORM_TABLES as unknown as string[])} order by 1`;
       const triggersBefore = await triggers();
+      if (triggersBefore.length === 0) throw new ResetRefused('No guard trigger was found on the form tables; this is not the schema this tool was written for.');
       for (const table of FORM_TABLES) await tx.unsafe(`alter table ${ident(table)} disable trigger user`);
       // The two self-references first, so no row waits on another row of its own table.
       await tx`update payroll_form_completions set corrects_id = null where corrects_id is not null`;
@@ -339,8 +370,8 @@ export const resetForms = async (sql: Sql, options: ResetOptions): Promise<Reset
         const root = join(options.storageRoot, prefix);
         if (existsSync(root) && formStorageFiles(options.storageRoot).length === 0) rmSync(root, { recursive: true });
       }
-      if (formStorageFiles(options.storageRoot).length > 0) throw new ResetRefused('Stored form files remain after the reset; the database is cleared and the archive holds them.');
     }
+    const filesLeft = committed ? formStorageFiles(options.storageRoot) : [];
     const report: ResetResult = {
       dryRun: options.dryRun,
       archive,
@@ -352,17 +383,20 @@ export const resetForms = async (sql: Sql, options: ResetOptions): Promise<Reset
       auditCopied: result.auditCopied,
       files: result.files,
       filesRemoved,
+      filesLeft,
       othersUnchanged: result.othersUnchanged,
     };
     writeFileSync(join(archiveDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
     if (options.dryRun) rmSync(archiveDir, { recursive: true, force: true });
+    if (filesLeft.length > 0) log(`WARNING  stored form files appeared after the commit and were left: ${filesLeft.join(', ')}`);
     return report;
   } catch (cause) {
-    // Refused or failed before the commit: the database is as it was, so this run's archive goes.
-    if (!committed) rmSync(archiveDir, { recursive: true, force: true });
+    // A dry run never commits, and a run that wrote no archive deleted nothing: those leave nothing behind.
+    // An executed run that wrote its archive keeps it, whatever happened after.
+    if (options.dryRun || !existsSync(archive)) rmSync(archiveDir, { recursive: true, force: true });
     throw cause;
   } finally {
-    rmSync(work, { recursive: true, force: true });
+    rmSync(scratch, { recursive: true, force: true });
   }
 };
 
@@ -372,11 +406,9 @@ class DryRunDone extends Error {
   }
 }
 
-/** Decrypts the archive to a scratch directory beside it and checks it against the manifest; leaves no plaintext. */
-export const verifyArchive = async (archive: string, key: Buffer, expected?: Manifest): Promise<Manifest> => {
-  const scratch = join(dirname(archive), 'verify');
-  rmSync(scratch, { recursive: true, force: true });
-  mkdirSync(scratch, { recursive: true, mode: 0o700 });
+/** Decrypts the archive to a temporary directory and checks it against the manifest; leaves no plaintext. */
+export const verifyArchive = async (archive: string, key: Buffer, expected?: Manifest, under: string = tmpdir()): Promise<Manifest> => {
+  const scratch = mkdtempSync(join(under, 'verify-'));
   try {
     const tarball = join(scratch, 'plain.tar');
     await decryptFile(archive, tarball, key);
@@ -390,6 +422,8 @@ export const verifyArchive = async (archive: string, key: Buffer, expected?: Man
       if (lines.length !== count) throw new ResetRefused(`The archive holds ${lines.length} rows of ${table}, not ${count}.`);
       for (const line of lines) JSON.parse(line);
     }
+    const audit = readFileSync(join(scratch, 'x', 'tables', 'audit_events.form-copy.jsonl'), 'utf8').split('\n').filter((line) => line.length > 0);
+    if (audit.length !== manifest.auditCopied) throw new ResetRefused(`The archive holds ${audit.length} audit events, not ${manifest.auditCopied}.`);
     for (const [file, sum] of Object.entries(manifest.files)) {
       if (sha256(join(scratch, 'x', file)) !== sum) throw new ResetRefused(`The archived ${file} does not match its checksum.`);
     }
