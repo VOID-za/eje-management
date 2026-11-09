@@ -310,7 +310,8 @@ const partsReceivedOf = (job: JobCardModelInput['job']): JobCardModel['partsRece
     ...(definition.capturesRepairItem && items.length > 1
       ? items.map((item, index) => ({
           label: `Part ${index + 1} received`,
-          value: [item.description, item.partNumber.length > 0 ? `(${item.partNumber})` : '', `× ${item.quantity ?? 1}`]
+          // TR-PARTS-ORDER-1: the editor's order — Part number, Description, Quantity.
+          value: [[item.partNumber, item.description].filter((part) => part.length > 0).join(' — '), `× ${item.quantity ?? 1}`]
             .filter((part) => part.length > 0)
             .join(' '),
         }))

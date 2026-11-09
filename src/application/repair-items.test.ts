@@ -208,7 +208,7 @@ describe('parts received on the job card PDF (PDF-RECV-2)', () => {
     // The model agrees: nothing received under Job details; the parts in `partsReceived`.
     expect(model.jobDetails.some((row) => /received$|^Collection$|^Waybill$/u.test(row.label))).toBe(false);
     expect(model.partsReceived?.rows.map((row) => row.label)).toEqual(['Part 1 received', 'Part 2 received', 'Part 3 received', 'Part 4 received']);
-    expect(model.partsReceived?.rows[0]?.value).toBe('Bearing (BRG-001) × 2');
+    expect(model.partsReceived?.rows[0]?.value).toBe('BRG-001 — Bearing × 2');
     expect(model.received?.rows.map((row) => row.label)).toEqual(['Collection']);
   });
 
