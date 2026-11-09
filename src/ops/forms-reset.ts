@@ -325,6 +325,9 @@ export const resetForms = async (sql: Sql, options: ResetOptions): Promise<Reset
       await tx`update payroll_submissions set superseded_at = null, superseded_by = null, superseded_by_submission = null where superseded_by_submission is not null`;
       for (const table of FORM_TABLES) await tx.unsafe(`delete from ${ident(table)}`);
       for (const [table, where] of Object.entries(ASSOCIATED)) await tx.unsafe(`delete from ${ident(table)} where ${where}`);
+      // The deferred foreign keys (payroll_submissions' own, monthly_submissions') are checked NOW, not at commit:
+      // a table with pending trigger events cannot have its triggers altered, and a violation should refuse here.
+      await tx`set constraints all immediate`;
       for (const table of FORM_TABLES) await tx.unsafe(`alter table ${ident(table)} enable trigger user`);
       for (const trigger of triggersBefore.filter((row) => row.enabled === 'D')) {
         const [table, name] = trigger.name.split('.');
