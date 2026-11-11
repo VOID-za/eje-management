@@ -60,12 +60,15 @@ describeDb('the attendance and timesheet reset (FORMS-RESET-1)', () => {
     expect(sentLine.status, JSON.stringify(sentLine.error)).toBe(200);
     const sent = await submitForms(tech, IDS.technician, shift(today, -9), shift(today, -7));
     expect(sent.status, JSON.stringify(sent.error)).toBe(200);
-    // A correction of that sent timesheet, waiting for the office.
-    const asked = await tech.post(`/api/timesheets/${IDS.technician}/period/corrections`, {
-      from: shift(today, -9), to: shift(today, -7), reason: 'OT was 3', comment: '',
-      lines: [{ entryId: sentLine.data.entry.id, date: shift(today, -8), customerName: 'ABC Engineering', overtimeHours: 3, doubleHours: 0 }],
+    // A correction of that sent timesheet, waiting for the office. No longer asked for through the app (TS-FINAL-1,
+    // 11 November 2026), but one asked for before is a form record like any other, so the 0039 table is filled as it held it.
+    const [period] = await db.select().from(schema.timesheetPeriods).where(eq(schema.timesheetPeriods.userId, IDS.technician));
+    const snapshot = period!.snapshot as { entries: { overtimeHours: number }[] };
+    await db.insert(schema.timesheetCorrections).values({
+      id: crypto.randomUUID(), periodId: period!.id, userId: IDS.technician, sequence: 1, reason: 'OT was 3',
+      beforeSnapshot: snapshot, afterSnapshot: { ...snapshot, entries: snapshot.entries.map((entry) => ({ ...entry, overtimeHours: 3 })) },
+      requestedBy: IDS.technician, requestedAt: new Date().toISOString(),
     });
-    expect(asked.status, JSON.stringify(asked.error)).toBe(200);
     // Open lines, one removed, a working comment.
     for (const name of ['Open one', 'Open two']) {
       expect((await tech.post(`/api/timesheets/${IDS.technician}/lines`, { id: crypto.randomUUID(), date: shift(today, -2), typed: typed('1', name), expectedRevision: null })).status).toBe(200);
