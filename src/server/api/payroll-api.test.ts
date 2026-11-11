@@ -47,7 +47,7 @@ describe('monthly payroll over HTTP', () => {
     expect((await technician.post(`/api/timesheets/${SIPHO}/entries`, { date: `${MONTH}-03`, customerName: 'ABC', overtimeHours: 1, doubleHours: 0 })).status).toBe(200);
     // PAYROLL-ONE-1: both forms together for the period, on My Monthly Forms; the old Submit is retired.
     expect((await technician.post(`/api/payroll/${SIPHO}/${MONTH}/submit`, { confirmUnrecorded: true })).status).toBe(422);
-    expect((await submitForms(technician, SIPHO, from, to, { confirmUnrecorded: false })).status).toBe(422); // weekdays unconfirmed
+    // FORM-OPTIONAL-1: blank weekdays are never asked about — the forms go without the old confirmation.
     const submitted = await submitForms(technician, SIPHO, from, to);
     expect(submitted.status, JSON.stringify(submitted.error)).toBe(200);
     // Submit to Office again, with nothing newly completed: refused — what was submitted is never submitted twice.

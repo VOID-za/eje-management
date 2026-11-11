@@ -79,6 +79,47 @@ describeDb('payroll forms on PostgreSQL (migration 0052)', () => {
     }
   });
 
+  it('FORM-LIFECYCLE-2: a Submit that fails half-way submits NOTHING — no submission, no timesheet, no ledger, neither form marked; still the owner\'s to correct; retried, it goes once', async () => {
+    const tech = await signIn('sipho@example-test.co.za');
+    const [from, to] = ['2026-10-01', '2026-10-25'];
+    expect((await tech.post(`/api/timesheets/${IDS.technician}/lines`, { id: crypto.randomUUID(), date: '2026-10-06', typed: typed('2'), expectedRevision: null })).status).toBe(200);
+    expect((await tech.post('/api/attendance', { userId: IDS.technician, date: '2026-10-06', status: 'present', note: '' })).status).toBe(200);
+    for (const kind of ['timesheet', 'attendance'] as const) {
+      const done = await completeForm(tech, IDS.technician, kind, from, to);
+      expect(done.status, JSON.stringify(done.error)).toBe(200);
+    }
+    // The failure planted at the LAST write of the submission: marking the attendance form as submitted.
+    await db.execute(sql.raw(`
+      create function test_refuse_submission() returns trigger language plpgsql as $$
+      begin raise exception 'test fixture: this submission is refused half-way'; end $$;
+      create trigger test_refuse_submission before update on payroll_form_completions for each row
+        when (new.submission_id is not null and new.kind = 'attendance') execute function test_refuse_submission();
+    `));
+    try {
+      const failed = await tech.post(`/api/payroll/forms/${IDS.technician}/submit`, {});
+      expect(failed.status).toBeGreaterThanOrEqual(400);
+    } finally {
+      await db.execute(sql.raw('drop trigger test_refuse_submission on payroll_form_completions; drop function test_refuse_submission();'));
+    }
+    expect(await counts()).toMatchObject({ payroll: 0, current: 0 });
+    expect(await db.select().from(schema.timesheetSubmittedLines)).toHaveLength(0);
+    const forms = await db.select().from(schema.payrollFormCompletions);
+    expect(forms.map((form) => [form.kind, form.submissionId]).sort()).toEqual([['attendance', null], ['timesheet', null]]);
+    // Both still wait, completed and editable by their owner (Correct / Edit is allowed, so nothing was locked as submitted).
+    const state = await tech.get<{ timesheet: { id: string } | null; attendance: { id: string } | null }>(`/api/payroll/forms/${IDS.technician}/completed`);
+    expect([state.data.timesheet?.id, state.data.attendance?.id].sort()).toEqual(forms.map((form) => form.id).sort());
+    // Retried: submitted once, both marked.
+    const again = await tech.post(`/api/payroll/forms/${IDS.technician}/submit`, {});
+    expect(again.status, JSON.stringify(again.error)).toBe(200);
+    expect(await counts()).toMatchObject({ payroll: 1, current: 1 });
+    expect((await db.select().from(schema.payrollFormCompletions)).every((form) => form.submissionId !== null)).toBe(true);
+    // And final: a second submission, and taking either back to edit, are refused.
+    expect((await tech.post(`/api/payroll/forms/${IDS.technician}/submit`, {})).status).toBe(422);
+    for (const form of forms) {
+      expect((await tech.post(`/api/payroll/forms/${IDS.technician}/withdraw`, { completionId: form.id })).error?.violations[0]?.code).toBe('form_already_submitted');
+    }
+  });
+
   it('three Submit to Office requests racing make ONE submission; the losers write nothing; both completed forms are marked once', async () => {
     const tech = await signIn('sipho@example-test.co.za');
     await tech.post(`/api/timesheets/${IDS.technician}/lines`, { id: crypto.randomUUID(), date: '2026-11-05', typed: typed('1'), expectedRevision: null });

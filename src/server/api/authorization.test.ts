@@ -409,11 +409,12 @@ describe('managing people', () => {
     // The rest of a Senior Tech account stays out of the Office's reach.
     expect((await coordinator.post(`/api/users/${ids.secondMaster}/set_active`, { active: false })).status).toBe(403);
 
-    // A Senior Tech: their own, never another Senior Tech's or a Technician's.
+    // A Senior Tech: their own and — covering for the Office (OFFICE-COVER-1) — a Technician's; never another Senior Tech's.
     expect((await set(master, ids.master, false)).status).toBe(200);
     expect((await set(master, ids.master, true)).status).toBe(200);
+    expect((await set(master, ids.otherTechnician, false)).status).toBe(200);
+    expect((await set(master, ids.otherTechnician, true)).status).toBe(200);
     await refused(master, ids.secondMaster);
-    await refused(master, ids.technician);
 
     // A Technician: nobody's, their own included.
     for (const id of Object.values(ids)) await refused(technician, id);

@@ -374,12 +374,12 @@ const TimesheetsPage = () => {
                       }}
                       data-testid="timesheet-complete"
                     >
-                      Completed
+                      Complete
                     </Button>
                   </div>
                   {unsaved && (
                     <p className="mt-2 text-xs text-steel-600" data-testid="timesheet-complete-wait">
-                      Completed is offered once every change is saved.
+                      Complete is offered once every change is saved.
                     </p>
                   )}
                 </Card>
@@ -387,11 +387,10 @@ const TimesheetsPage = () => {
 
               {draft !== null && (
                 <div className="mb-5 rounded-[var(--radius-control)] border border-amber-eje-200 bg-amber-eje-50 p-3 text-sm text-steel-800" role="note" data-testid="timesheet-correction-draft">
-                  <p className="font-semibold">Correction draft — timesheet for {draft.periodLabel}</p>
+                  <p className="font-semibold">Returned for editing — timesheet for {draft.periodLabel}</p>
                   <p className="mt-1">
-                    You withdrew “{draft.withdrawnFileName}” to correct it. It is kept on My Monthly Forms exactly as it was completed; this is a
-                    separate draft with the same lines. Correct it here, then press <strong>Completed</strong> for {draft.periodLabel} — only the
-                    completed correction can be submitted to the office.
+                    You took “{draft.withdrawnFileName}” back to edit. Every line you entered is here: change, add or remove what you need, then
+                    press <strong>Complete</strong> for {draft.periodLabel} to put it back on My Monthly Forms. It is not submitted until you submit it there.
                   </p>
                   {(range?.from !== draft.from || range?.to !== draft.to) && (
                     <Button className="mt-2" size="sm" variant="secondary" onClick={() => choose({ from: draft.from, to: draft.to })} data-testid="timesheet-correction-draft-dates">
@@ -402,8 +401,8 @@ const TimesheetsPage = () => {
               )}
               {justCompleted !== null && (
                 <p role="status" className="mb-5 rounded-[var(--radius-control)] border border-verdant-200 bg-verdant-50 px-3 py-2 text-sm text-verdant-700" data-testid="timesheet-completed-notice">
-                  Your timesheet “{justCompleted.fileName}” for {justCompleted.periodLabel} is completed and locked. It is on{' '}
-                  <a href="/payroll/mine" className="font-medium underline">My Monthly Forms</a>, waiting to be submitted to the office with your attendance.
+                  Your timesheet “{justCompleted.fileName}” for {justCompleted.periodLabel} is completed — not submitted yet. It is on{' '}
+                  <a href="/payroll/mine" className="font-medium underline">My Monthly Forms</a>, waiting to be submitted to the office with your attendance; until then you can still Correct / Edit it there.
                 </p>
               )}
               {usable && (

@@ -29,6 +29,7 @@ import {
 } from '@/lib/payroll-files';
 import { normalisePdfFileName, sameFileName } from '@/lib/pdf-file-name';
 import { formatDayAndDate, formatPeriod, isTimesheetDay } from '@/lib/timesheet-dates';
+import { isBlankTimesheetLine } from '@/lib/timesheet-line';
 import { renderAttendancePdf } from '@/services/simulated/attendance-pdf';
 import { OnePageOverflow } from '@/services/simulated/one-page-form';
 import { renderTimesheetPdf } from '@/services/simulated/timesheet-pdf';
@@ -253,7 +254,9 @@ export const loadPayrollForms = async (
   // A stored line being moved by a draft is in these dates by EITHER date: its stored copy would be frozen by them.
   const touching = lines.filter((line) => within(line.date) || within(line.entry?.date));
   // A draft with no date could be meant for any period: it is in the way of every submission.
-  const incomplete = [...touching, ...lines.filter((line) => line.date === null && !within(line.entry?.date))].filter((line) => !line.complete);
+  // FORM-OPTIONAL-1: a blank line never stored as a line (an empty draft left from before) is no line at all.
+  const incomplete = [...touching, ...lines.filter((line) => line.date === null && !within(line.entry?.date))]
+    .filter((line) => !line.complete && !(line.entry === null && isBlankTimesheetLine(line.typed)));
   const complete = inDates.filter((line) => line.complete && line.entry !== null).map((line) => line.entry!);
   const sum = (pick: (entry: (typeof complete)[number]) => number) => complete.reduce((total, entry) => total + pick(entry), 0);
 
@@ -339,7 +342,8 @@ export const loadPayrollForms = async (
     repeats,
     problems,
     needs: {
-      confirmUnrecorded: unrecorded.length > 0,
+      // FORM-OPTIONAL-1 (the owner, 11 November 2026): a day without an entry is a day not worked — never asked about.
+      confirmUnrecorded: false,
       confirmNoLines: timesheetRequired && complete.length === 0,
     },
     canSubmit: owner && problems.length === 0,
@@ -543,13 +547,6 @@ export const submitPayrollForms = async (
   // Anything else the screen lists as stopping it (both PDFs named the same, …).
   if (completed === undefined && state.problems.length > 0) {
     throw refuse('These forms cannot be submitted yet.', 'payroll_forms_blocked', state.problems.join(' '));
-  }
-  if (state.needs.confirmUnrecorded && input.confirmUnrecorded !== true) {
-    throw refuse(
-      `${state.attendance.unrecordedWeekdays.length} weekday${state.attendance.unrecordedWeekdays.length === 1 ? ' has' : 's have'} no attendance recorded.`,
-      'attendance_incomplete',
-      `${state.attendance.unrecordedWeekdays.map(formatDayAndDate).join(', ')}. Record them, or confirm they are right as they are.`,
-    );
   }
   if (state.needs.confirmNoLines && input.confirmNoLines !== true) {
     throw refuse(

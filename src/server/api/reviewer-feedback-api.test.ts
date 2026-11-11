@@ -164,6 +164,34 @@ describe('the delivery note over HTTP (PARTS-03/04/05)', () => {
   });
 });
 
+describe('only the owner edits a form, over HTTP (FORM-LIFECYCLE-2, OFFICE-COVER-1, 11 November 2026)', () => {
+  beforeEach(() => {
+    startTestServer();
+  });
+
+  it('the Office and both Senior Techs — with every Office permission — are refused every write to a technician\'s forms', async () => {
+    const technician = await signedInAs(DEMO_USERS.technician);
+    const today = businessToday();
+    const line = { id: crypto.randomUUID(), date: shift(today, -2), typed: { pick: '', customerName: 'ABC Engineering', overtime: '2', double: '0', callout: '0', internalKm: '0', customerKm: '0' }, expectedRevision: null };
+    expect((await technician.post('/api/timesheets/user-tech-sipho/lines', line)).status).toBe(200);
+    for (const who of [DEMO_USERS.coordinator, DEMO_USERS.master, DEMO_USERS.secondMaster, DEMO_USERS.otherTechnician]) {
+      const client = await signedInAs(who);
+      const writes = [
+        await client.post('/api/timesheets/user-tech-sipho/lines', { ...line, typed: { ...line.typed, overtime: '9' } }),
+        await client.post('/api/timesheets/user-tech-sipho/lines', { ...line, id: crypto.randomUUID() }),
+        await client.post(`/api/timesheets/user-tech-sipho/lines/${line.id}/remove`, {}),
+        await client.post('/api/attendance', { userId: 'user-tech-sipho', date: shift(today, -2), status: 'present', note: '' }),
+        await client.post('/api/payroll/forms/user-tech-sipho/complete', { kind: 'timesheet', from: shift(today, -5), to: shift(today, -1), fileName: '' }),
+        await client.post('/api/payroll/forms/user-tech-sipho/submit', {}),
+      ];
+      expect(writes.map((response) => response.status), who).toEqual(writes.map(() => 403));
+    }
+    // His line is exactly as he typed it.
+    const lines = await technician.get<readonly { id: string; typed: { overtime: string } }[]>('/api/timesheets/user-tech-sipho/lines');
+    expect(lines.data.find((candidate) => candidate.id === line.id)?.typed.overtime).toBe('2');
+  });
+});
+
 describe('a sent timesheet is final over HTTP (TS-FINAL-1, the owner, 11 November 2026)', () => {
   beforeEach(() => {
     startTestServer();

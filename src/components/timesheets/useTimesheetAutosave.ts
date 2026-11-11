@@ -68,7 +68,7 @@ export const useTimesheetAutosave = (personId: string | null, onSaved: () => voi
           return { revision: sheet.comment, comment: sheet.comment };
         }
         const line = (await timesheets.lines(personId)).find((candidate) => candidate.id === id);
-        return line === undefined ? null : { revision: line.revision, date: line.date, typed: line.typed };
+        return line === undefined || line.revision === null ? null : { revision: line.revision, date: line.date, typed: line.typed };
       },
     });
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the autosaver starts in the browser only, once per person.

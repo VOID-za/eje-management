@@ -236,6 +236,19 @@ export const sameTypedLine = (a: TimesheetLineTyped, b: TimesheetLineTyped): boo
   );
 };
 
+/**
+ * A LINE NOTHING WAS TYPED IN (FORM-OPTIONAL-1, the owner, 11 November 2026): no customer or Workshop, and every value
+ * empty or zero. A day not worked, or no overtime, is simply left blank: such a line is never stored, never audited
+ * and never stops a timesheet from completing. Anything typed at all — a customer, an hour, a stray letter — makes it
+ * a line that has been started, and every rule applies to it.
+ */
+export const isBlankTimesheetLine = (typed: TimesheetLineTyped): boolean =>
+  typed.pick.length === 0 &&
+  typed.customerName.trim().length === 0 &&
+  [typed.overtime, typed.double, typed.callout, typed.internalKm, typed.customerKm].every(
+    (value) => value.trim() === '' || (/^[\d\s.,]*$/u.test(value) && parseTyped(value) === 0),
+  );
+
 /** Every problem of a typed line that the browser can see. Pure; the server asks the same, and more. */
 export const timesheetLineProblems = (date: string | null, typed: TimesheetLineTyped): readonly TimesheetLineProblem[] => {
   const problems: TimesheetLineProblem[] = [];

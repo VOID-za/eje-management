@@ -248,7 +248,7 @@ const assertMaySetTimesheetRequired = async (context: OperationContext, target: 
     throw new WorkflowError(`You cannot change whether ${target.id === context.actor.id ? 'you keep' : `${userFullName(target)} keeps`} a timesheet.`, [
       {
         code: 'timesheet_setting_not_permitted',
-        message: 'It is set by the Office for everybody who keeps a timesheet, Senior Techs included; a Senior Tech also sets their own.',
+        message: 'It is set by the Office for everybody who keeps a timesheet, Senior Techs included, and by a Senior Tech for Technicians, Apprentices and their own account.',
       },
     ]);
   }

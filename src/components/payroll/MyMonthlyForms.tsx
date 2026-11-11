@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { Badge, Button, ButtonLink, Card, ConfirmDialog, Icon, LoadingPanel, QueryFailure } from '@/components/ui';
 import { DocumentPreviewDialog } from '@/components/documents/DocumentPreviewDialog';
@@ -40,6 +41,7 @@ const CompletedForm = ({
   readonly onWithdrawn: () => void;
 }) => {
   const user = useCurrentUser();
+  const router = useRouter();
   const [previewing, setPreviewing] = useState<'preview' | 'print' | null>(null);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -58,6 +60,8 @@ const CompletedForm = ({
       key.current = null;
       setAsking(false);
       onWithdrawn();
+      // FORM-LIFECYCLE-2: Correct / Edit takes the form back to its own page, for its dates, with everything entered.
+      router.push(`${kind === 'timesheet' ? '/timesheets' : '/attendance'}?from=${form.from}&to=${form.to}`);
     } catch (cause) {
       const unanswered = !(cause instanceof ApiRequestError) || cause.code === 'network' || cause.code === 'internal_error';
       if (!unanswered) key.current = null;
@@ -74,17 +78,17 @@ const CompletedForm = ({
     <div className="rounded-[var(--radius-control)] border border-steel-200 p-4" data-testid={`my-forms-${kind}`} data-state={state}>
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-base font-semibold text-steel-900">{TITLE[kind]}</p>
-        {state === 'completed' && <Badge tone="green" size="sm">Completed — awaiting submission</Badge>}
+        {state === 'completed' && <Badge tone="green" size="sm">Completed — Awaiting submission</Badge>}
         {state === 'not_completed' && <Badge tone="amber" size="sm">Not completed</Badge>}
         {state === 'not_required' && <Badge tone="outline" size="sm">Not required</Badge>}
-        {state === 'correcting' && <Badge tone="amber" size="sm">Being corrected — not completed</Badge>}
+        {state === 'correcting' && <Badge tone="amber" size="sm">Returned for editing — not completed</Badge>}
       </div>
       {state === 'correcting' && draft !== null && (
         <p className="mt-1 text-sm text-steel-600" data-testid={`my-forms-${kind}-correcting`}>
-          You withdrew “{draft.withdrawnFileName}” on {formatDateTime(draft.withdrawnAt)} to correct it. Correct it on the {page} page
-          ({draft.periodLabel}) and press <strong>Completed</strong> there again — it can be submitted once it is completed.{' '}
-          <ButtonLink href={kind === 'timesheet' ? '/timesheets' : '/attendance'} size="sm" variant="ghost" data-testid={`my-forms-${kind}-open`}>
-            Open {page}
+          You took “{draft.withdrawnFileName}” back to edit on {formatDateTime(draft.withdrawnAt)}. Everything you entered is on the {page} page
+          ({draft.periodLabel}): change what you need, then press <strong>Complete</strong> there again — it can be submitted once it is completed.{' '}
+          <ButtonLink href={`${kind === 'timesheet' ? '/timesheets' : '/attendance'}?from=${draft.from}&to=${draft.to}`} size="sm" variant="secondary" data-testid={`my-forms-${kind}-open`}>
+            Edit on the {page} page
           </ButtonLink>
         </p>
       )}
@@ -93,7 +97,7 @@ const CompletedForm = ({
       )}
       {state === 'not_completed' && (
         <p className="mt-1 text-sm text-steel-600">
-          Not completed yet. Fill it in on the {kind === 'timesheet' ? 'Timesheets' : 'Attendance'} page and press <strong>Completed</strong> there.{' '}
+          Not completed yet. Fill it in on the {kind === 'timesheet' ? 'Timesheets' : 'Attendance'} page and press <strong>Complete</strong> there.{' '}
           <ButtonLink href={kind === 'timesheet' ? '/timesheets' : '/attendance'} size="sm" variant="ghost" data-testid={`my-forms-${kind}-open`}>
             Open {kind === 'timesheet' ? 'Timesheets' : 'Attendance'}
           </ButtonLink>
@@ -106,7 +110,7 @@ const CompletedForm = ({
           </p>
           <p className="text-xs text-steel-600">
             <span data-testid={`my-forms-${kind}-period`}>{form.periodLabel}</span> · {form.summary} · completed {formatDateTime(form.completedAt)}
-            {form.completedByName === null ? '' : ` by ${form.completedByName}`} · locked
+            {form.completedByName === null ? '' : ` by ${form.completedByName}`} · not submitted yet — still yours to correct
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" leadingIcon={<Icon name="document" className="size-4" />} onClick={() => setPreviewing('preview')} data-testid={`my-forms-${kind}-preview`}>
@@ -117,8 +121,8 @@ const CompletedForm = ({
             </Button>
             <DownloadFileButton href={payroll.completedPdfUrl(form.id)} fallbackName={form.fileName} label="Download" testId={`my-forms-${kind}-download`} />
             <ExportPdfButton href={payroll.completedPdfUrl(form.id)} fallbackName={form.fileName} label="Save PDF" testId={`my-forms-${kind}-export`} />
-            <Button size="sm" variant="ghost" leadingIcon={<Icon name="edit" className="size-4" />} onClick={() => setAsking(true)} data-testid={`my-forms-${kind}-withdraw`}>
-              Withdraw and Correct
+            <Button size="sm" variant="secondary" leadingIcon={<Icon name="edit" className="size-4" />} onClick={() => setAsking(true)} data-testid={`my-forms-${kind}-withdraw`}>
+              Correct / Edit
             </Button>
           </div>
           {failure !== null && (
@@ -128,19 +132,18 @@ const CompletedForm = ({
           )}
           <ConfirmDialog
             open={asking}
-            title={`Withdraw and correct your ${kind === 'timesheet' ? 'timesheet' : 'attendance'}?`}
+            title={`Correct or edit your ${kind === 'timesheet' ? 'timesheet' : 'attendance'}?`}
             message={
               <div data-testid="withdraw-form-dialog">
                 <ul className="list-disc space-y-1 pl-5">
-                  <li>“{form.fileName}” ({form.periodLabel}) is withdrawn: it will not be submitted to the office.</li>
-                  <li>It is kept in the record exactly as it was completed — its content and its PDF are not changed.</li>
-                  <li>A separate draft opens with the same {kind === 'timesheet' ? 'lines' : 'days'}, on the {page} page, for you to correct.</li>
-                  <li>The correction must be completed again (Completed) before it can be submitted to the office.</li>
-                  <li>Once forms are submitted to the office, they can no longer be withdrawn.</li>
+                  <li>“{form.fileName}” ({form.periodLabel}) goes back to the {page} page with everything you entered — every {kind === 'timesheet' ? 'line' : 'day'}, as it is now.</li>
+                  <li>Change, add or remove what you need, then press <strong>Complete</strong> again to bring it back here.</li>
+                  <li>Until then it is not submitted. The completed copy stays in your record as it was (its PDF is not changed).</li>
+                  <li>Only you can do this, and only before you submit. Once submitted to the Office, forms are final.</li>
                 </ul>
               </div>
             }
-            confirmLabel="Withdraw and Correct"
+            confirmLabel="Correct / Edit"
             busy={busy}
             onCancel={() => {
               setAsking(false);
@@ -250,7 +253,7 @@ const HistoryForm = ({ entry, kind }: { readonly entry: PayrollSubmissionView; r
           {document?.fileName ?? `${entry.label}${entry.timesheetIncluded ? ' — attendance and timesheet' : ' — attendance'}`}
         </span>
         <span className="block text-xs text-steel-500">
-          {entry.label} · Submitted {formatDateTime(entry.submittedAt)}
+          {entry.label} · Submitted — Final · {formatDateTime(entry.submittedAt)}
           {entry.current ? '' : ` · replaced ${formatDateTime(entry.replacedAt ?? entry.submittedAt)}`}
           {kind === null ? ' · before 5 November 2026' : ` · Finance ${entry.financeMonthLabel}`}
         </span>
@@ -396,7 +399,7 @@ export const MyMonthlyForms = () => {
       <Card className="mb-5" data-testid="my-corrections">
         <p className="text-sm font-semibold text-steel-900">Corrections</p>
         <p className="text-xs text-steel-500">
-          Forms you withdrew before submitting them, each kept exactly as it was completed, beside its correction. A submitted form is final: it is never withdrawn or changed.
+          Forms you took back to edit before submitting them (Correct / Edit), each kept exactly as it was completed, beside its corrected version. A submitted form is final: nobody can edit, correct, withdraw or reopen it.
         </p>
         {state === null ? null : state.corrections.length === 0 ? (
           <p className="mt-3 text-sm text-steel-500" data-testid="my-corrections-empty">No form withdrawn.</p>

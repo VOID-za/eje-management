@@ -12,6 +12,7 @@ import {
 } from '@/domain';
 import {
   WORKSHOP_PICK,
+  isBlankTimesheetLine,
   parseTyped,
   randToCents,
   sameTypedLine,
@@ -50,9 +51,16 @@ import { assertMayRead, assertOwner, saveTimesheetEntry, removeTimesheetEntry, s
  * overwriting the newer line. Repeating what the line already says is never a
  * conflict, so a retry after a lost answer succeeds.
  *
+ *  - BLANK and never stored (FORM-OPTIONAL-1, 11 November 2026: nothing
+ *    typed — a day not worked, no overtime): not stored at all, and a draft
+ *    left from typing that was cleared again is dropped. It never stops the
+ *    timesheet from completing. A stored line cleared to blank is still a
+ *    change to a real line, so it is kept as a draft until it is filled in or
+ *    removed.
+ *
  * A LINE IN A CURRENT SUBMISSION is part of what was submitted: it is shown,
- * and it is changed only by a correction (TS-16) — never by typing over it.
- * Only the owner writes; the office reads (as before).
+ * and never changed (TS-FINAL-1: a submitted timesheet is final).
+ * Only the owner writes; nobody else — the Office and Senior Techs included.
  */
 
 const refuse = (message: string, code: string, detail: string): WorkflowError =>
@@ -79,8 +87,8 @@ export interface WorkingTimesheetLine {
   /** False while it is a draft — it then blocks the submission of any period holding its date. */
   readonly complete: boolean;
   readonly problems: readonly TimesheetLineProblem[];
-  /** The revision the next save must name: when the line (or its draft) was last written. */
-  readonly revision: IsoDateTime;
+  /** The revision the next save must name: when the line (or its draft) was last written; null when it was never stored (blank). */
+  readonly revision: IsoDateTime | null;
   /** The stored, complete line — null for a line that has only ever been a draft. */
   readonly entry: TimesheetEntry | null;
   /** NT and the old call-out count a line written before 28 October 2026 carries. */
@@ -169,7 +177,7 @@ export const loadWorkingLines = async (context: OperationContext, technicianId: 
     return range === undefined ? null : { from: range.from, to: range.to };
   };
   return lines.map((line) => ({ ...line, completed: completedOf(line.date) })).sort(
-    (a, b) => (a.date ?? '9999-99-99').localeCompare(b.date ?? '9999-99-99') || (a.entry?.updatedAt ?? a.revision).localeCompare(b.entry?.updatedAt ?? b.revision),
+    (a, b) => (a.date ?? '9999-99-99').localeCompare(b.date ?? '9999-99-99') || (a.entry?.updatedAt ?? a.revision ?? '').localeCompare(b.entry?.updatedAt ?? b.revision ?? ''),
   );
 };
 
@@ -231,10 +239,29 @@ const saveLineHeld = async (
     throw refuse(
       `This line is part of your submitted timesheet for ${formatPeriod(held.period.from, held.period.to)}.`,
       'timesheet_line_submitted',
-      'A submitted timesheet is kept exactly as submitted. To change it, open it under Corrections on My Monthly Forms and ask for a correction.',
+      'A submitted timesheet is final: it is kept exactly as submitted, and nothing in it can be changed.',
     );
   }
   const date = input.date === null || input.date === '' ? null : input.date;
+  /*
+   * FORM-OPTIONAL-1: a line with nothing typed in it, never stored as a line, is not kept — a day not worked is left
+   * blank, not filled with an empty record. A draft of it (typed, then cleared) goes, unless another device changed
+   * it since this screen read it: that is a conflict, decided below like any other.
+   */
+  if (entry === null && isBlankTimesheetLine(input.typed) && (draft === null || draft.updatedAt === (input.expectedRevision ?? null))) {
+    if (draft !== null) await context.repos.attendance.deleteLineDraft(input.id);
+    return {
+      id: input.id,
+      date: date !== null && /^d{4}-d{2}-d{2}$/u.test(date) ? date : null,
+      typed: input.typed,
+      complete: false,
+      problems: [],
+      revision: null,
+      entry: null,
+      historical: { normalHours: 0, callouts: 0 },
+      submitted: null,
+    };
+  }
   const shownDate = draft !== null ? draft.date : entry?.date ?? null;
   const shownTyped = draft?.typed ?? (entry === null ? null : typedOfEntry(entry));
   const revision = draft?.updatedAt ?? entry?.updatedAt ?? null;
@@ -351,7 +378,7 @@ const removeLineHeld = async (
       throw refuse(
         `This line is part of your submitted timesheet for ${formatPeriod(held.period.from, held.period.to)}.`,
         'timesheet_line_submitted',
-        'A submitted timesheet is kept exactly as submitted. To change it, ask for a correction under Corrections on My Monthly Forms.',
+        'A submitted timesheet is final: it is kept exactly as submitted, and nothing in it can be changed.',
       );
     }
     await removeTimesheetEntry(context, technicianId, lineId);

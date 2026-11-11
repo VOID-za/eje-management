@@ -124,7 +124,7 @@ const summaryOf = (form: PayrollFormCompletion): string => {
   const present = days.filter((day) => day.status === 'present').length;
   const absent = days.filter((day) => day.status === 'absent').length;
   const unrecorded = days.filter((day) => day.status === null).length;
-  return `${present} present, ${absent} absent, ${unrecorded} not recorded`;
+  return `${present} present, ${absent} absent, ${unrecorded} without an entry`;
 };
 
 const viewOf = async (context: OperationContext, form: PayrollFormCompletion): Promise<CompletedFormView> => {
@@ -407,7 +407,8 @@ const checkCompletion = async (context: OperationContext, technicianId: string, 
     fileName: names.names[kind],
     problems: codes.map((entry) => `${entry.message} ${entry.detail}`),
     needs: {
-      confirmUnrecorded: kind === 'attendance' && state.attendance.unrecordedWeekdays.length > 0,
+      // FORM-OPTIONAL-1: days without an entry are left blank — said, never something to confirm or refuse.
+      confirmUnrecorded: false,
       confirmNoLines: kind === 'timesheet' && (state.timesheet?.lineCount ?? 0) === 0,
     },
     unrecordedWeekdays: kind === 'attendance' ? state.attendance.unrecordedWeekdays : [],
@@ -454,13 +455,6 @@ export const completePayrollForm = async (context: OperationContext, technicianI
   const checked = await checkCompletion(context, technicianId, kind, input.from, input.to);
   const first = checked.codes[0];
   if (first !== undefined) throw refuse(first.message, first.code, first.detail);
-  if (checked.needs.confirmUnrecorded && input.confirmUnrecorded !== true) {
-    throw refuse(
-      `${checked.unrecordedWeekdays.length} weekday${checked.unrecordedWeekdays.length === 1 ? ' has' : 's have'} no attendance recorded.`,
-      'attendance_incomplete',
-      `${checked.unrecordedWeekdays.map(formatDayAndDate).join(', ')}. Record them, or confirm they are right as they are (Not recorded).`,
-    );
-  }
   if (checked.needs.confirmNoLines && input.confirmNoLines !== true) {
     throw refuse('Your timesheet has no lines for these dates.', 'timesheet_empty_unconfirmed', 'Add your lines, or confirm you have nothing to claim for these dates.');
   }
@@ -568,7 +562,7 @@ export const withdrawCompletedForm = async (context: OperationContext, technicia
     throw refuse(
       'This form was submitted to the office, so it cannot be withdrawn.',
       'form_already_submitted',
-      'A submitted form is read only for good. A submitted timesheet is changed by asking for a correction on My Monthly Forms.',
+      'Submitted forms are final: nobody can edit, correct, withdraw or reopen them.',
     );
   }
   if ((form.withdrawnAt ?? null) !== null) {
@@ -580,12 +574,12 @@ export const withdrawCompletedForm = async (context: OperationContext, technicia
     const entries = await openEntries(context, person.id, form.from, form.to);
     const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
     if (!sameContent(sorted, form.timesheet?.entries ?? [])) {
-      throw refuse('Your timesheet changed after it was completed.', 'payroll_form_changed', 'Nothing was withdrawn. Ask the office to look into it.');
+      throw refuse('Your timesheet changed after it was completed.', 'payroll_form_changed', 'Nothing was taken back for correcting. Reload My Monthly Forms; if it stays, tell the office.');
     }
   } else {
     const records = await context.repos.attendance.listRecords(form.from, form.to, person.id);
     if (!sameContent(attendancePeriodDays(form.from, form.to, records), form.attendance)) {
-      throw refuse('Your attendance changed after it was completed.', 'payroll_form_changed', 'Nothing was withdrawn. Ask the office to look into it.');
+      throw refuse('Your attendance changed after it was completed.', 'payroll_form_changed', 'Nothing was taken back for correcting. Reload My Monthly Forms; if it stays, tell the office.');
     }
   }
   // The comment the form was completed with comes back to the draft — never over one typed since for the next sheet.

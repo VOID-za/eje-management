@@ -132,7 +132,7 @@ describe('TS-USER-2 — who may change it (the owner, 11 November 2026)', () => 
     expect((await fresh(otherMaster)).timesheetRequired).toBe(false);
   });
 
-  it("a Senior Tech sets their own — through the editor and the single-setting path — and nobody else's", async () => {
+  it("a Senior Tech sets their own and — covering for the Office (OFFICE-COVER-1) — a Technician's and an Apprentice's; never another Senior Tech's", async () => {
     await setRequired(master, master, false);
     expect((await fresh(master)).timesheetRequired).toBe(false);
     await setTimesheetRequired(harness.as(await fresh(master)), master.id, true);
@@ -140,14 +140,16 @@ describe('TS-USER-2 — who may change it (the owner, 11 November 2026)', () => 
     // Another Senior Tech's: refused through either path.
     await refusedWith(setTimesheetRequired(harness.as(master), otherMaster.id, false), 'timesheet_setting_not_permitted');
     await expect(setRequired(master, otherMaster, false)).rejects.toBeDefined();
-    // A Technician's or an Apprentice's: no longer a Senior Tech's to set, through either path.
-    await refusedWith(setTimesheetRequired(harness.as(master), sipho.id, false), 'timesheet_setting_not_permitted');
-    await refusedWith(setRequired(master, sipho, false), 'timesheet_setting_not_permitted');
-    await refusedWith(setTimesheetRequired(harness.as(master), apprentice.id, false), 'timesheet_setting_not_permitted');
-    await unchanged(otherMaster, sipho, apprentice);
-    // Editing a technician's other details is still a Senior Tech's — the setting simply stays as it is.
-    await expect(updateUser(harness.as(master), { ...(await fresh(sipho)), jobTitle: 'Lead Technician' })).resolves.toMatchObject({ jobTitle: 'Lead Technician', timesheetRequired: true });
-    expect((await trail()).map((event) => event.summary).sort()).toEqual([`Timesheets not required: ${master.firstName} ${master.lastName}`, `Timesheets required: ${master.firstName} ${master.lastName}`].sort());
+    await unchanged(otherMaster);
+    // OFFICE-COVER-1: a Technician's and an Apprentice's, as the Office does — through either path.
+    await setTimesheetRequired(harness.as(master), sipho.id, false);
+    await setRequired(master, apprentice, false);
+    expect([(await fresh(sipho)).timesheetRequired, (await fresh(apprentice)).timesheetRequired]).toEqual([false, false]);
+    // Editing a technician's other details leaves the setting as it is.
+    await expect(updateUser(harness.as(master), { ...(await fresh(sipho)), jobTitle: 'Lead Technician' })).resolves.toMatchObject({ jobTitle: 'Lead Technician', timesheetRequired: false });
+    expect((await trail()).map((event) => event.summary).sort()).toEqual(
+      [master, master, sipho, apprentice].map((person, index) => `Timesheets ${index === 1 ? 'required' : 'not required'}: ${person.firstName} ${person.lastName}`).sort(),
+    );
   });
 
   it("a Technician and an Apprentice set nobody's, their own included; an Office account has nothing to set", async () => {

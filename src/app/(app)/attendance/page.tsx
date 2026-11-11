@@ -58,15 +58,14 @@ const AttendancePage = () => {
     <>
       <PageHeader
         title="Attendance"
-        description="Mark yourself Present or Absent for each day — press it again to clear it. Each choice saves by itself. When the period is done, press Completed: the attendance is locked and moves to My Monthly Forms, where both your forms are submitted to the office together."
+        description="Mark yourself Present or Absent for each day — press it again to clear it. Each choice saves by itself. Leave a day blank if you did not work it. When the period is done, press Complete: the attendance moves to My Monthly Forms — still yours to correct there — and both your forms are submitted to the office together from there; that submission is final."
       />
 {draft !== null && (
         <div className="mb-5 rounded-[var(--radius-control)] border border-amber-eje-200 bg-amber-eje-50 p-3 text-sm text-steel-800" role="note" data-testid="attendance-correction-draft">
-          <p className="font-semibold">Correction draft — attendance for {draft.periodLabel}</p>
+          <p className="font-semibold">Returned for editing — attendance for {draft.periodLabel}</p>
           <p className="mt-1">
-            You withdrew “{draft.withdrawnFileName}” to correct it. It is kept on My Monthly Forms exactly as it was completed; this is a
-            separate draft with the same days. Correct it here, then press <strong>Completed</strong> for {draft.periodLabel}
-            {' '}— only the completed correction can be submitted to the office.
+            You took “{draft.withdrawnFileName}” back to edit. Every day you entered is here: change what you need, then press{' '}
+            <strong>Complete</strong> for {draft.periodLabel} to put it back on My Monthly Forms. It is not submitted until you submit it there.
           </p>
           {(range.from !== draft.from || range.to !== draft.to) && (
             <Button className="mt-2" size="sm" variant="secondary" onClick={() => choose({ from: draft.from, to: draft.to })} data-testid="attendance-correction-draft-dates">
@@ -125,20 +124,20 @@ const AttendancePage = () => {
               }}
               data-testid="attendance-complete"
             >
-              Completed
+              Complete
             </Button>
           </div>
           {unsaved > 0 && (
             <p className="mt-2 text-xs text-steel-600" data-testid="attendance-complete-wait">
-              Completed is offered once every choice is saved.
+              Complete is offered once every choice is saved.
             </p>
           )}
         </Card>
       )}
       {justCompleted !== null && (
         <p role="status" className="mb-5 rounded-[var(--radius-control)] border border-verdant-200 bg-verdant-50 px-3 py-2 text-sm text-verdant-700" data-testid="attendance-completed-notice">
-          Your attendance “{justCompleted.fileName}” for {justCompleted.periodLabel} is completed and locked. It is on{' '}
-          <a href="/payroll/mine" className="font-medium underline">My Monthly Forms</a>, waiting to be submitted to the office with your other form.
+          Your attendance “{justCompleted.fileName}” for {justCompleted.periodLabel} is completed — not submitted yet. It is on{' '}
+          <a href="/payroll/mine" className="font-medium underline">My Monthly Forms</a>, waiting to be submitted to the office with your other form; until then you can still Correct / Edit it there.
         </p>
       )}
       {usable && (

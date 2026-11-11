@@ -66,6 +66,8 @@ Use one copy of the tables per device (Phone: **P**, Tablet: **T**).
 | 3.3 | *(test only)* Complete and submit attendance from My Monthly Forms for a real period of the test cycle | | | | |
 | 3.4 | Buttons, the status dropdown and the date controls are large enough to tap with a gloved finger (tablet) | | | | |
 | 3.5 | Portrait and landscape: nothing is cut off, nothing overlaps | | | | |
+| 3.6 | Leave Sunday and a day off blank, then press Complete: no question, no error; My Monthly Forms says "without an entry" | | | | |
+| 3.7 | On My Monthly Forms, press **Correct / Edit** on the completed attendance: you are back on Attendance with every day as you left it; change one, press Complete again | | | | |
 
 ## 4. Timesheets
 
@@ -77,10 +79,12 @@ Use one copy of the tables per device (Phone: **P**, Tablet: **T**).
 | 4.4 | Leave the page and come back: the draft line is still there | | | | |
 | 4.5 | Turn on airplane mode, type a line, turn it off: the line is saved once, not twice | | | | |
 | 4.6 | Complete the timesheet: the preview PDF opens and reads correctly | | | | |
-| 4.7 | Withdraw the completed (not submitted) timesheet, correct it, complete it again | | | | |
+| 4.7 | **Correct / Edit** the completed (not submitted) timesheet: back on Timesheets with every line and value; change one, Complete again | | | | |
+| 4.7a | Press Add line and leave it empty, leave Sunday and the overtime blank, then Complete: no error | | | | |
 | 4.8 | *(test only)* Submit timesheet and attendance together to the office | | | | |
 | 4.9 | History: the submission is listed; its PDF opens exactly as submitted | | | | |
-| 4.10 | After submission, the submitted timesheet offers no way to change it | | | | |
+| 4.10 | After submission, the submitted forms show **Submitted — Final** and offer no way to change them | | | | |
+| 4.11 | As a Senior Tech (`master@eje-demo.local`): the sidebar has **Users** and EJE Monthly Forms; nothing offers to edit another person's form | | | | |
 
 ## 5. Documents and usability
 

@@ -58,10 +58,10 @@ export type TimesheetChange =
   | { readonly kind: 'remove'; readonly id: string; readonly version: number; readonly refused?: string }
   | { readonly kind: 'comment'; readonly id: typeof COMMENT_KEY; readonly comment: string; readonly base: string; readonly version: number; readonly refused?: string; readonly unsure?: readonly string[] };
 
-/** What a save of a line answered: the revision the next save must name. */
+/** What a save of a line answered: the revision the next save must name — null when nothing was stored (a blank line, FORM-OPTIONAL-1). */
 export interface SavedLine {
   readonly id: string;
-  readonly revision: string;
+  readonly revision: string | null;
 }
 
 export interface TimesheetAutosaverOptions {
@@ -290,6 +290,12 @@ export class TimesheetAutosaver {
         { id: change.id, date: change.date, typed: change.typed, expectedRevision: change.base },
         { keepalive: false },
       );
+      if (saved.revision === null) {
+        // A blank line is not stored: it is still new to the server, and its next save starts from nothing.
+        this.revisions.delete(change.id);
+        this.savedLines.delete(change.id);
+        return;
+      }
       this.revisions.set(change.id, saved.revision);
       // The versions this save replaced, one after another from this device: the list may still show any of them.
       const before = this.savedLines.get(change.id);

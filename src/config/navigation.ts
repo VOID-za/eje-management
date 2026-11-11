@@ -106,7 +106,8 @@ export const NAVIGATION: readonly NavigationItem[] = [
    * offers availability only (`availability.manage`): no account, role or
    * password change. A Master keeps doing those in Administration.
    */
-  { href: '/users', label: 'Users', icon: 'user', capability: 'availability.manage', roles: ['coordinator'], group: 'records' },
+  // OFFICE-COVER-1 (the owner, 11 November 2026): a Senior Tech runs the office when the Office is away — the same Users page, on their own account.
+  { href: '/users', label: 'Users', icon: 'user', capability: 'availability.manage', roles: ['coordinator', 'master'], group: 'records' },
   /**
    * The company-wide audit trail. Office only.
    *

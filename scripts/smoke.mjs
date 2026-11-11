@@ -4478,9 +4478,12 @@ await step('My Monthly Forms and EJE Monthly Forms: the Coordinator’s own mont
   if (!summary.includes(`${submitted} submitted`) || !summary.includes(`${(await rows.count()) - submitted} not submitted`)) throw new Error(`summary "${summary}" does not match the rows`);
 });
 
-await step('the Master: EJE and My Monthly Forms, Timesheets kept, no Closed Jobs or Users in the sidebar; the new Jobs filters (tester)', async () => {
+await step('the Master: EJE and My Monthly Forms, Timesheets kept, the Users page too (OFFICE-COVER-1), no Closed Jobs; the new Jobs filters (tester)', async () => {
   await signInAsMasterIfNeeded();
-  expectSidebar('The Master', await sidebarLabels(), ['Jobs', 'Timesheets', 'My Monthly Forms', 'EJE Monthly Forms', 'Administration'], ['Closed Jobs', 'Users', 'Monthly forms']);
+  expectSidebar('The Master', await sidebarLabels(), ['Jobs', 'Timesheets', 'My Monthly Forms', 'EJE Monthly Forms', 'Administration', 'Users'], ['Closed Jobs', 'Monthly forms']);
+  // OFFICE-COVER-1: the Office's Users page opens for a Senior Tech, on their own account.
+  await page.goto(`${BASE}/users`, { waitUntil: 'networkidle' });
+  await page.getByTestId('users-row').first().waitFor({ timeout: 10000 });
   await page.goto(`${BASE}/jobs`, { waitUntil: 'networkidle' });
   await page.locator('main button[aria-pressed]').first().waitFor({ timeout: 10000 });
   if ((await page.getByRole('button', { name: 'Download CSV' }).count()) !== 0) throw new Error('the Master was offered Download CSV');
@@ -4939,16 +4942,16 @@ await step('a Master moves a technician to Coordinator and back', async () => {
  * editor, kept after saving, and enabled again; the role stays as it was. TS-USER-2 (11 November 2026): set by the
  * Office for everybody who keeps a timesheet, Senior Techs included; a Senior Tech sets only their own.
  */
-await step('a Master is not offered a technician\'s Timesheets required; the Office disables and enables it; the list says so; the role is unchanged', async () => {
+await step('a Master may set a technician\'s Timesheets required (OFFICE-COVER-1); the Office disables and enables it; the list says so; the role is unchanged', async () => {
   const row = () => page.getByRole('row').filter({ hasText: 'Sipho Mahlangu' }).first();
   const state = async () => row().getByTestId('user-timesheets').getAttribute('data-state');
   if ((await state()) !== 'enabled') throw new Error(`Sipho's timesheets read ${await state()} before any change`);
-  // The Master edits Sipho's account, but the setting is the Office's.
+  // OFFICE-COVER-1: the Master covers for the Office — the setting is offered on a technician's account too.
   await row().getByRole('button', { name: 'Manage' }).click();
   await page.getByRole('menuitem', { name: 'Edit user and role' }).click();
   const masters = page.getByRole('dialog');
   await masters.waitFor({ timeout: 8000 });
-  if (!(await masters.getByTestId('user-timesheets-required').isDisabled())) throw new Error('a Master may set a technician\'s Timesheets required');
+  if (await masters.getByTestId('user-timesheets-required').isDisabled()) throw new Error('a Master may not set a technician\'s Timesheets required');
   await masters.getByRole('button', { name: 'Cancel' }).click();
   await masters.waitFor({ state: 'detached', timeout: 10000 });
   await signInAs(page, 'Christene van Niekerk');

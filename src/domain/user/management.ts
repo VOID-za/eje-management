@@ -73,17 +73,20 @@ export const assignableRolesFor = (
 
 /** Whether this actor may change this account's role at all. */
 /**
- * WHO SETS "TIMESHEETS REQUIRED". TS-USER-2 (the owner, 11 November 2026), replacing TS-USER-1's rule of 8 November:
- * - the Office sets it for everybody who keeps a timesheet — Technicians, Apprentices and Senior Techs. It is the one
- *   thing the Office may change on a Senior Tech account; the rest of that account stays protected (`canManageUser`);
- * - a Senior Tech sets their OWN, and nobody else's — not another Senior Tech's, not a Technician's or Apprentice's;
- * - a Technician or an Apprentice sets nobody's, their own included.
+ * WHO SETS "TIMESHEETS REQUIRED".
+ * - TS-USER-2 (the owner, 11 November 2026): the Office sets it for everybody who keeps a timesheet — Technicians,
+ *   Apprentices and Senior Techs. It is the one thing the Office may change on a Senior Tech account; the rest of that
+ *   account stays protected (`canManageUser`). A Senior Tech sets their OWN; never another Senior Tech's.
+ * - OFFICE-COVER-1 (the owner, 11 November 2026, later the same day): a Senior Tech holds the Office's operational
+ *   permissions, so also sets a Technician's and an Apprentice's — as the Office does. Another Senior Tech's stays
+ *   refused: TS-USER-2 named that row "not permitted", and covering for the Office does not revoke it.
+ * - A Technician or an Apprentice sets nobody's, their own included.
  * The Office keeps no timesheet, so an Office account has nothing to set.
  */
 export const canSetTimesheetRequired = (actor: Pick<User, 'id' | 'role'>, target: Pick<User, 'id' | 'role'>): boolean => {
   if (target.role === 'coordinator') return false;
   if (actor.role === 'coordinator') return true;
-  return actor.role === 'master' && target.id === actor.id;
+  return actor.role === 'master' && (target.id === actor.id || isFieldRole(target.role));
 };
 
 export const canChangeRole = (actor: Pick<User, 'id' | 'role'>, target: User): boolean =>

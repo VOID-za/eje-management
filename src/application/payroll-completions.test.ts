@@ -80,13 +80,14 @@ describe('Attendance: Present and Absent toggle — pressed again, the day is No
 });
 
 describe('Completing a form: checked on the server, frozen under its name, locked', () => {
-  it('the dialog’s check proposes the name, and says what stops it and what must be confirmed', async () => {
+  it('the dialog’s check proposes the name, and says what stops it; blank weekdays are said, never something to confirm (FORM-OPTIONAL-1)', async () => {
     await line('2026-11-05', typed('1.234'));
     const blocked = await checkFormCompletion(harness.as(sipho), SIPHO, 'timesheet', FROM, TO);
     expect(blocked.problems.join(' ')).toMatch(/not complete/u);
     expect(blocked.fileName).toMatch(/^SIPHO Timesheet Nov 2026\.pdf$/u);
     const attendance = await checkFormCompletion(harness.as(sipho), SIPHO, 'attendance', FROM, TO);
-    expect(attendance.needs.confirmUnrecorded).toBe(true);
+    expect(attendance.needs.confirmUnrecorded).toBe(false);
+    expect(attendance.unrecordedWeekdays.length).toBeGreaterThan(0);
     expect(attendance.problems).toEqual([]);
   });
 
@@ -124,17 +125,18 @@ describe('Completing a form: checked on the server, frozen under its name, locke
     expect((await loadMyAttendance(harness.as(sipho), '2026-11-03', '2026-11-03')).days[0]?.locked).toBe('completed');
   });
 
-  it('refuses: an incomplete line, an absent day without its reason, unconfirmed unrecorded weekdays or no lines, an unsafe or duplicate name', async () => {
+  it('refuses: an incomplete line, an absent day without its reason, an unconfirmed empty timesheet, an unsafe or duplicate name — never blank weekdays', async () => {
     const draft = crypto.randomUUID();
     await line('2026-11-05', typed('abc'), draft);
     await refusedWith(complete('timesheet'), 'timesheet_lines_incomplete');
     await removeTimesheetLine(harness.as(sipho), SIPHO, draft);
     await refusedWith(completePayrollForm(harness.as(sipho), SIPHO, { kind: 'timesheet', from: FROM, to: TO, fileName: '' }), 'timesheet_empty_unconfirmed');
-    await refusedWith(completePayrollForm(harness.as(sipho), SIPHO, { kind: 'attendance', from: FROM, to: TO, fileName: '' }), 'attendance_incomplete');
     await refusedWith(complete('timesheet', { fileName: '../../etc/passwd' }), 'invalid_file_name');
     await complete('timesheet', { fileName: 'Same Name' });
     await refusedWith(complete('attendance', { fileName: 'Same Name' }), 'duplicate_file_name');
     expect((await harness.repos.payroll.listFormCompletions(SIPHO)).length).toBe(1);
+    // FORM-OPTIONAL-1: weekdays left blank are days not worked — completed with no confirmation at all.
+    await expect(completePayrollForm(harness.as(sipho), SIPHO, { kind: 'attendance', from: FROM, to: TO, fileName: '' })).resolves.toMatchObject({ kind: 'attendance' });
   });
 
   it('nobody completes another person’s form; the Office completes no timesheet', async () => {

@@ -237,7 +237,8 @@ await check('C. Completed opens the dialog: what it does, the name; Cancel chang
   const dialog = page.getByTestId('complete-form-dialog');
   await dialog.waitFor({ timeout: 10000 });
   const text = await dialog.innerText();
-  for (const words of ['finalise it and transfer it to My Monthly Forms', 'cannot be edited again', 'preview, print, download and save the PDF', 'submit it to the Office from My Monthly Forms']) {
+  // FORM-LIFECYCLE-2: Complete is not Submit — still the owner's to correct; Submit is final.
+  for (const words of ['moves it to My Monthly Forms', 'It is not sent to the Office yet', 'Correct / Edit', 'preview, print, download and save the PDF', 'that is final']) {
     if (!text.includes(words)) fail(`the dialog does not say "${words}"`);
   }
   const name = page.getByTestId('complete-form-name');
@@ -364,9 +365,9 @@ await check('E. the attendance completed on its page (unrecorded weekdays confir
   if (!/Ready to submit/u.test(await page.getByTestId('my-forms-submit-reason').innerText())) fail('the reason does not say Ready to submit');
 });
 
-/* ---- W. Withdraw and Correct (FORM-WITHDRAW-1) ---------------------------- */
+/* ---- W. Correct / Edit (FORM-WITHDRAW-1, FORM-LIFECYCLE-2) ---------------- */
 let withdrawnId = null;
-await check('W. Withdraw and Correct explains itself; Cancel changes nothing', async () => {
+await check('W. Correct / Edit explains itself; Cancel changes nothing', async () => {
   await myForms();
   const state = (await call('GET', `/api/payroll/forms/${SIPHO}/completed`)).json.data;
   withdrawnId = state.timesheet?.id ?? null;
@@ -375,7 +376,7 @@ await check('W. Withdraw and Correct explains itself; Cancel changes nothing', a
   const dialog = page.getByTestId('withdraw-form-dialog');
   await dialog.waitFor({ timeout: 10000 });
   const text = await dialog.innerText();
-  for (const words of ['will not be submitted to the office', 'exactly as it was completed', 'separate draft', 'must be completed again', 'can no longer be withdrawn']) {
+  for (const words of ['goes back to the Timesheets page with everything you entered', 'press Complete again', 'not submitted', 'stays in your record as it was', 'Once submitted to the Office, forms are final']) {
     if (!text.includes(words)) fail(`the dialog does not say "${words}"`);
   }
   await press(page.getByRole('dialog').getByRole('button', { name: 'Cancel' }));
@@ -384,15 +385,19 @@ await check('W. Withdraw and Correct explains itself; Cancel changes nothing', a
   if (after.timesheet?.id !== withdrawnId || after.corrections.length !== 0) fail('Cancel changed something');
 });
 
-await check('W. withdrawn (the first attempt cut off, confirmed again — once): kept as completed, a correction draft opens; Submit is disabled — said why', async () => {
+await check('W. returned for editing (the first attempt cut off, confirmed again — once): back on the Timesheets page; kept as completed; Submit is disabled — said why', async () => {
   const pdfBefore = await pdfDigest(withdrawnId);
   await page.route('**/api/payroll/forms/*/withdraw', (route) => (route.request().method() === 'POST' ? route.abort('internetdisconnected') : route.continue()));
   await press(page.getByTestId('my-forms-timesheet-withdraw'));
-  await press(page.getByRole('dialog').getByRole('button', { name: 'Withdraw and Correct' }));
+  await press(page.getByRole('dialog').getByRole('button', { name: 'Correct / Edit' }));
   await page.getByTestId('my-forms-timesheet-withdraw-failure').waitFor({ timeout: 15000 });
   await page.unroute('**/api/payroll/forms/*/withdraw');
   if ((await call('GET', `/api/payroll/forms/${SIPHO}/completed`)).json.data.corrections.length !== 0) fail('a cut-off withdrawal withdrew it');
-  await press(page.getByRole('dialog').getByRole('button', { name: 'Withdraw and Correct' }));
+  await press(page.getByRole('dialog').getByRole('button', { name: 'Correct / Edit' }));
+  // FORM-LIFECYCLE-2: straight back to the form's own page, for its dates, with what was entered.
+  await page.waitForURL(/\/timesheets\?from=/u, { timeout: 20000 });
+  await page.getByTestId('timesheet-correction-draft').waitFor({ timeout: 30000 });
+  await myForms();
   await page.getByTestId('my-forms-timesheet-correcting').waitFor({ timeout: 20000 });
   const state = (await call('GET', `/api/payroll/forms/${SIPHO}/completed`)).json.data;
   if (state.corrections.length !== 1 || state.corrections[0].state !== 'draft' || state.corrections[0].withdrawn.id !== withdrawnId) fail(`corrections: ${JSON.stringify(state.corrections)}`);

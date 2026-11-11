@@ -110,8 +110,11 @@ describe('timesheet lines save themselves — complete lines stored, incomplete 
     expect((await loadWorkingLines(harness.as(sipho), SIPHO)).find((candidate) => candidate.id === id)?.typed.overtime).toBe('abc');
   });
 
-  it('an empty line, an undated line, an unknown customer and a day over 24 hours are drafts that say why', async () => {
-    expect((await line('2026-11-06', typed('0', ''))).problems[0]?.message).toMatch(/^Empty line/u);
+  it('an empty line is not stored; an undated line, an unknown customer and a day over 24 hours are drafts that say why', async () => {
+    // FORM-OPTIONAL-1: nothing typed is no line — not stored, not a draft, nothing to say.
+    const empty = await line('2026-11-06', typed('0', ''));
+    expect(empty).toMatchObject({ complete: false, problems: [], revision: null, entry: null });
+    expect(await harness.repos.attendance.findLineDraft(empty.id)).toBeNull();
     expect((await line(null, typed('1'))).problems[0]?.field).toBe('date');
     expect((await line('2026-11-06', typed('1', 'X', { pick: '00000000-0000-4000-8000-0000000000ff' }))).problems[0]?.message).toMatch(/not in the register/u);
     await line('2026-11-07', typed('20'));
@@ -220,11 +223,11 @@ describe('My Monthly Forms — both forms together for the period, once', () => 
 
   it('an INCOMPLETE line blocks the submission, named with what it needs; completed, the forms go', async () => {
     await line('2026-11-02', typed('2'));
-    const broken = await line('2026-11-03', typed('0', ''));
+    const broken = await line('2026-11-03', typed('two', 'ABC'));
     const state = await formsOf('2026-11-01', '2026-11-25');
     expect(state.canSubmit).toBe(false);
     expect(state.timesheet?.incomplete.map((item) => item.id)).toEqual([broken.id]);
-    expect(state.problems[0]).toMatch(/Tue 3 Nov 2026 is not complete: Empty line/u);
+    expect(state.problems[0]).toMatch(/Tue 3 Nov 2026 is not complete:/u);
     await refusedWith(submitPayrollForms(harness.as(sipho), SIPHO, { from: '2026-11-01', to: '2026-11-25', revision: state.revision, confirmUnrecorded: true }), 'timesheet_lines_incomplete');
     expect(await harness.repos.payroll.listPayrollSubmissionsFor(SIPHO)).toHaveLength(0);
     expect(await harness.repos.attendance.listSubmissions(SIPHO)).toHaveLength(0);
@@ -237,14 +240,13 @@ describe('My Monthly Forms — both forms together for the period, once', () => 
     expect((await formsOf('2026-11-01', '2026-11-25')).canSubmit).toBe(false);
   });
 
-  it('the absence reason, the unrecorded weekdays and an empty timesheet each need saying first', async () => {
+  it('the absence reason and an empty timesheet each need saying first; blank weekdays never do (FORM-OPTIONAL-1)', async () => {
     await harness.repos.attendance.saveRecord({
       id: 'att-x', userId: SIPHO, date: '2026-11-10', status: 'absent', absenceReason: null, note: '', recordedBy: SIPHO, recordedAt: '2026-11-10T08:00:00.000Z',
     });
     await refusedWith(submit('2026-11-01', '2026-11-25'), 'absence_reason_required');
     await recordAttendance(harness.as(sipho), { userId: SIPHO, date: '2026-11-10', status: 'absent', absenceReason: 'sick_leave', note: '' });
-    await refusedWith(submit('2026-11-01', '2026-11-25', { confirmUnrecorded: false }), 'attendance_incomplete');
-    await refusedWith(submit('2026-11-01', '2026-11-25', { confirmNoLines: false }), 'timesheet_empty_unconfirmed');
+    await refusedWith(submit('2026-11-01', '2026-11-25', { confirmUnrecorded: false, confirmNoLines: false }), 'timesheet_empty_unconfirmed');
     // Confirmed: an EMPTY period is submitted, with a timesheet of no lines (it was required).
     const empty = await submit('2026-11-01', '2026-11-25');
     expect((await harness.repos.attendance.findPeriodById(empty.timesheetPeriodId!))?.snapshot?.entries).toEqual([]);
@@ -606,7 +608,7 @@ describe('the second autosave review (5 November 2026), fixed', () => {
     const draft = await line('2026-11-15', typed('abc'), stored.id, stored.revision);
     const back = await line('2026-11-15', typed('2'), stored.id, draft.revision);
     expect(back.complete).toBe(true);
-    expect(back.revision > draft.revision).toBe(true);
+    expect(back.revision! > draft.revision!).toBe(true);
     await refusedWith(line('2026-11-15', typed('7'), stored.id, stored.revision), 'timesheet_line_changed');
   });
 

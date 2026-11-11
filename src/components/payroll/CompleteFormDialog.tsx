@@ -43,7 +43,6 @@ export const CompleteFormDialog = ({
     open ? payroll.checkCompletion(userId, kind, from, to) : Promise.resolve(null),
   );
   const [name, setName] = useState<string | null>(null);
-  const [confirmUnrecorded, setConfirmUnrecorded] = useState(false);
   const [confirmNoLines, setConfirmNoLines] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -55,7 +54,6 @@ export const CompleteFormDialog = ({
     // Closed: the next opening starts afresh from what the server proposes.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- a closed dialog forgets what was typed in it.
     setName(null);
-    setConfirmUnrecorded(false);
     setConfirmNoLines(false);
     setFailure(null);
     key.current = null;
@@ -65,12 +63,12 @@ export const CompleteFormDialog = ({
   const shownName = name ?? data?.fileName ?? '';
   const nameProblem = shownName.trim() === '' ? null : normalisePdfFileName(shownName);
   const blocked = data === null || data.problems.length > 0;
-  const confirmations = data !== null && ((data.needs.confirmUnrecorded && !confirmUnrecorded) || (data.needs.confirmNoLines && !confirmNoLines));
+  const confirmations = data !== null && data.needs.confirmNoLines && !confirmNoLines;
   const canOk = !blocked && !confirmations && !busy && (nameProblem === null || nameProblem.ok);
 
   const complete = async () => {
     if (!canOk) return;
-    const input = { kind, from, to, fileName: shownName, confirmUnrecorded, confirmNoLines };
+    const input = { kind, from, to, fileName: shownName, confirmNoLines };
     const request = JSON.stringify(input);
     if (key.current === null || key.current.request !== request) key.current = { value: newIdempotencyKey(), request };
     setBusy(true);
@@ -110,9 +108,12 @@ export const CompleteFormDialog = ({
       }
     >
       <div className="space-y-3 text-sm text-steel-700" data-testid="complete-form-dialog" data-kind={kind}>
+        {/* FORM-LIFECYCLE-2 (the owner, 11 November 2026): Complete is not Submit. */}
         <p data-testid="complete-form-explanation">
-          Completing this form will finalise it and transfer it to My Monthly Forms. <strong>Once completed, it cannot be edited again.</strong> You can
-          still preview, print, download and save the PDF. You will submit it to the Office from My Monthly Forms when both forms are ready.
+          Complete saves this form and moves it to My Monthly Forms. <strong>It is not sent to the Office yet.</strong> Until you submit, it is still
+          yours to correct: on My Monthly Forms, <strong>Correct / Edit</strong> brings it back here with everything you entered. You can preview,
+          print, download and save the PDF there. When both forms are ready, <strong>Submit to Office</strong> sends them together — and that is
+          final.
         </p>
         <p>
           Your {KIND_TEXT[kind]} for <strong data-testid="complete-form-period">{formatPeriod(from, to)}</strong>.
@@ -143,14 +144,12 @@ export const CompleteFormDialog = ({
                 </ul>
               </div>
             )}
-            {data.problems.length === 0 && data.needs.confirmUnrecorded && (
-              <label className="flex min-h-11 cursor-pointer items-start gap-2 py-1">
-                <input type="checkbox" className="mt-1 size-4.5" checked={confirmUnrecorded} onChange={(event) => setConfirmUnrecorded(event.target.checked)} data-testid="complete-form-confirm-unrecorded" />
-                <span>
-                  {data.unrecordedWeekdays.length} weekday{data.unrecordedWeekdays.length === 1 ? ' is' : 's are'} Not recorded ({data.unrecordedWeekdays.slice(0, 6).map(formatDayAndDate).join(', ')}
-                  {data.unrecordedWeekdays.length > 6 ? ', …' : ''}). I confirm the attendance is right as it is.
-                </span>
-              </label>
+            {/* FORM-OPTIONAL-1: a day not worked is simply left blank — said, never something to confirm. */}
+            {data.problems.length === 0 && data.unrecordedWeekdays.length > 0 && (
+              <p className="text-xs text-steel-600" data-testid="complete-form-blank-days">
+                {data.unrecordedWeekdays.length} weekday{data.unrecordedWeekdays.length === 1 ? ' has' : 's have'} no entry ({data.unrecordedWeekdays.slice(0, 6).map(formatDayAndDate).join(', ')}
+                {data.unrecordedWeekdays.length > 6 ? ', …' : ''}). That is fine for a day you did not work: it stays blank.
+              </p>
             )}
             {data.problems.length === 0 && data.needs.confirmNoLines && (
               <label className="flex min-h-11 cursor-pointer items-start gap-2 py-1">

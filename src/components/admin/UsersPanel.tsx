@@ -202,7 +202,7 @@ export const UsersPanel = ({
     <div className="space-y-4">
       <AdminNotice
         title="User management"
-        body="Senior Techs add users, set roles — including moving somebody between Technician, Apprentice and Office — disable leavers and reactivate returners. A Senior Tech cannot edit another Senior Tech: those accounts stay listed, with no actions on them. The office manages technicians only — and sets whether each person keeps a timesheet, a Senior Tech included; a Senior Tech sets only their own. Disabling never deletes: past job cards and the audit trail keep naming the person who did the work."
+        body="Senior Techs add users, set roles — including moving somebody between Technician, Apprentice and Office — disable leavers and reactivate returners. A Senior Tech cannot edit another Senior Tech: those accounts stay listed, with no actions on them. The office manages technicians only — and sets whether each person keeps a timesheet, a Senior Tech included. A Senior Tech covers for the Office on their own account: they set Timesheets required for Technicians, Apprentices and themselves, never another Senior Tech. Disabling never deletes: past job cards and the audit trail keep naming the person who did the work."
       />
 
       {operation.error !== null && (
@@ -492,7 +492,7 @@ const UserEditor = ({
                 !roleKeepsTimesheet(role)
                   ? 'The Office keeps attendance only, whatever this says.'
                   : !canSetTimesheetRequired(actor, existing)
-                    ? 'Set by the Office.'
+                    ? 'Set by the Office (and by a Senior Tech for Technicians and Apprentices).'
                     : 'Disabled: no timesheet is asked of them or counted as outstanding; everything else their role does is unchanged.'
               }
               data-testid="user-timesheets-required"
