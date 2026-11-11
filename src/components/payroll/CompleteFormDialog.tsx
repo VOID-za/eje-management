@@ -65,10 +65,16 @@ export const CompleteFormDialog = ({
   const blocked = data === null || data.problems.length > 0;
   const confirmations = data !== null && data.needs.confirmNoLines && !confirmNoLines;
   const canOk = !blocked && !confirmations && !busy && (nameProblem === null || nameProblem.ok);
+  /*
+   * FORM-OPTIONAL-1 (the owner, 11 November 2026): an attendance form with NO entry at all is confirmed first —
+   * "Go back and fill in attendance" closes this and leaves the page as it is; "Complete without entries" completes it.
+   * Blank days beside real entries are never asked about.
+   */
+  const noEntries = data !== null && data.problems.length === 0 && data.needs.confirmNoEntries === true;
 
   const complete = async () => {
     if (!canOk) return;
-    const input = { kind, from, to, fileName: shownName, confirmNoLines };
+    const input = { kind, from, to, fileName: shownName, confirmNoLines, ...(noEntries ? { confirmNoEntries: true } : {}) };
     const request = JSON.stringify(input);
     if (key.current === null || key.current.request !== request) key.current = { value: newIdempotencyKey(), request };
     setBusy(true);
@@ -93,21 +99,37 @@ export const CompleteFormDialog = ({
   return (
     <Modal
       open={open}
-      title="Complete this form?"
+      title={noEntries ? 'No attendance entries' : 'Complete this form?'}
       onClose={busy ? () => undefined : onCancel}
       size="md"
       footer={
-        <>
-          <Button variant="secondary" onClick={onCancel} disabled={busy} data-testid="complete-form-cancel">
-            Cancel
-          </Button>
-          <Button onClick={() => void complete()} loading={busy} disabled={!canOk} data-testid="complete-form-ok">
-            OK
-          </Button>
-        </>
+        noEntries ? (
+          <>
+            <Button variant="secondary" onClick={onCancel} disabled={busy} data-testid="complete-form-go-back">
+              Go back and fill in attendance
+            </Button>
+            <Button onClick={() => void complete()} loading={busy} disabled={!canOk} data-testid="complete-form-ok">
+              Complete without entries
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={onCancel} disabled={busy} data-testid="complete-form-cancel">
+              Cancel
+            </Button>
+            <Button onClick={() => void complete()} loading={busy} disabled={!canOk} data-testid="complete-form-ok">
+              OK
+            </Button>
+          </>
+        )
       }
     >
       <div className="space-y-3 text-sm text-steel-700" data-testid="complete-form-dialog" data-kind={kind}>
+        {noEntries && (
+          <p role="alert" className="rounded-[var(--radius-control)] border border-amber-eje-200 bg-amber-eje-50 p-3 font-medium text-amber-eje-700" data-testid="complete-form-empty-attendance">
+            You have not entered any attendance for this period. Are you sure you want to complete this form?
+          </p>
+        )}
         {/* FORM-LIFECYCLE-2 (the owner, 11 November 2026): Complete is not Submit. */}
         <p data-testid="complete-form-explanation">
           Complete saves this form and moves it to My Monthly Forms. <strong>It is not sent to the Office yet.</strong> Until you submit, it is still
@@ -145,7 +167,7 @@ export const CompleteFormDialog = ({
               </div>
             )}
             {/* FORM-OPTIONAL-1: a day not worked is simply left blank — said, never something to confirm. */}
-            {data.problems.length === 0 && data.unrecordedWeekdays.length > 0 && (
+            {data.problems.length === 0 && !noEntries && data.unrecordedWeekdays.length > 0 && (
               <p className="text-xs text-steel-600" data-testid="complete-form-blank-days">
                 {data.unrecordedWeekdays.length} weekday{data.unrecordedWeekdays.length === 1 ? ' has' : 's have'} no entry ({data.unrecordedWeekdays.slice(0, 6).map(formatDayAndDate).join(', ')}
                 {data.unrecordedWeekdays.length > 6 ? ', …' : ''}). That is fine for a day you did not work: it stays blank.

@@ -409,6 +409,28 @@ await check('another technician sees none of it, and an empty history says so', 
   if (mine.length > 0 && (await page.locator('[data-testid="my-monthly-history-form"]').count()) !== forms) fail('the history on the screen is not the server\'s');
 });
 
+await check('FORM-OPTIONAL-1: an attendance form with NO entry asks first — Go back completes nothing; Complete without entries completes it', async () => {
+  await become('Riaan van Wyk');
+  const riaan = (await call('GET', '/api/auth/me')).json?.data?.user?.id;
+  const asked = (await call('GET', `/api/payroll/forms/${riaan}/complete?kind=attendance&from=${FROM}&to=${TO}`)).json?.data;
+  if (asked?.needs?.confirmNoEntries !== true) fail(`Riaan's attendance for the period is not empty: ${JSON.stringify(asked?.needs)}`);
+  await go(`/attendance?from=${FROM}&to=${TO}`);
+  await press(page.getByTestId('attendance-complete'));
+  await page.getByTestId('complete-form-empty-attendance').waitFor({ timeout: 20000 });
+  if (!/No attendance entries/u.test(await page.getByRole('dialog').innerText())) fail('the dialog is not titled "No attendance entries"');
+  if ((await page.getByTestId('complete-form-cancel').count()) !== 0) fail('the empty form shows the ordinary Cancel / OK');
+  await press(page.getByTestId('complete-form-go-back'));
+  await page.getByTestId('complete-form-dialog').waitFor({ state: 'detached', timeout: 10000 });
+  if (!page.url().includes('/attendance')) fail(`Go back left the Attendance page: ${page.url()}`);
+  if ((await call('GET', `/api/payroll/forms/${riaan}/completed`)).json?.data?.attendance !== null) fail('Go back completed the form');
+  await press(page.getByTestId('attendance-complete'));
+  await page.getByTestId('complete-form-empty-attendance').waitFor({ timeout: 20000 });
+  await press(page.getByTestId('complete-form-ok'));
+  await page.getByTestId('attendance-completed-notice').waitFor({ timeout: 20000 });
+  const done = (await call('GET', `/api/payroll/forms/${riaan}/completed`)).json?.data?.attendance;
+  if (done === null || done === undefined || !/^0 present, 0 absent/u.test(done.summary)) fail(`completed: ${JSON.stringify(done)}`);
+});
+
 await check('no page error', async () => {
   if (pageErrors.length > 0) fail(pageErrors.slice(0, 3).join(' | '));
 });

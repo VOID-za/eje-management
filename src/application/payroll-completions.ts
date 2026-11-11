@@ -315,7 +315,11 @@ export interface CompletionCheck {
   readonly fileName: string;
   /** Plain sentences: what stops completing it now. Empty when it can be completed. */
   readonly problems: readonly string[];
-  readonly needs: { readonly confirmUnrecorded: boolean; readonly confirmNoLines: boolean };
+  /**
+   * confirmNoEntries (FORM-OPTIONAL-1, the owner, 11 November 2026): an attendance form with NO entry at all asks
+   * "No attendance entries — complete without entries?". Days left blank beside real entries never ask anything.
+   */
+  readonly needs: { readonly confirmUnrecorded: boolean; readonly confirmNoLines: boolean; readonly confirmNoEntries: boolean };
   readonly unrecordedWeekdays: readonly IsoDate[];
   readonly lineCount: number;
   /** The other form is completed for these dates: this one must have the same. */
@@ -410,6 +414,7 @@ const checkCompletion = async (context: OperationContext, technicianId: string, 
       // FORM-OPTIONAL-1: days without an entry are left blank — said, never something to confirm or refuse.
       confirmUnrecorded: false,
       confirmNoLines: kind === 'timesheet' && (state.timesheet?.lineCount ?? 0) === 0,
+      confirmNoEntries: kind === 'attendance' && state.attendance.recorded === 0,
     },
     unrecordedWeekdays: kind === 'attendance' ? state.attendance.unrecordedWeekdays : [],
     lineCount: state.timesheet?.lineCount ?? 0,
@@ -431,6 +436,8 @@ export interface CompleteFormInput {
   readonly fileName: string;
   readonly confirmUnrecorded?: boolean | undefined;
   readonly confirmNoLines?: boolean | undefined;
+  /** "Complete without entries": an attendance form with no entry at all. */
+  readonly confirmNoEntries?: boolean | undefined;
 }
 
 /**
@@ -457,6 +464,15 @@ export const completePayrollForm = async (context: OperationContext, technicianI
   if (first !== undefined) throw refuse(first.message, first.code, first.detail);
   if (checked.needs.confirmNoLines && input.confirmNoLines !== true) {
     throw refuse('Your timesheet has no lines for these dates.', 'timesheet_empty_unconfirmed', 'Add your lines, or confirm you have nothing to claim for these dates.');
+  }
+  // An older client's "I confirm the attendance is right as it is" (confirmUnrecorded) says the same.
+  const emptyConfirmed = input.confirmNoEntries === true || input.confirmUnrecorded === true;
+  if (checked.needs.confirmNoEntries && !emptyConfirmed) {
+    throw refuse(
+      'You have not entered any attendance for this period.',
+      'attendance_empty_unconfirmed',
+      'Go back and fill in your attendance, or confirm you are completing it without entries.',
+    );
   }
   let fileName = checked.fileName;
   if (input.fileName.trim() !== '') {
@@ -534,6 +550,7 @@ export const completePayrollForm = async (context: OperationContext, technicianI
     summary: `${kind === 'timesheet' ? 'Timesheet' : 'Attendance'} ${checked.draft === null ? 'completed' : 'correction completed'}: ${userFullName(person)}, ${formatPeriod(from, to)}`,
     detail:
       `“${fileName}” — ${summaryOf(saved)}. Completed by ${userFullName(context.actor)}; locked, awaiting submission to the office.` +
+      (checked.needs.confirmNoEntries ? ' Completed without attendance entries, as confirmed.' : '') +
       (checked.draft === null ? '' : ` It corrects the withdrawn form ${checked.draft.withdrawnId}, kept exactly as it was completed.`),
   });
   return viewOf(context, saved);

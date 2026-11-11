@@ -135,8 +135,9 @@ describe('Completing a form: checked on the server, frozen under its name, locke
     await complete('timesheet', { fileName: 'Same Name' });
     await refusedWith(complete('attendance', { fileName: 'Same Name' }), 'duplicate_file_name');
     expect((await harness.repos.payroll.listFormCompletions(SIPHO)).length).toBe(1);
-    // FORM-OPTIONAL-1: weekdays left blank are days not worked — completed with no confirmation at all.
-    await expect(completePayrollForm(harness.as(sipho), SIPHO, { kind: 'attendance', from: FROM, to: TO, fileName: '' })).resolves.toMatchObject({ kind: 'attendance' });
+    // FORM-OPTIONAL-1: an attendance form with NO entry at all is confirmed first; then it completes.
+    await refusedWith(completePayrollForm(harness.as(sipho), SIPHO, { kind: 'attendance', from: FROM, to: TO, fileName: '' }), 'attendance_empty_unconfirmed');
+    await expect(completePayrollForm(harness.as(sipho), SIPHO, { kind: 'attendance', from: FROM, to: TO, fileName: '', confirmNoEntries: true })).resolves.toMatchObject({ kind: 'attendance' });
   });
 
   it('nobody completes another person’s form; the Office completes no timesheet', async () => {

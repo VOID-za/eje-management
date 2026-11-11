@@ -107,8 +107,18 @@ service log with the operation's name.
   - Half-typed, it is a draft that stops Complete, as before.
   - A stored line cleared to blank stays a draft until it is filled in or removed. It is a change to a real line, not
     an unused one.
-- **Kept on purpose:** a timesheet with **no lines at all** still asks "I have nothing to claim" before Complete. It is
-  a deliberate confirmation, not a check on a day.
+- **An attendance form with no entry at all is confirmed first** (the owner, 11 November 2026, before release).
+  - The dialog reads **No attendance entries**: "You have not entered any attendance for this period. Are you sure you
+    want to complete this form?"
+  - **Go back and fill in attendance** closes the dialog and leaves the page and everything on it as it is. Nothing is
+    completed.
+  - **Complete without entries** completes the form. The audit event says it was completed without attendance
+    entries, as confirmed, and the form reads "0 present, 0 absent, N without an entry".
+  - No record is invented, and no day is marked absent.
+  - The server refuses an unconfirmed one (`attendance_empty_unconfirmed`). An older client's
+    `confirmUnrecorded: true` counts as the confirmation.
+- **Blank days beside real entries never ask anything:** Sundays, a weekday not worked, a public holiday.
+- **Kept on purpose:** a timesheet with **no lines at all** still asks "I have nothing to claim" before Complete.
 
 ## A Senior Tech covering for the Office (OFFICE-COVER-1)
 
@@ -189,6 +199,16 @@ The only places the code named the Office role itself, and what this release doe
   - the Timesheets-required rule, audited as the Senior Tech.
 - `authorization.test.ts`: over HTTP.
 - The smoke journey: the Senior Tech's sidebar and Users page.
+
+## The old correction request, removed
+
+Asking the office to correct a *submitted* timesheet (TS-16) is gone everywhere:
+- **The screens.** `TimesheetSubmissions.tsx` and `TimesheetCorrections.tsx` are deleted. They held the last *Ask for a
+  correction* button and its form, and nothing rendered them since v1.10.0.
+- **The server.** The routes to ask for a correction and to decide one both refuse everybody
+  (`timesheet_submitted_final`).
+- **Kept.** The owner's **Correct / Edit** before submission is a different thing, and it stays. So do the stored
+  corrections (0 on production) and the application code that reads their history.
 
 ## Historical records
 

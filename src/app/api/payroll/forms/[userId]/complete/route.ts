@@ -30,6 +30,7 @@ export const POST = writeRoute({
       fileName: z.string().max(200).default(''),
       confirmUnrecorded: z.boolean().optional(),
       confirmNoLines: z.boolean().optional(),
+      confirmNoEntries: z.boolean().optional(),
     })
     .strict(),
   handler: (context) => completePayrollForm(context.operation, context.params.userId ?? '', context.input),

@@ -262,7 +262,7 @@ export const buildTimesheetDays = (input: {
 /**
  * A COORDINATOR KEEPS NO TIMESHEET. TS-ROLE-1 (the tester, 1 November 2026):
  * refused before anything is read or written — entering a line, removing one,
- * a comment, sending a period, asking for a correction, opening their own
+ * a comment, sending a period, opening their own
  * sheet — so no route or old screen can reach it. Their earlier lines, if any,
  * stay in the record untouched; the office can still read them.
  */

@@ -204,6 +204,8 @@ describe('9.4 — days not worked and unused lines are left blank', () => {
     const check = await checkFormCompletion(await as(sipho), SIPHO, 'attendance', FROM, TO);
     expect(check.problems).toEqual([]);
     expect(check.needs.confirmUnrecorded).toBe(false);
+    // Real entries beside the blank days: no "no attendance entries" question either.
+    expect(check.needs.confirmNoEntries).toBe(false);
     // Completed with no confirmation at all.
     const completed = await completePayrollForm(await as(sipho), SIPHO, { kind: 'attendance', from: FROM, to: TO, fileName: '' });
     expect((await harness.repos.attendance.listRecords(FROM, TO, SIPHO)).map((record) => record.date).sort()).toEqual(['2026-11-02', '2026-11-04']);
@@ -213,6 +215,25 @@ describe('9.4 — days not worked and unused lines are left blank', () => {
     // A blank day is just that: no status — never "absent".
     expect([sunday?.status ?? null, tuesday?.status ?? null]).toEqual([null, null]);
     expect(completed.summary).toMatch(/without an entry/u);
+  });
+
+  it('attendance with NO entry at all: asked first; going back completes nothing and keeps what is there; "Complete without entries" completes it — no record invented', async () => {
+    const check = await checkFormCompletion(await as(sipho), SIPHO, 'attendance', FROM, TO);
+    expect(check.needs.confirmNoEntries).toBe(true);
+    // A timesheet line elsewhere is untouched by any of this.
+    await line(sipho, '2026-11-02', typed({ customerName: 'ABC Engineering', overtime: '1' }));
+    // "Go back": nothing is sent, so nothing is completed; the server refuses an unconfirmed one all the same.
+    await refusedWith(complete(sipho, 'attendance'), 'attendance_empty_unconfirmed');
+    expect((await loadMyCompletedForms(await as(sipho), SIPHO)).attendance).toBeNull();
+    expect(await harness.repos.attendance.listRecords(FROM, TO, SIPHO)).toEqual([]);
+    expect((await harness.repos.attendance.listEntries(SIPHO, FROM, TO)).map((entry) => entry.customerName)).toEqual(['ABC Engineering']);
+    // "Complete without entries".
+    const completed = await completePayrollForm(await as(sipho), SIPHO, { kind: 'attendance', from: FROM, to: TO, fileName: '', confirmNoEntries: true });
+    expect((await loadMyCompletedForms(await as(sipho), SIPHO)).attendance?.id).toBe(completed.id);
+    expect(completed.summary).toMatch(/^0 present, 0 absent, \d+ without an entry$/u);
+    expect(await harness.repos.attendance.listRecords(FROM, TO, SIPHO)).toEqual([]);
+    const event = (await harness.repos.activity.list()).find((candidate) => candidate.type === 'payroll_form_completed');
+    expect(event?.detail).toMatch(/without attendance entries, as confirmed/u);
   });
 
   it('timesheet: Sunday and a weekday skipped, no overtime line, an unused line left blank — completed with only the work done; nothing empty stored', async () => {
