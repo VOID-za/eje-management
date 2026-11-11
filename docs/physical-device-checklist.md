@@ -1,6 +1,6 @@
 # Physical device checklist — Android phone and rugged tablet (#82)
 
-**Status: NOT STARTED.** Nothing on this page has been done on a physical device. The automated browser suites
+**Status: NOT STARTED (11 November 2026, on v1.10.0 `afa3efa`).** Nothing on this page has been done on a physical device. The automated browser suites
 (desktop, tablet and phone sizes in CI) are emulation, not a substitute. Issue #82 stays open until the owner (or
 a tester the owner names) has completed this list on both devices and recorded the result.
 
