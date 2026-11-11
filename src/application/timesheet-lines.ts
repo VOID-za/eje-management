@@ -249,10 +249,18 @@ const saveLineHeld = async (
    * it since this screen read it: that is a conflict, decided below like any other.
    */
   if (entry === null && isBlankTimesheetLine(input.typed) && (draft === null || draft.updatedAt === (input.expectedRevision ?? null))) {
-    if (draft !== null) await context.repos.attendance.deleteLineDraft(input.id);
+    if (draft !== null) {
+      await context.repos.attendance.deleteLineDraft(input.id);
+      await audit(context, {
+        jobId: null,
+        type: 'timesheet_entry_removed',
+        summary: `Timesheet draft cleared: ${userFullName(context.actor)}'s timesheet${draft.date === null ? '' : ` for ${draft.date}`}`,
+        detail: 'Everything typed in the draft line was cleared, so it is no line at all and is not kept (a day not worked is left blank).',
+      });
+    }
     return {
       id: input.id,
-      date: date !== null && /^d{4}-d{2}-d{2}$/u.test(date) ? date : null,
+      date: date !== null && /^\d{4}-\d{2}-\d{2}$/u.test(date) ? date : null,
       typed: input.typed,
       complete: false,
       problems: [],
@@ -276,7 +284,8 @@ const saveLineHeld = async (
   // timesheet's are not (REPEAT-DATES-1): its LINES are held, refused above; a new line on its date is the next sheet's.
   await assertDatesOpen(context, userId, 'timesheet', [date]);
   await assertDatesOpen(context, userId, 'timesheet', [shownDate, entry?.date].filter((left) => left !== date), { leaving: true });
-  if ((input.expectedRevision ?? null) !== revision) {
+  // Nothing stored for this line (no entry, no draft — a blank save removed its draft): there is nothing newer to protect.
+  if ((entry !== null || draft !== null) && (input.expectedRevision ?? null) !== revision) {
     throw refuse(
       'This line was changed somewhere else since you opened it.',
       'timesheet_line_changed',
@@ -428,7 +437,8 @@ export const saveTimesheetLine = async (
     const removed = await context.repos.attendance.findLineRemoval(input.id);
     const back = removed === null ? false : (await context.repos.attendance.findEntry(input.id)) !== null || (await context.repos.attendance.findLineDraft(input.id)) !== null;
     // A line that exists again after its removal (written back by an earlier release after a rollback) is simply the line now.
-    if (removed !== null && removed.userId === context.actor.id && !back) {
+    // FORM-OPTIONAL-1: a blank save after the removal (a keepalive on leaving the page) asks to store nothing — and nothing is.
+    if (removed !== null && removed.userId === context.actor.id && !back && !isBlankTimesheetLine(input.typed)) {
       throw refuse(
         'This line was removed, so the change was not saved.',
         'timesheet_line_removed',

@@ -46,6 +46,8 @@ export const lineStatus = (
   const pending = saver?.pendingFor(line.id) ?? null;
   if (pending?.refused !== undefined) return 'failed';
   if (pending !== null) return 'saving';
+  // FORM-OPTIONAL-1: a line left blank has nothing to save and nothing wrong with it.
+  if (saver?.isHeldBlank(line.id) === true) return 'saved';
   const savedRevision = saver?.revisionOf(line.id) ?? null;
   // Saved here more recently than the copy on screen (the list has not reloaded yet): what was typed is what was saved.
   if (savedRevision !== null && savedRevision !== line.revision) {

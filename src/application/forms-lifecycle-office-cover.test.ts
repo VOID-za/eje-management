@@ -72,8 +72,23 @@ const snapshotOfDays = async () =>
 describe('9.1 — only the owner edits a form, whoever else is asking', () => {
   it('Sipho edits his own; another technician, an Apprentice, the Office and both Senior Techs are refused on every path', async () => {
     const { first } = await fillSipho();
+    // While the dates are OPEN (nothing completed, so no lock refuses it first): refused because it is not theirs.
+    for (const other of [riaan, thabo, christene, elmarie, johan]) {
+      const context = await as(other);
+      await refusedWith(saveTimesheetLine(context, SIPHO, { id: first.id, date: '2026-11-03', typed: typed({ customerName: 'Rewritten', overtime: '9' }), expectedRevision: first.revision }), 'not_permitted');
+      await refusedWith(saveTimesheetLine(context, SIPHO, { id: crypto.randomUUID(), date: '2026-11-06', typed: typed({ customerName: 'Added', overtime: '1' }), expectedRevision: null }), 'not_permitted');
+      await refusedWith(removeTimesheetLine(context, SIPHO, first.id), 'not_permitted');
+      await refusedWith(recordAttendance(context, { userId: SIPHO, date: '2026-11-06', status: 'present', note: '' }), 'not_permitted');
+      await refusedWith(clearAttendance(context, { userId: SIPHO, date: '2026-11-03' }), 'not_permitted');
+      await refusedWith(saveWorkingTimesheetComment(context, SIPHO, 'Not yours'), 'not_permitted');
+      await refusedWith(completePayrollForm(context, SIPHO, { kind: 'attendance', from: FROM, to: TO, fileName: '' }), 'not_permitted');
+    }
     const timesheet = await complete(sipho, 'timesheet');
     const attendance = await complete(sipho, 'attendance');
+    for (const other of [riaan, thabo, christene, elmarie, johan]) {
+      await refusedWith(withdrawCompletedForm(await as(other), SIPHO, timesheet.id), 'not_permitted');
+      await refusedWith(submitCompletedForms(await as(other), SIPHO), 'not_permitted');
+    }
     for (const other of [riaan, thabo, christene, elmarie, johan]) {
       const context = await as(other);
       await refused(withdrawCompletedForm(context, SIPHO, timesheet.id));

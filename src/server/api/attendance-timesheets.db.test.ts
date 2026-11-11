@@ -343,7 +343,7 @@ describeDb('attendance and timesheets on PostgreSQL', () => {
     expect(await db.select().from(schema.timesheetCorrections)).toHaveLength(0);
     expect(await db.select().from(schema.notifications).where(eq(schema.notifications.type, 'timesheet_correction_requested'))).toHaveLength(0);
 
-    // One asked for before that rule, as the 0039 table holds it: still decided once, and write-once.
+    // One asked for before that rule, as the 0039 table holds it: write-once, and — FORM-LIFECYCLE-2 — never decided now.
     const id = crypto.randomUUID();
     const sentSnapshot = sentBefore!.snapshot as { entries: { overtimeHours: number }[] };
     await db.insert(schema.timesheetCorrections).values({
@@ -382,19 +382,24 @@ describeDb('attendance and timesheets on PostgreSQL', () => {
     )).toContain('timesheet_corrections_rejection_explained');
     expect(await postgresMessage(db.delete(schema.timesheetCorrections).where(eq(schema.timesheetCorrections.id, id)))).toContain('cannot be deleted');
 
-    // The office decides once; the decision is then write-once.
+    // FORM-LIFECYCLE-2: a submission is final — nobody, the Office and Senior Techs included, decides a correction now.
     const master = await signIn('elmarie@example-test.co.za');
-    const decide = `/api/timesheets/${IDS.technician}/corrections/${id}/decide`;
-    expect((await tech.post(decide, { decision: 'accept' })).status).toBe(403);
-    const accepted = await master.post(decide, { decision: 'accept' });
-    expect(accepted.status, JSON.stringify(accepted.error)).toBe(200);
     const coordinator = await signIn('christene@example-test.co.za');
-    expect((await coordinator.post(decide, { decision: 'reject', note: 'no' })).status).toBe(422);
+    const decide = `/api/timesheets/${IDS.technician}/corrections/${id}/decide`;
+    for (const client of [tech, master, coordinator]) {
+      const refused = await client.post(decide, { decision: 'accept' });
+      expect(refused.status).toBe(422);
+      expect(refused.error?.violations.map((violation) => violation.code)).toEqual(['timesheet_submitted_final']);
+    }
+    const [still] = await db.select().from(schema.timesheetCorrections).where(eq(schema.timesheetCorrections.id, id));
+    expect(still).toMatchObject({ status: 'pending', decidedBy: null });
+    // Decided once in the database (as a correction decided before the rule is held), it is write-once.
+    await db.update(schema.timesheetCorrections).set({ status: 'accepted', decidedBy: IDS.master, decidedAt: new Date().toISOString() }).where(eq(schema.timesheetCorrections.id, id));
     expect(await postgresMessage(
       db.update(schema.timesheetCorrections).set({ status: 'rejected', decisionNote: 'reversed' }).where(eq(schema.timesheetCorrections.id, id)),
     )).toContain('already decided');
 
-    // The sent period is exactly as it was; the version in force is the correction.
+    // The sent period is exactly as it was; a correction decided before the rule still reads as the version in force, the original beside it.
     const [sentAfter] = await db.select().from(schema.timesheetPeriods).where(eq(schema.timesheetPeriods.id, sentBefore!.id));
     expect(sentAfter).toEqual(sentBefore);
     const current = await master.get<{ totals: { overtimeHours: number }; versionLabel: string }>(`/api/timesheets/${IDS.technician}/period?from=${from}&to=${to}`);
@@ -402,8 +407,7 @@ describeDb('attendance and timesheets on PostgreSQL', () => {
     expect(current.data.versionLabel).toMatch(/^Correction 1, accepted/u);
     const original = await master.get<{ totals: { overtimeHours: number } }>(`/api/timesheets/${IDS.technician}/period?from=${from}&to=${to}&version=original`);
     expect(original.data.totals.overtimeHours).toBe(2);
-    const decided = await db.select().from(schema.notifications).where(eq(schema.notifications.type, 'timesheet_correction_decided'));
-    expect(decided.map((n) => n.recipientId)).toEqual([IDS.technician]);
+    expect(await db.select().from(schema.notifications).where(eq(schema.notifications.type, 'timesheet_correction_decided'))).toEqual([]);
   });
 
   it('monthly payroll: one write-once submission per month, and a Finance package whose contents never change (migration 0040)', async () => {

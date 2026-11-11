@@ -4683,12 +4683,9 @@ await step('a technician submits last month’s payday timesheet and attendance;
   await page.goto(`${BASE}/attendance?from=${previous}-01&to=${lastDay}`, { waitUntil: 'networkidle' });
   await page.getByTestId('attendance-complete').click();
   await page.getByTestId('complete-form-name').waitFor({ timeout: 20000 });
-  // Weekdays without attendance must be confirmed before the form can be completed.
-  const acknowledge = page.getByTestId('complete-form-confirm-unrecorded');
-  if ((await acknowledge.count()) > 0) {
-    if (await page.getByTestId('complete-form-ok').isEnabled()) throw new Error('OK was enabled before the unrecorded weekdays were confirmed');
-    await acknowledge.check();
-  }
+  // FORM-OPTIONAL-1: weekdays left blank are days not worked — never something to confirm.
+  if ((await page.getByTestId('complete-form-confirm-unrecorded').count()) !== 0) throw new Error('blank weekdays are asked to be confirmed');
+  await page.waitForFunction(() => document.querySelector('[data-testid="complete-form-ok"]')?.hasAttribute('disabled') === false, null, { timeout: 15000 });
   await page.getByTestId('complete-form-ok').click();
   await page.getByTestId('attendance-completed-notice').waitFor({ timeout: 20000 });
   await page.goto(`${BASE}/payroll/mine`, { waitUntil: 'networkidle' });

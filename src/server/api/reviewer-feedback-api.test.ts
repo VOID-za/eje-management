@@ -183,6 +183,10 @@ describe('only the owner edits a form, over HTTP (FORM-LIFECYCLE-2, OFFICE-COVER
         await client.post('/api/attendance', { userId: 'user-tech-sipho', date: shift(today, -2), status: 'present', note: '' }),
         await client.post('/api/payroll/forms/user-tech-sipho/complete', { kind: 'timesheet', from: shift(today, -5), to: shift(today, -1), fileName: '' }),
         await client.post('/api/payroll/forms/user-tech-sipho/submit', {}),
+        await client.post('/api/payroll/forms/user-tech-sipho/withdraw', { completionId: crypto.randomUUID() }),
+        await client.post('/api/attendance', { userId: 'user-tech-sipho', date: shift(today, -2), status: 'none', note: '' }),
+        await client.post('/api/timesheets/user-tech-sipho/working/comment', { comment: 'Not yours' }),
+        await client.post('/api/timesheets/user-tech-sipho/entries', { date: shift(today, -3), customerName: 'Legacy route', overtimeHours: 1, doubleHours: 0 }),
       ];
       expect(writes.map((response) => response.status), who).toEqual(writes.map(() => 403));
     }
@@ -241,8 +245,12 @@ describe('a sent timesheet is final over HTTP (TS-FINAL-1, the owner, 11 Novembe
     expect((await master.get(`/api/timesheets/user-tech-sipho/period?from=${from}&to=${to}&version=bogus`)).status).toBe(400);
     expect((await riaan.get(`/api/timesheets/user-tech-sipho/period?from=${from}&to=${to}&version=original`)).status).toBe(403);
     const decide = `/api/timesheets/user-tech-sipho/corrections/${crypto.randomUUID()}/decide`;
-    expect((await technician.post(decide, { decision: 'accept' })).status).toBe(403);
-    expect((await riaan.post(decide, { decision: 'accept' })).status).toBe(403);
+    // FORM-LIFECYCLE-2: deciding a correction is refused for everybody — the Office and Senior Techs included.
+    for (const client of [technician, riaan, master, await signedInAs(DEMO_USERS.coordinator)]) {
+      const refused = await client.post(decide, { decision: 'accept' });
+      expect(refused.status).toBe(422);
+      expect(refused.error?.violations.map((violation) => violation.code)).toEqual(['timesheet_submitted_final']);
+    }
     expect((await technician.get<readonly unknown[]>('/api/timesheets/corrections/pending')).data).toEqual([]);
   });
 });

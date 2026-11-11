@@ -21,7 +21,7 @@ import { isUsableRange, readRememberedRange, rememberRange, type DateRange } fro
 import { daysInPeriod, formatDayAndDate, formatPeriod, isCalendarDay } from '@/lib/timesheet-dates';
 import { COMMENT_KEY } from '@/lib/timesheet-autosave';
 import { groupByDay } from '@/lib/timesheet-day';
-import { emptyTimesheetLineTyped, parseTyped, randToCents } from '@/lib/timesheet-line';
+import { emptyTimesheetLineTyped, isBlankTimesheetLine, parseTyped, randToCents } from '@/lib/timesheet-line';
 
 /** The longest period the page lays out day by day; the submission itself may be up to a year. */
 const TIMESHEET_RANGE_MAX_DAYS = 366;
@@ -145,7 +145,8 @@ const TimesheetsPage = () => {
   // Every line the server has — a submitted one included, so a line added here and submitted elsewhere is not drawn again as new.
   const known = new Set((lines.data ?? []).map((line) => line.id));
   // The server's lines, then those added here: shown while they wait to be saved or once saved (until the reload brings them).
-  const addedHere = added.filter((line) => !known.has(line.id) && (saver?.pendingFor(line.id) != null || saver?.revisionOf(line.id) != null));
+  // FORM-OPTIONAL-1: a line added and still blank is not stored by the server, yet it stays on this screen to be typed in.
+  const addedHere = added.filter((line) => !known.has(line.id) && (saver?.pendingFor(line.id) != null || saver?.revisionOf(line.id) != null || saver?.isHeldBlank(line.id) === true));
   const shownIds = new Set([...known, ...addedHere.map((line) => line.id)]);
   // A line added on this device and still waiting in its queue (offline, refused, or from before a reload) is shown, so it can be fixed or removed.
   const queued: EditableLine[] = (saver?.newLines() ?? [])
@@ -208,7 +209,10 @@ const TimesheetsPage = () => {
   const stranded = (saver?.refusedChanges() ?? []).filter((change) => change.kind !== 'comment' && !drawn.has(change.id) && !(lines.data ?? []).some((line) => line.id === change.id && line.submitted === null));
   const outside = all.filter((line) => line.date !== null && (line.date < from || line.date > to));
   const byDay = groupByDay(inside, (line) => line.date);
-  const drafts = inside.filter((line) => !line.complete || saver?.pendingFor(line.id) !== null).length;
+  // FORM-OPTIONAL-1: a blank line never stored as a line (added and left empty, or an empty draft from before) is not a draft.
+  const storedEntryOf = (id: string) => (lines.data ?? []).find((line) => line.id === id)?.entry ?? null;
+  const blankUnstored = (line: EditableLine) => storedEntryOf(line.id) === null && isBlankTimesheetLine(shownLine(line, saver).typed);
+  const drafts = inside.filter((line) => !blankUnstored(line) && (!line.complete || saver?.pendingFor(line.id) !== null)).length;
   const completeInside = inside.filter((line) => line.complete);
   const total = (pick: (line: EditableLine) => number) => completeInside.reduce((sum, line) => sum + pick(line), 0);
   const savedComment = sheet.data?.comment ?? '';

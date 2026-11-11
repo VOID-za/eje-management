@@ -340,16 +340,14 @@ await check('E. only the timesheet completed: Submit to Office disabled — "Att
   if (codeOf(other) !== 'form_period_mismatch') fail(`attendance for other dates answered ${codeOf(other)}`);
 });
 
-await check('E. the attendance completed on its page (unrecorded weekdays confirmed in the dialog); its days lock; the button is enabled — "Ready to submit"', async () => {
+await check('E. the attendance completed on its page (blank weekdays said, never confirmed — FORM-OPTIONAL-1); its days lock; the button is enabled — "Ready to submit"', async () => {
   await go(`/attendance?from=${FROM}&to=${TO}`);
   await dayRow(D1).waitFor({ timeout: 20000 });
   await press(page.getByTestId('attendance-complete'));
   await page.getByTestId('complete-form-name').waitFor({ timeout: 10000 });
-  const confirm = page.getByTestId('complete-form-confirm-unrecorded');
-  if ((await confirm.count()) === 1) {
-    if (await page.getByTestId('complete-form-ok').isEnabled()) fail('OK is offered before the unrecorded days are confirmed');
-    await confirm.check();
-  }
+  if ((await page.getByTestId('complete-form-confirm-unrecorded').count()) !== 0) fail('blank weekdays are asked to be confirmed');
+  await page.waitForFunction(() => document.querySelector('[data-testid="complete-form-ok"]')?.hasAttribute('disabled') === false, null, { timeout: 15000 });
+  if (!(await page.getByTestId('complete-form-ok').isEnabled())) fail('OK is not offered with blank weekdays');
   await press(page.getByTestId('complete-form-ok'));
   await page.getByTestId('attendance-completed-notice').waitFor({ timeout: 20000 });
   const edit = await call('POST', '/api/attendance', { userId: SIPHO, date: D1, status: 'absent', absenceReason: 'leave', note: '' });

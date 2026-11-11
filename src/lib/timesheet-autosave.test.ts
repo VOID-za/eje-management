@@ -398,3 +398,65 @@ describe('TimesheetAutosaver', () => {
     expect(stored.has('k')).toBe(false);
   });
 });
+
+
+describe('FORM-OPTIONAL-1: a blank line the server does not store (revision null)', () => {
+  const blank = (overtime = ''): TimesheetLineTyped => ({ pick: '', customerName: '', overtime, double: '', callout: '', internalKm: '', customerKm: '' });
+  /** A server that stores a line only when something is typed in it, as `saveLineHeld` does. */
+  const blankAware = () => {
+    let revision = 0;
+    const sent: { overtime: string; expected: string | null }[] = [];
+    const stored = new Map<string, string>();
+    return {
+      sent,
+      saveLine: async (input: { id: string; typed: TimesheetLineTyped; expectedRevision: string | null }) => {
+        sent.push({ overtime: input.typed.overtime, expected: input.expectedRevision });
+        const held = stored.get(input.id) ?? null;
+        // Nothing stored: nothing newer to protect, so any revision is accepted (the server's rule).
+        if (held !== null && input.expectedRevision !== held) throw new Conflict('newer');
+        if (input.typed.overtime.trim() === '' && input.typed.customerName.trim() === '') {
+          stored.delete(input.id);
+          return { id: input.id, revision: null };
+        }
+        revision += 1;
+        stored.set(input.id, `r${revision}`);
+        return { id: input.id, revision: `r${revision}` };
+      },
+    };
+  };
+
+  it('a line added and left blank stays held on this screen after its save — it does not disappear before it is typed in', async () => {
+    const server = blankAware();
+    const { saver, tick } = setup({ saveLine: server.saveLine });
+    saver.change({ kind: 'line', id: 'L1', date: '2026-11-03', typed: blank(), base: null }, 0);
+    await tick();
+    expect(saver.pendingFor('L1')).toBeNull();
+    expect(saver.revisionOf('L1')).toBeNull();
+    expect(saver.isHeldBlank('L1')).toBe(true);
+    // Then typed into: saved from nothing, and no longer blank.
+    saver.change({ kind: 'line', id: 'L1', date: '2026-11-03', typed: typed('2'), base: null }, 0);
+    await tick();
+    expect(server.sent.at(-1)).toEqual({ overtime: '2', expected: null });
+    expect(saver.isHeldBlank('L1')).toBe(false);
+    expect(saver.revisionOf('L1')).toBe('r1');
+  });
+
+  it('a draft cleared to blank and typed into again while that save is in flight is never refused as a conflict with itself', async () => {
+    const server = blankAware();
+    const conflicts: string[] = [];
+    const { saver, tick } = setup({ saveLine: server.saveLine, onConflict: (_id, message) => conflicts.push(message) });
+    saver.change({ kind: 'line', id: 'L1', date: '2026-11-03', typed: { ...blank('abc'), customerName: 'Half' }, base: null }, 0);
+    await tick();
+    expect(saver.revisionOf('L1')).toBe('r1');
+    // Cleared — and, before that save is answered, typed into again.
+    saver.change({ kind: 'line', id: 'L1', date: '2026-11-03', typed: blank(), base: null }, 0);
+    const clearing = tick();
+    saver.change({ kind: 'line', id: 'L1', date: '2026-11-03', typed: typed('2'), base: null }, 0);
+    await clearing;
+    await tick();
+    expect(conflicts).toEqual([]);
+    expect(server.sent.map((entry) => entry.overtime)).toEqual(['abc', '', '2']);
+    expect(server.sent.at(-1)?.expected).toBeNull();
+    expect(saver.revisionOf('L1')).toBe('r2');
+  });
+});

@@ -108,6 +108,11 @@ export class TimesheetAutosaver {
   private retries = 0;
   private inFlight = false;
   /** The change being sent right now: it may reach the server whatever happens to it here. */
+  /**
+   * FORM-OPTIONAL-1: lines whose last save the server answered as blank — nothing stored (revision null). Still lines
+   * on this screen, waiting to be typed into; their next save starts from nothing, never from a revision now gone.
+   */
+  private readonly blank = new Set<string>();
   private sending: string | null = null;
   private sendingChange: TimesheetChange | null = null;
   private again = false;
@@ -128,7 +133,7 @@ export class TimesheetAutosaver {
     const version = (previous?.version ?? 0) + 1;
     let next: TimesheetChange;
     if (input.kind === 'line') {
-      const base = previous?.kind === 'line' ? previous.base : this.revisions.get(id) ?? input.base;
+      const base = previous?.kind === 'line' ? previous.base : this.blank.has(id) ? null : this.revisions.get(id) ?? input.base;
       // A save that may have gone through before the connection dropped stays remembered while more is typed.
       const unsure = previous?.kind === 'line' ? previous.unsure : undefined;
       next = { kind: 'line', id, date: input.date, typed: input.typed, base, version, ...(unsure === undefined ? {} : { unsure }) };
@@ -238,6 +243,11 @@ export class TimesheetAutosaver {
     return [...this.pending.values()].filter((change) => change.refused !== undefined);
   }
 
+  /** A line the server last answered as blank (nothing stored): still shown on this screen, still the person's to type in. */
+  isHeldBlank(id: string): boolean {
+    return this.blank.has(id);
+  }
+
   /** The revision saved this visit for a line, newer than the screen's data. */
   revisionOf(id: string): string | null {
     return this.revisions.get(id) ?? null;
@@ -294,8 +304,10 @@ export class TimesheetAutosaver {
         // A blank line is not stored: it is still new to the server, and its next save starts from nothing.
         this.revisions.delete(change.id);
         this.savedLines.delete(change.id);
+        this.blank.add(change.id);
         return;
       }
+      this.blank.delete(change.id);
       this.revisions.set(change.id, saved.revision);
       // The versions this save replaced, one after another from this device: the list may still show any of them.
       const before = this.savedLines.get(change.id);
@@ -303,6 +315,7 @@ export class TimesheetAutosaver {
       this.savedLines.set(change.id, { date: change.date, typed: change.typed, revision: saved.revision, behind });
     } else if (change.kind === 'remove') {
       await this.options.removeLine(change.id, { keepalive: false });
+      this.blank.delete(change.id);
       this.revisions.delete(change.id);
       this.savedLines.delete(change.id);
     } else {
@@ -340,7 +353,7 @@ export class TimesheetAutosaver {
           const current = this.pending.get(next.id);
           if (current?.version === next.version) this.pending.delete(next.id);
           // A newer change raced this save: it goes next, from what was just saved.
-          else if (current?.kind === 'line') this.pending.set(next.id, { ...current, base: this.revisions.get(next.id) ?? current.base });
+          else if (current?.kind === 'line') this.pending.set(next.id, { ...current, base: this.blank.has(next.id) ? null : this.revisions.get(next.id) ?? current.base });
           else if (current?.kind === 'comment' && next.kind === 'comment') this.pending.set(next.id, { ...current, base: next.comment });
           this.write();
         } catch (cause: unknown) {

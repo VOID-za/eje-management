@@ -77,7 +77,8 @@ export const TimesheetDay = ({
   const bodyId = useId();
   const [moving, setMoving] = useState<string | null>(null);
   const summary = summariseDay(lines.map((line) => shownLine(line, saver)));
-  const state = dayState(lines.map((line) => lineStatus(line, saver)));
+  // FORM-OPTIONAL-1: a line added and left blank does not make the day a draft.
+  const state = dayState(lines.filter((line) => saver?.isHeldBlank(line.id) !== true).map((line) => lineStatus(line, saver)));
   const badge = STATE_TEXT[state];
   const figures = [
     `OT ${hours(summary.overtime)}`,
