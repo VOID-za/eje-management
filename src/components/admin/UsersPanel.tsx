@@ -73,6 +73,8 @@ export const UsersPanel = ({
   const [list, setList] = useState<ListId>('active');
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [confirming, setConfirming] = useState<{ user: User; enable: boolean } | null>(null);
+  // TS-USER-2: the Office's one change on an account it does not otherwise administer — a Senior Tech's.
+  const [timesheetSetting, setTimesheetSetting] = useState<{ user: User; required: boolean } | null>(null);
 
   const [resetting, setResetting] = useState<User | null>(null);
   const [resetSentTo, setResetSentTo] = useState<string | null>(null);
@@ -171,6 +173,18 @@ export const UsersPanel = ({
             destructive: row.active,
             onSelect: () => setConfirming({ user: row, enable: !row.active }),
           });
+        } else if (roleKeepsTimesheet(row.role) && canSetTimesheetRequired(actor, row)) {
+          /*
+           * TS-USER-2 (the owner, 11 November 2026): the Office sets a Senior Tech's "Timesheets required", and nothing
+           * else on that account — so this is the only action offered, not the editor. The operation checks it again.
+           */
+          const required = row.timesheetRequired === false;
+          items.push({
+            id: 'timesheets',
+            label: required ? 'Require timesheets' : 'Stop requiring timesheets',
+            icon: <Icon name="clock" className="size-4" />,
+            onSelect: () => setTimesheetSetting({ user: row, required }),
+          });
         }
 
         return (
@@ -188,7 +202,7 @@ export const UsersPanel = ({
     <div className="space-y-4">
       <AdminNotice
         title="User management"
-        body="Senior Techs add users, set roles — including moving somebody between Technician, Apprentice and Office — disable leavers and reactivate returners. A Senior Tech cannot edit another Senior Tech: those accounts stay listed, with no actions on them. The office manages technicians only. Disabling never deletes: past job cards and the audit trail keep naming the person who did the work."
+        body="Senior Techs add users, set roles — including moving somebody between Technician, Apprentice and Office — disable leavers and reactivate returners. A Senior Tech cannot edit another Senior Tech: those accounts stay listed, with no actions on them. The office manages technicians only — and sets whether each person keeps a timesheet, a Senior Tech included; a Senior Tech sets only their own. Disabling never deletes: past job cards and the audit trail keep naming the person who did the work."
       />
 
       {operation.error !== null && (
@@ -275,6 +289,28 @@ export const UsersPanel = ({
       />
 
       <ConfirmDialog
+        open={timesheetSetting !== null}
+        title={timesheetSetting?.required === true ? 'Require timesheets?' : 'Stop requiring timesheets?'}
+        message={
+          timesheetSetting === null
+            ? ''
+            : timesheetSetting.required
+              ? `${userFullName(timesheetSetting.user)} will complete a timesheet and attendance again.`
+              : `${userFullName(timesheetSetting.user)} will complete attendance only. Nothing they submitted before changes. Refused while a timesheet of theirs is still in progress.`
+        }
+        confirmLabel={timesheetSetting?.required === true ? 'Require timesheets' : 'Attendance only'}
+        busy={operation.running}
+        onConfirm={async () => {
+          if (timesheetSetting === null) return;
+          const { user, required } = timesheetSetting;
+          const ok = await operation.run(() => userApi.setTimesheetRequired(user.id, required));
+          setTimesheetSetting(null);
+          if (ok) onChanged();
+        }}
+        onCancel={() => setTimesheetSetting(null)}
+      />
+
+      <ConfirmDialog
         open={resetting !== null}
         title="Send a password reset?"
         message={
@@ -358,7 +394,7 @@ const UserEditor = ({
             mobile: mobile.trim(),
             jobTitle: jobTitle.trim(),
             documentName: documentName.trim() === '' ? null : documentName.trim(),
-            // Sent only when this actor may set it (never on one's own account); the operation checks again.
+            // Sent only when this actor may set it (TS-USER-2: the Office; a Senior Tech on their own); the operation checks again.
             ...(canSetTimesheetRequired(actor, existing) ? { timesheetRequired } : {}),
             // Unchanged unless this actor may set it, and the operation checks
             // that again rather than trusting what arrives.
@@ -456,7 +492,7 @@ const UserEditor = ({
                 !roleKeepsTimesheet(role)
                   ? 'The Office keeps attendance only, whatever this says.'
                   : !canSetTimesheetRequired(actor, existing)
-                    ? 'Set by the Office or a Senior Tech.'
+                    ? 'Set by the Office.'
                     : 'Disabled: no timesheet is asked of them or counted as outstanding; everything else their role does is unchanged.'
               }
               data-testid="user-timesheets-required"

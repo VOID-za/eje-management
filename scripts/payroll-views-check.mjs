@@ -319,64 +319,61 @@ await check('Finance: a package is prepared and its files listed', async () => {
   if (packageId === null) fail('no prepared package');
 });
 
-await check('Corrections: asked for by the technician, accepted by the office — the version in force; the original still readable', async () => {
+await check('A submitted timesheet is final (TS-FINAL-1): no correction is offered and the route refuses; the Submitted timesheets list is gone from EJE Monthly Forms (MONTHLY-FORMS-TRIM-1)', async () => {
   await become('Sipho Mahlangu');
   await go(`/payroll/mine?from=${FROM}&to=${TO}`);
-  // Under Corrections (HISTORY-ONE-1): choose the submitted timesheet, then ask.
+  await page.getByTestId('my-corrections').waitFor({ timeout: 20000 });
+  for (const gone of ['my-timesheet-corrections', 'my-timesheet-correction-choose', 'timesheet-correction-start']) {
+    if ((await page.getByTestId(gone).count()) !== 0) fail(`My Monthly Forms still offers ${gone}`);
+  }
   const own = (await call('GET', '/api/timesheets/user-tech-sipho/working')).json?.data?.submissions?.find((entry) => entry.from === FROM && entry.to === TO && entry.current);
   if (own === undefined) fail('no current submitted timesheet for the dates');
-  await page.getByTestId('my-timesheet-correction-choose').selectOption(own.id);
-  await press(page.getByTestId('timesheet-correction-start'));
-  await page.getByTestId('timesheet-correction-ot').first().fill('3.5');
-  await page.getByTestId('timesheet-correction-reason').fill('The crane job ran longer — views check');
-  await press(page.getByTestId('timesheet-correction-submit'));
-  await page.getByTestId('timesheet-correction-done').waitFor({ timeout: 20000 });
-  await become('Christene van Niekerk');
-  // FORMS-OWN-1: the office's list of every technician's is on EJE Monthly Forms — never on a personal page.
-  await go('/payroll/mine');
+  const asked = await call('POST', '/api/timesheets/user-tech-sipho/period/corrections', { from: FROM, to: TO, periodId: own.id, reason: 'views check', comment: '', lines: [] });
+  if (asked.status !== 422 || asked.json?.error?.violations?.[0]?.code !== 'timesheet_submitted_final') fail(`asking for a correction answered ${asked.status} ${JSON.stringify(asked.json?.error)}`);
+  // Their History still opens the submission as it went.
   await page.getByTestId('my-monthly-history').waitFor({ timeout: 20000 });
-  if ((await page.getByTestId('timesheet-office').count()) !== 0) fail('every technician’s timesheets are on My Monthly Forms');
-  await go('/payroll');
-  const office = page.getByTestId('timesheet-office');
-  await office.waitFor({ timeout: 20000 });
-  const theirs = office.locator('[data-testid="timesheet-submission"]').filter({ hasText: 'Sipho' }).filter({ has: page.getByTestId('timesheet-submission-corrections') }).first();
-  await theirs.waitFor({ timeout: 20000 });
-  await press(theirs.getByTestId('timesheet-submission-corrections'));
-  await press(page.getByTestId('timesheet-correction-accept'));
-  await page.waitForFunction(() => document.querySelector('[data-testid="timesheet-correction"]')?.getAttribute('data-status') === 'accepted', null, { timeout: 20000 });
-  if (!/Correction 1/u.test(await page.getByTestId('timesheet-version-in-force').innerText())) fail('the version in force is not Correction 1');
-  // CSV-OFF-2: no Export CSV on Monthly Forms — the list moved here keeps none.
-  if ((await theirs.getByTestId('timesheet-submission-csv').count()) !== 0) fail('Export CSV is on EJE Monthly Forms');
-  await press(theirs.getByTestId('timesheet-submission-view-original'));
-  await page.getByTestId('document-preview').waitFor({ timeout: 20000 });
-  await page.keyboard.press('Escape');
+  for (const who of ['Christene van Niekerk', 'Elmarie Coetzee']) {
+    await become(who);
+    await go('/payroll');
+    await page.getByTestId('finance-package').waitFor({ timeout: 20000 });
+    if ((await page.getByTestId('timesheet-office').count()) !== 0) fail(`${who} still sees the Submitted timesheets list`);
+    const text = await page.locator('main').innerText();
+    for (const gone of ['Submitted timesheets — every technician', 'Each person submits their own on My Monthly Forms', 'View original']) {
+      if (text.includes(gone)) fail(`${who}'s EJE Monthly Forms still shows "${gone}"`);
+    }
+    // CSV-OFF-2: no Export CSV on Monthly Forms.
+    if ((await page.getByTestId('timesheet-submission-csv').count()) !== 0) fail('Export CSV is on EJE Monthly Forms');
+    // Nothing is left below the last card: the page ends where its content does.
+    const tail = await page.evaluate(() => {
+      const main = document.querySelector('main');
+      const cards = [...(main?.querySelectorAll('[data-testid="finance-package"], [data-testid="monthly-forms"]') ?? [])];
+      const last = cards.at(-1)?.getBoundingClientRect().bottom ?? 0;
+      const content = [...(main?.querySelectorAll('*') ?? [])].reduce((max, el) => Math.max(max, el.getBoundingClientRect().bottom), 0);
+      return Math.round(content - last);
+    });
+    if (tail > 40) fail(`${who}'s EJE Monthly Forms has ${tail}px below its last card`);
+    // The office still reads the submission: Open forms, then its PDF preview.
+    await page.getByTestId('payroll-month').fill(MONTH);
+    const row = page.locator('[data-testid="finance-row"]').filter({ hasText: 'Sipho' }).first();
+    await row.waitFor({ timeout: 20000 });
+    await press(row.getByRole('button', { name: /View forms/u }));
+    await page.getByTestId('monthly-forms-read-only').waitFor({ timeout: 20000 });
+    await press(page.locator('[data-testid="monthly-timesheet-preview"], [data-testid="monthly-attendance-preview"]').first());
+    await page.getByTestId('document-preview').waitFor({ timeout: 20000 });
+    await page.keyboard.press('Escape');
+    await noPageOverflow(`EJE Monthly Forms (${who})`);
+  }
 });
 
-await check('Finance (audit F1): the package prepared before the correction is refused at Send — nothing sent; prepared again it carries the correction', async () => {
+await check('Finance: the prepared package is discarded, nothing sent', async () => {
   await become('Christene van Niekerk');
   await go('/payroll');
   await page.getByTestId('payroll-month').fill(MONTH);
-  await prepared().getByTestId('finance-send').waitFor({ timeout: 20000 });
-  if (await prepared().getByTestId('finance-send').isDisabled()) {
-    // Email off on this deployment: Send cannot be pressed; the refusal is proved through the route instead.
-    const send = await call('POST', `/api/payroll/packages/${packageId}/send`, {});
-    if (send.json?.error?.violations?.[0]?.code !== 'package_out_of_date') fail(`Send answered ${send.status} ${JSON.stringify(send.json?.error)}`);
-  } else {
-    await press(prepared().getByTestId('finance-send'));
-    await press(page.getByRole('button', { name: 'Send one email' }));
-    await page.getByTestId('finance-error').waitFor({ timeout: 20000 });
-    if (!/changed after this package was prepared/u.test(await page.getByTestId('finance-error').innerText())) fail(`the refusal: ${await page.getByTestId('finance-error').innerText()}`);
-  }
+  await prepared().getByTestId('finance-discard').waitFor({ timeout: 20000 });
+  await press(prepared().getByTestId('finance-discard'));
+  await page.getByTestId('finance-prepare').waitFor({ timeout: 20000 });
   const stored = (await call('GET', `/api/payroll/months/${MONTH}`)).json?.data?.packages?.find((p) => p.id === packageId);
-  if (stored?.status !== 'prepared' || stored?.sentAt !== null) fail(`the package is ${stored?.status}`);
-  await press(prepared().getByTestId('finance-discard'));
-  await page.getByTestId('finance-prepare').waitFor({ timeout: 20000 });
-  const row = page.locator('[data-testid="finance-row"]').filter({ hasText: 'Sipho' }).first();
-  await row.getByTestId('finance-select').check();
-  await press(page.getByTestId('finance-prepare'));
-  if (!/Correction 1/u.test(await preparedFiles())) fail('the new package does not carry the correction');
-  await press(prepared().getByTestId('finance-discard'));
-  await page.getByTestId('finance-prepare').waitFor({ timeout: 20000 });
+  if (stored === undefined || stored.status === 'prepared' || stored.sentAt !== null) fail(`the package is ${JSON.stringify(stored)}`);
 });
 
 await check('attendance only: the Coordinator submits attendance alone — no timesheet in the history', async () => {

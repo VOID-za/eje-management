@@ -196,8 +196,8 @@ export const updateUser = async (context: OperationContext, user: User): Promise
     ]);
   }
   /*
-   * TS-USER-1 (the owner, 8 November 2026): whether this person must keep a timesheet. Set by whoever may edit the
-   * account; it changes nothing else the role may do. Never switched while a timesheet of theirs is half-way — a
+   * TS-USER-1 (the owner, 8 November 2026): whether this person must keep a timesheet. Set by the Office, or by a Senior
+   * Tech on their own account (TS-USER-2, `canSetTimesheetRequired`); it changes nothing else the role may do. Never switched while a timesheet of theirs is half-way — a
    * completed one waiting on My Monthly Forms, or a correction of one open — so no form is left stranded: it is
    * submitted (or withdrawn and its correction completed) first.
    */
@@ -248,7 +248,7 @@ const assertMaySetTimesheetRequired = async (context: OperationContext, target: 
     throw new WorkflowError(`You cannot change whether ${target.id === context.actor.id ? 'you keep' : `${userFullName(target)} keeps`} a timesheet.`, [
       {
         code: 'timesheet_setting_not_permitted',
-        message: 'It is set by somebody who administers the account: the Office or a Senior Tech for Technicians and Apprentices; a Senior Tech for their own account.',
+        message: 'It is set by the Office for everybody who keeps a timesheet, Senior Techs included; a Senior Tech also sets their own.',
       },
     ]);
   }

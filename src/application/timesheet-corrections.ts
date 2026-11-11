@@ -256,7 +256,7 @@ export const requestTimesheetCorrection = async (
   await notifyOffice(context, {
     type: 'timesheet_correction_requested',
     title: `${userFullName(context.actor)} asked to correct a sent timesheet`,
-    body: `Period: ${label}\nReason: ${reason}\nOpen EJE Monthly Forms → Submitted timesheets — every technician to accept or reject it.`,
+    body: `Period: ${label}\nReason: ${reason}\nOpen Notifications → Monthly Forms to read it.`,
     link: '/payroll',
   });
   return correctionView(context, saved);

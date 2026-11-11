@@ -54,10 +54,12 @@ describe('TS-USER-1 — the default keeps every account as it was', () => {
 });
 
 describe('TS-USER-1 — disabled and enabled again, for every role that keeps a timesheet', () => {
-  for (const [name, person, by] of [['Technician', sipho, coordinator], ['Apprentice', apprentice, coordinator], ['Senior Tech', otherMaster, otherMaster]] as const) {
-    // A Senior Tech account is protected from every other user: its holder, who administers users, sets it.
+  for (const [name, person, by] of [['Technician', sipho, coordinator], ['Apprentice', apprentice, coordinator], ['Senior Tech, by the Office', otherMaster, coordinator], ['Senior Tech, by themselves', otherMaster, otherMaster]] as const) {
+    // TS-USER-2: the Office sets it for everybody who keeps a timesheet; a Senior Tech sets their own.
     it(`${name}: disabled — refused on the server, attendance only, nothing outstanding; enabled — the timesheet again`, async () => {
-      await setRequired(by, person, false);
+      // The Office reaches a Senior Tech through the single-setting path: the rest of that account stays protected.
+      if (by.role === 'coordinator' && person.role === 'master') await setTimesheetRequired(harness.as(by), person.id, false);
+      else await setRequired(by, person, false);
       const off = await fresh(person);
       expect(off.timesheetRequired).toBe(false);
       expect(off.role).toBe(person.role);
@@ -84,7 +86,8 @@ describe('TS-USER-1 — disabled and enabled again, for every role that keeps a 
       expect(assignableToJobs(off.role)).toBe(true);
       if (person.role === 'master') expect(can(off.role, 'payroll.finance')).toBe(true);
       // Enabled again: the timesheet workflow is theirs once more.
-      await setRequired(by, person, true);
+      if (by.role === 'coordinator' && person.role === 'master') await setTimesheetRequired(harness.as(by), person.id, true);
+      else await setRequired(by, person, true);
       await expect(line(person, '2026-11-27')).resolves.toMatchObject({ complete: true });
       const trail = (await harness.repos.activity.list()).filter((event) => event.summary.startsWith('Timesheets '));
       expect(trail.map((event) => event.summary).sort()).toEqual([`Timesheets not required: ${off.firstName} ${off.lastName}`, `Timesheets required: ${off.firstName} ${off.lastName}`].sort());
@@ -103,22 +106,66 @@ describe('TS-USER-1 — disabled and enabled again, for every role that keeps a 
   });
 });
 
-describe('TS-USER-1 — who may change it, and when', () => {
-  it('only those who may edit the account; never by the person themselves when they cannot; recorded on the audit trail', async () => {
-    await expect(setRequired(riaan, sipho, false)).rejects.toBeDefined();
-    expect((await fresh(sipho)).timesheetRequired).not.toBe(false);
-    // The Office cannot change a Senior Tech's account (the existing rule), so not this either.
-    await expect(setRequired(coordinator, otherMaster, false)).rejects.toBeDefined();
-    await refusedWith(setTimesheetRequired(harness.as(coordinator), otherMaster.id, false), 'timesheet_setting_not_permitted');
-    expect((await fresh(otherMaster)).timesheetRequired).not.toBe(false);
-    // Another Senior Tech's account stays protected — through either path.
-    await refusedWith(setTimesheetRequired(harness.as(master), otherMaster.id, false), 'timesheet_setting_not_permitted');
-    expect((await fresh(otherMaster)).timesheetRequired).not.toBe(false);
-    // A technician never sets his own (nor anybody's).
-    await expect(setTimesheetRequired(harness.as(sipho), sipho.id, false)).rejects.toBeDefined();
-    // A Senior Tech sets a technician's through the single-setting path too.
-    await expect(setTimesheetRequired(harness.as(master), sipho.id, false)).resolves.toMatchObject({ timesheetRequired: false });
+describe('TS-USER-2 — who may change it (the owner, 11 November 2026)', () => {
+  const trail = async () => (await harness.repos.activity.list()).filter((event) => event.summary.startsWith('Timesheets '));
+  const unchanged = async (...people: User[]) => {
+    for (const person of people) expect((await fresh(person)).timesheetRequired).not.toBe(false);
+  };
+
+  it("the Office sets a Technician's, an Apprentice's and a Senior Tech's — each change audited with who, whom, from and to", async () => {
+    await setRequired(coordinator, sipho, false);
+    await setRequired(coordinator, apprentice, false);
+    await setTimesheetRequired(harness.as(coordinator), otherMaster.id, false);
+    for (const person of [sipho, apprentice, otherMaster]) expect((await fresh(person)).timesheetRequired).toBe(false);
+    const events = await trail();
+    expect(events).toHaveLength(3);
+    for (const event of events) {
+      expect(event.detail).toContain('from Enabled to Disabled');
+      expect(event.detail).toContain(`by ${coordinator.firstName} ${coordinator.lastName}`);
+      expect(event.changes).toEqual([{ field: 'Timesheets required', from: 'Enabled', to: 'Disabled' }]);
+    }
+    expect(events.map((event) => event.summary).sort()).toEqual(
+      [sipho, apprentice, otherMaster].map((person) => `Timesheets not required: ${person.firstName} ${person.lastName}`).sort(),
+    );
+    // Only the setting: the rest of a Senior Tech account stays out of the Office's reach.
+    await expect(setRequired(coordinator, otherMaster, true)).rejects.toBeDefined();
+    expect((await fresh(otherMaster)).timesheetRequired).toBe(false);
   });
+
+  it("a Senior Tech sets their own — through the editor and the single-setting path — and nobody else's", async () => {
+    await setRequired(master, master, false);
+    expect((await fresh(master)).timesheetRequired).toBe(false);
+    await setTimesheetRequired(harness.as(await fresh(master)), master.id, true);
+    expect((await fresh(master)).timesheetRequired).toBe(true);
+    // Another Senior Tech's: refused through either path.
+    await refusedWith(setTimesheetRequired(harness.as(master), otherMaster.id, false), 'timesheet_setting_not_permitted');
+    await expect(setRequired(master, otherMaster, false)).rejects.toBeDefined();
+    // A Technician's or an Apprentice's: no longer a Senior Tech's to set, through either path.
+    await refusedWith(setTimesheetRequired(harness.as(master), sipho.id, false), 'timesheet_setting_not_permitted');
+    await refusedWith(setRequired(master, sipho, false), 'timesheet_setting_not_permitted');
+    await refusedWith(setTimesheetRequired(harness.as(master), apprentice.id, false), 'timesheet_setting_not_permitted');
+    await unchanged(otherMaster, sipho, apprentice);
+    // Editing a technician's other details is still a Senior Tech's — the setting simply stays as it is.
+    await expect(updateUser(harness.as(master), { ...(await fresh(sipho)), jobTitle: 'Lead Technician' })).resolves.toMatchObject({ jobTitle: 'Lead Technician', timesheetRequired: true });
+    expect((await trail()).map((event) => event.summary).sort()).toEqual([`Timesheets not required: ${master.firstName} ${master.lastName}`, `Timesheets required: ${master.firstName} ${master.lastName}`].sort());
+  });
+
+  it("a Technician and an Apprentice set nobody's, their own included; an Office account has nothing to set", async () => {
+    for (const actor of [sipho, riaan, apprentice]) {
+      for (const target of [sipho, riaan, apprentice, master, otherMaster]) {
+        await expect(setTimesheetRequired(harness.as(await fresh(actor)), target.id, false)).rejects.toBeDefined();
+      }
+    }
+    await expect(setRequired(sipho, sipho, false)).rejects.toBeDefined();
+    for (const actor of [coordinator, master]) {
+      await refusedWith(setTimesheetRequired(harness.as(actor), coordinator.id, false), 'timesheet_setting_not_permitted');
+    }
+    await unchanged(sipho, riaan, apprentice, master, otherMaster);
+    expect(await trail()).toHaveLength(0);
+  });
+});
+
+describe('TS-USER-1 — never switched off half-way', () => {
 
   it('not while a correction of a submitted timesheet waits for the office', async () => {
     const { requestTimesheetCorrection } = await import('./timesheet-corrections');

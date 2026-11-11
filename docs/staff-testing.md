@@ -135,6 +135,11 @@ Do these on the tablet with **flight mode** on, after opening the job once with 
 
 ## H. The reviewer's changes, the owner's decisions and timesheet corrections (28–29 October 2026)
 
+> **11 November 2026 — TS-FINAL-1 and MONTHLY-FORMS-TRIM-1:** a submitted timesheet is final. *Ask for a
+> correction* and the office's list of submitted timesheets are gone, so **H10–H13 and I12 no longer apply** — skip
+> them. Withdrawing a completed form and correcting it **before** submitting is unchanged. The physical-device list is
+> `docs/physical-device-checklist.md`.
+
 **LIVE since 29 October 2026** in `1a34d1c` (migrations 0037, 0038 and 0039
 applied; `docs/deploy-next-release.md`). Use fictional data only
 while the demonstration switcher is on. Two accounts are needed for the

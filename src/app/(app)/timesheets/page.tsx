@@ -268,8 +268,8 @@ const TimesheetsPage = () => {
         <p role="status" className="mb-4 text-sm text-steel-600" data-testid="timesheet-not-required">
           {user.role === 'coordinator' ? (
             <>
-              The Office does not complete a timesheet — only attendance. Everybody&apos;s submitted timesheets are on{' '}
-              <a href="/payroll" className="font-medium text-eje-700 underline">EJE Monthly Forms</a>.
+              The Office does not complete a timesheet — only attendance. Each person&apos;s submitted forms are read on{' '}
+              <a href="/payroll" className="font-medium text-eje-700 underline">EJE Monthly Forms</a> (View forms).
             </>
           ) : (
             // TS-USER-1: the office set this account to attendance only.

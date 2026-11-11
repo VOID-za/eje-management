@@ -7,7 +7,6 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { MonthlyFormsCard } from '@/components/payroll/MonthlyFormsCard';
 import { FinancePackagePanel } from '@/components/payroll/FinancePackagePanel';
 import { MyMonthlyForms } from '@/components/payroll/MyMonthlyForms';
-import { OfficeSubmittedTimesheets } from '@/components/payroll/SubmittedTimesheets';
 import { useCurrentUser } from '@/providers/AppProvider';
 import { businessToday } from '@/lib/business-time';
 import { isPayrollMonth, monthOfDate, previousMonth } from '@/lib/payroll-files';
@@ -72,8 +71,11 @@ const PayrollPage = () => {
 
       {valid && <FinancePackagePanel month={month} onOpenForms={(id) => setViewing(id)} />}
       {valid && viewing !== null && <MonthlyFormsCard key={`${viewing}:${month}`} userId={viewing} month={month} />}
-      {/* FORMS-OWN-1: every technician's submitted timesheets are reviewed here, never on a personal page. */}
-      <OfficeSubmittedTimesheets />
+      {/*
+        MONTHLY-FORMS-TRIM-1 (the owner, 11 November 2026): the "Submitted timesheets — every technician" list is gone
+        from this page, for the Office and Senior Techs alike. A person's submitted forms are still read here, through
+        View forms, as submitted, with their PDFs.
+      */}
     </>
   );
 };

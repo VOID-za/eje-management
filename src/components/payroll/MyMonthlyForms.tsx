@@ -5,7 +5,6 @@ import { Badge, Button, ButtonLink, Card, ConfirmDialog, Icon, LoadingPanel, Que
 import { DocumentPreviewDialog } from '@/components/documents/DocumentPreviewDialog';
 import { DownloadFileButton } from '@/components/exports/DownloadFileButton';
 import { ExportPdfButton } from '@/components/exports/ExportPdfButton';
-import { TimesheetCorrectionRequests } from '@/components/payroll/SubmittedTimesheets';
 import { completesTimesheet } from '@/domain';
 import { payroll } from '@/api/endpoints';
 import { ApiRequestError, newIdempotencyKey } from '@/api/client';
@@ -294,9 +293,9 @@ const historyForms = (entries: readonly PayrollSubmissionView[]): readonly { rea
  * dates (attendance alone for the Office, who keeps no timesheet), and when
  * not, the reason is written under it. It sends both together as one
  * submission; the server checks it all again and never sends one form alone.
- * Then CORRECTIONS: forms withdrawn before submission (FORM-WITHDRAW-1) and,
- * for a role that keeps a timesheet, asking the office to correct a submitted
- * one (TS-16). At the bottom, ONE HISTORY (HISTORY-ONE-1, the owner, 7 November
+ * Then CORRECTIONS: forms withdrawn before submission (FORM-WITHDRAW-1). A
+ * submitted form is final (TS-FINAL-1, 11 November 2026): the office is no
+ * longer asked to correct a submitted timesheet. At the bottom, ONE HISTORY (HISTORY-ONE-1, the owner, 7 November
  * 2026): every submitted form — timesheets and attendance together, newest
  * first — read only, each PDF exactly as it went.
  *
@@ -397,7 +396,7 @@ export const MyMonthlyForms = () => {
       <Card className="mb-5" data-testid="my-corrections">
         <p className="text-sm font-semibold text-steel-900">Corrections</p>
         <p className="text-xs text-steel-500">
-          Forms you withdrew before submitting them, each kept exactly as it was completed, beside its correction. A submitted form is never withdrawn; a submitted timesheet is corrected by asking the office, below.
+          Forms you withdrew before submitting them, each kept exactly as it was completed, beside its correction. A submitted form is final: it is never withdrawn or changed.
         </p>
         {state === null ? null : state.corrections.length === 0 ? (
           <p className="mt-3 text-sm text-steel-500" data-testid="my-corrections-empty">No form withdrawn.</p>
@@ -406,7 +405,6 @@ export const MyMonthlyForms = () => {
             {state.corrections.map((entry) => <CorrectionRow key={entry.draftId} entry={entry} />)}
           </ul>
         )}
-        {completesTimesheet(user) && <TimesheetCorrectionRequests />}
       </Card>
 
       <Card className="mb-5" data-testid="my-monthly-history">

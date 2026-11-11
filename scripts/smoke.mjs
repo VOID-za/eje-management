@@ -4113,8 +4113,11 @@ await step('the Master’s Timesheets page: their own sheet by day, From and To 
   await page.goto(`${BASE}/payroll/mine`, { waitUntil: 'networkidle' });
   await page.getByTestId('my-monthly-history').waitFor({ timeout: 15000 });
   if ((await page.getByTestId('timesheet-office').count()) !== 0) throw new Error('every technician’s timesheets are on a personal page');
+  // MONTHLY-FORMS-TRIM-1 (11 November 2026): nor on EJE Monthly Forms — the list is gone; the page is otherwise whole.
   await page.goto(`${BASE}/payroll`, { waitUntil: 'networkidle' });
-  await page.getByTestId('timesheet-office').waitFor({ timeout: 15000 });
+  await page.getByTestId('finance-package').waitFor({ timeout: 15000 });
+  if ((await page.getByTestId('timesheet-office').count()) !== 0) throw new Error('the Submitted timesheets list is still on EJE Monthly Forms');
+  if ((await page.getByText('Submitted timesheets — every technician').count()) !== 0) throw new Error('the Submitted timesheets heading is still on EJE Monthly Forms');
 });
 
 /*
@@ -4298,16 +4301,12 @@ await step('the same dates cannot be submitted again unconfirmed; the office ope
   if (again.unconfirmed !== 422) throw new Error(`submitting the same dates again answered ${again.unconfirmed}`);
   if (again.retired !== 422) throw new Error(`the retired Submit timesheet answered ${again.retired}`);
   await signInAsMasterIfNeeded();
-  // FORMS-OWN-1: the office reads everybody's submissions on EJE Monthly Forms.
+  // MONTHLY-FORMS-TRIM-1: EJE Monthly Forms no longer lists every submitted timesheet; the office still reads it.
   await page.goto(`${BASE}/payroll`, { waitUntil: 'networkidle' });
-  const office = page.getByTestId('timesheet-office');
-  const row = office.locator(`[data-testid="timesheet-submission"][data-from="${from}"][data-to="${to}"]`).filter({ hasText: 'Sipho' }).first();
-  await row.waitFor({ timeout: 15000 });
-  // CSV-OFF-2: no Export CSV on Monthly Forms, the moved list included.
-  if ((await row.getByTestId('timesheet-submission-csv').count()) !== 0) throw new Error('Export CSV is on EJE Monthly Forms');
-  await row.getByTestId('timesheet-submission-view-original').click();
-  await page.getByTestId('document-preview').waitFor({ timeout: 20000 });
-  await page.getByTestId('preview-close').click();
+  await page.getByTestId('finance-package').waitFor({ timeout: 15000 });
+  if ((await page.getByTestId('timesheet-office').count()) !== 0) throw new Error('the Submitted timesheets list is still on EJE Monthly Forms');
+  // CSV-OFF-2: no Export CSV on Monthly Forms.
+  if ((await page.getByTestId('timesheet-submission-csv').count()) !== 0) throw new Error('Export CSV is on EJE Monthly Forms');
   const read = await page.evaluate(async ({ base }) => (await (await fetch(`${base}/api/timesheets/submissions?userId=user-tech-sipho`)).json()).data, { base: BASE });
   const current = read.find((item) => item.from === from && item.to === to);
   if (current === undefined || current.current !== true) throw new Error(`the office's list: ${JSON.stringify(read)}`);
@@ -4937,12 +4936,26 @@ await step('a Master moves a technician to Coordinator and back', async () => {
 
 /*
  * TS-USER-1 (8 November 2026): Timesheets required, per user, on the Users page — shown in the list, set in the
- * editor, kept after saving, and enabled again; the role stays as it was.
+ * editor, kept after saving, and enabled again; the role stays as it was. TS-USER-2 (11 November 2026): set by the
+ * Office for everybody who keeps a timesheet, Senior Techs included; a Senior Tech sets only their own.
  */
-await step('a Master disables and enables Timesheets for a technician; the list says so; the role is unchanged', async () => {
+await step('a Master is not offered a technician\'s Timesheets required; the Office disables and enables it; the list says so; the role is unchanged', async () => {
   const row = () => page.getByRole('row').filter({ hasText: 'Sipho Mahlangu' }).first();
   const state = async () => row().getByTestId('user-timesheets').getAttribute('data-state');
   if ((await state()) !== 'enabled') throw new Error(`Sipho's timesheets read ${await state()} before any change`);
+  // The Master edits Sipho's account, but the setting is the Office's.
+  await row().getByRole('button', { name: 'Manage' }).click();
+  await page.getByRole('menuitem', { name: 'Edit user and role' }).click();
+  const masters = page.getByRole('dialog');
+  await masters.waitFor({ timeout: 8000 });
+  if (!(await masters.getByTestId('user-timesheets-required').isDisabled())) throw new Error('a Master may set a technician\'s Timesheets required');
+  await masters.getByRole('button', { name: 'Cancel' }).click();
+  await masters.waitFor({ state: 'detached', timeout: 10000 });
+  await signInAs(page, 'Christene van Niekerk');
+  try {
+  await page.goto(`${BASE}/admin`, { waitUntil: 'networkidle' });
+  await page.getByRole('tab', { name: 'Users', exact: true }).click();
+  await row().waitFor({ timeout: 10000 });
   for (const [choice, expected] of [['disabled', 'disabled'], ['enabled', 'enabled']]) {
     await row().getByRole('button', { name: 'Manage' }).click();
     await page.getByRole('menuitem', { name: 'Edit user and role' }).click();
@@ -4963,16 +4976,34 @@ await step('a Master disables and enables Timesheets for a technician; the list 
         await page.getByTestId('timesheet-not-required').filter({ hasText: 'not required for your account' }).waitFor({ timeout: 10000 });
         if ((await page.locator('nav a[href="/jobs"]').count()) === 0) throw new Error('a disabled technician lost his Jobs');
       } finally {
-        // Whatever happened, the steps after this one run as the Master again.
-        await signInAsMasterIfNeeded();
+        await signInAs(page, 'Christene van Niekerk');
       }
       await page.goto(`${BASE}/admin`, { waitUntil: 'networkidle' });
       await page.getByRole('tab', { name: 'Users', exact: true }).click();
       await row().waitFor({ timeout: 10000 });
     }
   }
-  const office = page.getByRole('row').filter({ hasText: 'Christene' }).first();
-  if ((await office.count()) > 0 && (await office.getByTestId('user-timesheets').getAttribute('data-state')) !== 'not_applicable') throw new Error('the Office is offered a timesheet');
+  {
+    // The Office on a Senior Tech account: the one action offered is this setting — no editor, nothing else.
+    const senior = () => page.getByRole('row').filter({ hasText: 'Denise' }).first();
+    const seniorState = async () => senior().getByTestId('user-timesheets').getAttribute('data-state');
+    if ((await seniorState()) !== 'enabled') throw new Error(`Denise's timesheets read ${await seniorState()} before any change`);
+    for (const [label, confirm, expected] of [['Stop requiring timesheets', 'Attendance only', 'disabled'], ['Require timesheets', 'Require timesheets', 'enabled']]) {
+      await senior().getByRole('button', { name: 'Manage' }).click();
+      if ((await page.getByRole('menuitem', { name: /Edit user/u }).count()) !== 0) throw new Error('the Office is offered the editor on a Senior Tech account');
+      await page.getByRole('menuitem', { name: label }).click();
+      await page.getByRole('dialog').getByRole('button', { name: confirm, exact: true }).click();
+      await page.waitForFunction((want) => [...document.querySelectorAll('tr')].some((tr) => tr.textContent?.includes('Denise') && tr.querySelector('[data-testid="user-timesheets"]')?.getAttribute('data-state') === want), expected, { timeout: 10000 });
+    }
+    const office = page.getByRole('row').filter({ hasText: 'Christene' }).first();
+    if ((await office.count()) > 0 && (await office.getByTestId('user-timesheets').getAttribute('data-state')) !== 'not_applicable') throw new Error('the Office is offered a timesheet');
+  }
+  } finally {
+    // Whatever happened, the steps after this one run as the Master again.
+    await signInAsMasterIfNeeded();
+    await page.goto(`${BASE}/admin`, { waitUntil: 'networkidle' });
+    await page.getByRole('tab', { name: 'Users', exact: true }).click();
+  }
 });
 
 await step('the role change is on the activity trail, with both roles', async () => {

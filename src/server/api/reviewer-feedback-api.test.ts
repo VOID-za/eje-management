@@ -164,12 +164,12 @@ describe('the delivery note over HTTP (PARTS-03/04/05)', () => {
   });
 });
 
-describe('correcting a sent timesheet over HTTP (TS-16)', () => {
+describe('a sent timesheet is final over HTTP (TS-FINAL-1, the owner, 11 November 2026)', () => {
   beforeEach(() => {
     startTestServer();
   });
 
-  it('asks, refuses every bypass, replays a retry without duplicating, and lets the office decide once', async () => {
+  it('nobody may ask to correct a submitted timesheet — its owner, another technician or the office; nothing is created', async () => {
     const today = businessToday();
     const from = shift(today, -3);
     const to = shift(today, -1);
@@ -187,49 +187,34 @@ describe('correcting a sent timesheet over HTTP (TS-16)', () => {
       comment: '',
       lines: [{ entryId: added.data.entry.id, date: to, customerName: 'ABC Engineering', overtimeHours: 3, doubleHours: 0, calloutAmount: 0 }],
     };
-    // Another technician, and the office, cannot ask on Sipho's behalf.
     const riaan = await signedInAs(DEMO_USERS.otherTechnician);
-    expect((await riaan.post('/api/timesheets/user-tech-sipho/period/corrections', body)).status).toBe(403);
     const master = await signedInAs(DEMO_USERS.master);
-    expect((await master.post('/api/timesheets/user-tech-sipho/period/corrections', body)).status).toBe(403);
-    // Unknown fields are refused by the schema, not ignored.
-    expect((await technician.post('/api/timesheets/user-tech-sipho/period/corrections', { ...body, status: 'accepted' })).status).toBe(400);
-
-    const asked = await technician.post<{ correction: { id: string; sequence: number; status: string } }>(
-      '/api/timesheets/user-tech-sipho/period/corrections', body, { idempotencyKey: 'ts16-ask-1' },
-    );
-    expect(asked.status, JSON.stringify(asked.error)).toBe(200);
-    expect(asked.data.correction).toMatchObject({ sequence: 1, status: 'pending' });
-    // The same request retried (same key) is answered from the record: the same correction, not a second.
-    const replay = await technician.post<{ correction: { id: string } }>(
-      '/api/timesheets/user-tech-sipho/period/corrections', body, { idempotencyKey: 'ts16-ask-1' },
-    );
-    expect(replay.status).toBe(200);
-    expect(replay.data.correction.id).toBe(asked.data.correction.id);
-    // A fresh second request while one is pending is refused.
-    expect((await technician.post('/api/timesheets/user-tech-sipho/period/corrections', body)).status).toBe(422);
-
-    const decide = `/api/timesheets/user-tech-sipho/corrections/${asked.data.correction.id}/decide`;
-    expect((await technician.post(decide, { decision: 'accept' })).status).toBe(403);
-    expect((await riaan.post(decide, { decision: 'accept' })).status).toBe(403);
-    const pending = await master.get<readonly { id: string }[]>('/api/timesheets/corrections/pending');
-    expect(pending.data.map((row) => row.id)).toContain(asked.data.correction.id);
-    expect((await technician.get<readonly unknown[]>('/api/timesheets/corrections/pending')).data).toEqual([]);
-
-    const accepted = await master.post<{ correction: { status: string } }>(decide, { decision: 'accept' });
-    expect(accepted.status, JSON.stringify(accepted.error)).toBe(200);
-    expect(accepted.data.correction.status).toBe('accepted');
     const coordinator = await signedInAs(DEMO_USERS.coordinator);
-    expect((await coordinator.post(decide, { decision: 'reject', note: 'no' })).status).toBe(422);
-
-    // The version in force, and the original, through the period read and the PDF.
+    for (const client of [technician, riaan, master, coordinator]) {
+      const refused = await client.post('/api/timesheets/user-tech-sipho/period/corrections', body, { idempotencyKey: crypto.randomUUID() });
+      expect(refused.status).toBe(422);
+      expect(refused.error?.violations.map((violation) => violation.code)).toEqual(['timesheet_submitted_final']);
+    }
+    // Unknown fields are still refused by the schema, not ignored.
+    expect((await technician.post('/api/timesheets/user-tech-sipho/period/corrections', { ...body, status: 'accepted' })).status).toBe(400);
+    // Nothing waits for the office, and the timesheet in force is the one submitted.
+    expect((await master.get<readonly unknown[]>('/api/timesheets/corrections/pending')).data).toEqual([]);
     const current = await master.get<PeriodDocument & { versionLabel: string; inForce: boolean }>(`/api/timesheets/user-tech-sipho/period?from=${from}&to=${to}`);
-    expect(current.data.versionLabel).toMatch(/^Correction 1, accepted/u);
+    expect(current.data.versionLabel).not.toMatch(/^Correction/u);
+    const told = await master.get<{ notifications: readonly { type: string }[] }>('/api/notifications');
+    expect(told.data.notifications.filter((n) => n.type === 'timesheet_correction_requested')).toHaveLength(0);
+
+    // What stays: the routes that read the record. The original version reads as submitted, for its owner and the
+    // office only; an unknown version is refused; nobody but the office reaches the decision route or the pending list.
     const original = await master.get<PeriodDocument & { versionLabel: string; inForce: boolean }>(`/api/timesheets/user-tech-sipho/period?from=${from}&to=${to}&version=original`);
-    expect(original.data.inForce).toBe(false);
+    expect(original.status, JSON.stringify(original.error)).toBe(200);
+    expect(original.data.inForce).toBe(true);
+    expect((await technician.get(`/api/timesheets/user-tech-sipho/period?from=${from}&to=${to}&version=original`)).status).toBe(200);
     expect((await master.get(`/api/timesheets/user-tech-sipho/period?from=${from}&to=${to}&version=bogus`)).status).toBe(400);
     expect((await riaan.get(`/api/timesheets/user-tech-sipho/period?from=${from}&to=${to}&version=original`)).status).toBe(403);
-    const told = await technician.get<{ notifications: readonly { type: string }[] }>('/api/notifications');
-    expect(told.data.notifications.filter((n) => n.type === 'timesheet_correction_decided')).toHaveLength(1);
+    const decide = `/api/timesheets/user-tech-sipho/corrections/${crypto.randomUUID()}/decide`;
+    expect((await technician.post(decide, { decision: 'accept' })).status).toBe(403);
+    expect((await riaan.post(decide, { decision: 'accept' })).status).toBe(403);
+    expect((await technician.get<readonly unknown[]>('/api/timesheets/corrections/pending')).data).toEqual([]);
   });
 });

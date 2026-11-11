@@ -375,6 +375,52 @@ describe('managing people', () => {
     expect(response.status).toBe(403);
   });
 
+  /*
+   * TS-USER-2 (the owner, 11 November 2026): "Timesheets required" — the Office for everybody who keeps a timesheet,
+   * Senior Techs included; a Senior Tech for their own only; a Technician for nobody. Over HTTP, by the session alone.
+   */
+  it('lets the Office set a Senior Tech\'s Timesheets required, and nobody else reach what they may not', async () => {
+    const master = await signedInAs(DEMO_USERS.master);
+    const coordinator = await signedInAs(DEMO_USERS.coordinator);
+    const technician = await signedInAs(DEMO_USERS.technician);
+    const ids = {
+      master: await findUser(master, DEMO_USERS.master),
+      secondMaster: await findUser(master, DEMO_USERS.secondMaster),
+      technician: await findUser(master, DEMO_USERS.technician),
+      otherTechnician: await findUser(master, DEMO_USERS.otherTechnician),
+    };
+    const set = (client: ApiTestClient, id: string, required: boolean) =>
+      client.post<{ timesheetRequired: boolean }>(`/api/users/${id}/set_timesheet_required`, { required });
+    const stored = async (id: string) =>
+      (await master.get<{ users: readonly { id: string; timesheetRequired?: boolean }[] }>('/api/admin')).data.users.find((user) => user.id === id)?.timesheetRequired;
+    const refused = async (client: ApiTestClient, id: string) => {
+      const response = await set(client, id, false);
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(await stored(id)).not.toBe(false);
+    };
+
+    // The Office: a Senior Tech's (otherwise a protected account) and a Technician's.
+    const office = await set(coordinator, ids.secondMaster, false);
+    expect(office.status, JSON.stringify(office.error)).toBe(200);
+    expect(await stored(ids.secondMaster)).toBe(false);
+    expect((await set(coordinator, ids.secondMaster, true)).status).toBe(200);
+    expect((await set(coordinator, ids.technician, false)).status).toBe(200);
+    expect((await set(coordinator, ids.technician, true)).status).toBe(200);
+    // The rest of a Senior Tech account stays out of the Office's reach.
+    expect((await coordinator.post(`/api/users/${ids.secondMaster}/set_active`, { active: false })).status).toBe(403);
+
+    // A Senior Tech: their own, never another Senior Tech's or a Technician's.
+    expect((await set(master, ids.master, false)).status).toBe(200);
+    expect((await set(master, ids.master, true)).status).toBe(200);
+    await refused(master, ids.secondMaster);
+    await refused(master, ids.technician);
+
+    // A Technician: nobody's, their own included.
+    for (const id of Object.values(ids)) await refused(technician, id);
+    // Nothing but the boolean is accepted.
+    expect((await coordinator.post(`/api/users/${ids.secondMaster}/set_timesheet_required`, { required: false, role: 'coordinator' })).status).toBe(400);
+  });
+
   it('refuses a Technician managing anybody', async () => {
     const master = await signedInAs(DEMO_USERS.master);
     const id = await findUser(master, DEMO_USERS.otherTechnician);

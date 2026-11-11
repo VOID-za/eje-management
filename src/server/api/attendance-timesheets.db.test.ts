@@ -320,7 +320,7 @@ describeDb('attendance and timesheets on PostgreSQL', () => {
     expect(await db.select().from(schema.timesheetPeriods).where(eq(schema.timesheetPeriods.userId, IDS.technician))).toHaveLength(1);
   });
 
-  it('a sent timesheet is corrected through a separate, linked, write-once record; the sent period is never touched (migration 0039)', async () => {
+  it('a sent timesheet is final (TS-FINAL-1); a correction asked for before that is a separate, linked, write-once record; the sent period is never touched (migration 0039)', async () => {
     const today = businessToday();
     const from = shift(today, -3);
     const to = shift(today, -1);
@@ -336,13 +336,22 @@ describeDb('attendance and timesheets on PostgreSQL', () => {
       from, to, reason: 'OT was 3', comment: '',
       lines: [{ entryId: added.data.entry.id, date: to, customerName: 'ABC Engineering', overtimeHours: 3, doubleHours: 0 }],
     };
-    const asked = await tech.post<{ correction: { id: string } }>(`/api/timesheets/${IDS.technician}/period/corrections`, body);
-    expect(asked.status, JSON.stringify(asked.error)).toBe(200);
-    expect((await tech.post(`/api/timesheets/${IDS.technician}/period/corrections`, body)).status).toBe(422);
-    const told = await db.select().from(schema.notifications).where(eq(schema.notifications.type, 'timesheet_correction_requested'));
-    expect(told.map((row) => row.recipientId).sort()).toEqual([IDS.coordinator, IDS.master].sort());
+    // TS-FINAL-1 (the owner, 11 November 2026): nobody may ask any more — refused, and nothing is written.
+    const refused = await tech.post(`/api/timesheets/${IDS.technician}/period/corrections`, body);
+    expect(refused.status).toBe(422);
+    expect(refused.error?.violations.map((violation) => violation.code)).toEqual(['timesheet_submitted_final']);
+    expect(await db.select().from(schema.timesheetCorrections)).toHaveLength(0);
+    expect(await db.select().from(schema.notifications).where(eq(schema.notifications.type, 'timesheet_correction_requested'))).toHaveLength(0);
 
-    const id = asked.data.correction.id;
+    // One asked for before that rule, as the 0039 table holds it: still decided once, and write-once.
+    const id = crypto.randomUUID();
+    const sentSnapshot = sentBefore!.snapshot as { entries: { overtimeHours: number }[] };
+    await db.insert(schema.timesheetCorrections).values({
+      id, periodId: sentBefore!.id, userId: IDS.technician, sequence: 1, reason: 'OT was 3',
+      beforeSnapshot: sentSnapshot,
+      afterSnapshot: { ...sentSnapshot, entries: sentSnapshot.entries.map((entry) => ({ ...entry, overtimeHours: 3 })) },
+      requestedBy: IDS.technician, requestedAt: new Date().toISOString(),
+    });
     const [row] = await db.select().from(schema.timesheetCorrections).where(eq(schema.timesheetCorrections.id, id));
     expect(row).toMatchObject({ periodId: sentBefore!.id, userId: IDS.technician, sequence: 1, status: 'pending', requestedBy: IDS.technician });
     expect((row!.beforeSnapshot as { entries: { overtimeHours: number }[] }).entries[0]?.overtimeHours).toBe(2);
