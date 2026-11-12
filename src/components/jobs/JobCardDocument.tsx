@@ -6,7 +6,6 @@ import {
 } from "@/lib/job-card/model";
 import { SignatureDisplay } from "./SignaturePad";
 import { DocumentPhoto } from "./DocumentPhoto";
-import { LogoMark } from "@/components/layout/Logo";
 
 /**
  * The EJE job card document, on screen.
@@ -42,7 +41,9 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
       <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-steel-900 pb-5">
         <div>
           <div className="flex items-center gap-3">
-            <LogoMark decorative className="size-11" />
+            <span className="flex size-11 items-center justify-center rounded-[0.55rem] bg-steel-900 text-[13px] font-black tracking-tighter text-white">
+              EJE
+            </span>
             <div>
               <p className="text-lg leading-tight font-bold text-steel-900">
                 {model.company.name}

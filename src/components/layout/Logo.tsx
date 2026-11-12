@@ -7,8 +7,12 @@ import { cn } from '@/lib/cn';
  * `scripts/generate-brand-assets.mjs` — never redrawn. Two cuts:
  *
  *   - the MARK: the EJE lettering on its own dark background, square. Header, sidebar,
- *     the documents on screen. Always drawn square, so it is never stretched.
+ *     menu, 404. Always drawn square, so it is never stretched.
  *   - the full LOGO: the whole 3:2 artwork, for the sign-in screen.
+ *
+ * THE APPLICATION ONLY, NEVER A DOCUMENT (the owner, 12 November 2026). No job card, delivery
+ * note, timesheet, attendance form or other document — on screen, printed or PDF — shows the
+ * logo; both images are `print:hidden`, so printing any page leaves them out too.
  *
  * Plain `<img>` on purpose: these are small static files the service worker can keep
  * for offline use (`/branding/` is cacheable); the image optimiser would serve them from
@@ -29,7 +33,7 @@ export const LogoMark = ({ className, decorative = false }: { readonly className
     decoding="async"
     draggable={false}
     data-testid="eje-logo-mark"
-    className={cn('aspect-square size-9 shrink-0 rounded-[0.55rem] object-cover ring-1 ring-white/10', className)}
+    className={cn('aspect-square size-9 shrink-0 rounded-[0.55rem] object-cover ring-1 ring-white/10 print:hidden', className)}
   />
 );
 
@@ -46,7 +50,7 @@ export const LogoFull = ({ className }: { readonly className?: string }) => (
     decoding="async"
     draggable={false}
     data-testid="eje-logo-full"
-    className={cn('aspect-[3/2] h-auto w-full rounded-xl object-cover shadow-lg ring-1 ring-white/10', className)}
+    className={cn('aspect-[3/2] h-auto w-full rounded-xl object-cover shadow-lg ring-1 ring-white/10 print:hidden', className)}
   />
 );
 

@@ -1,25 +1,34 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { brandMark } from './pdf-brand';
-import { PDF_MARK_SIZE } from './pdf-mark';
 import { renderDeliveryNotePdf } from '@/services/simulated/delivery-note-pdf';
 import { renderTimesheetPdf } from '@/services/simulated/timesheet-pdf';
+import { renderAttendancePdf } from '@/services/simulated/attendance-pdf';
+import { buildAttendanceRows, type AttendanceDocument } from '@/application/attendance-document';
 import type { TimesheetDocument } from '@/application/timesheets';
+import { loadFinalDocumentFile } from '@/application/final-document';
+import { buildHarness, seedUser } from '@/application/test-harness';
 import { CACHEABLE_PREFIXES, PRECACHE_PATHS, isCacheablePath } from '@/lib/pwa/shell';
 import manifest from '@/app/manifest';
 
 /**
- * BRAND-1: EJE's official logo, and only that, throughout.
+ * BRAND-1: EJE's official logo — in the APPLICATION, and NEVER on a document.
  *
- * The source is the owner's file, unchanged; every asset is a crop or a scale of it with
- * its proportions kept; every referenced file exists; and each kind of generated PDF
- * carries the mark exactly once.
+ * The owner (12 November 2026): the logo brands the application's interface only. No job
+ * card, delivery note, timesheet, attendance form, report or any other generated or
+ * printable document carries it. So this proves both halves:
+ *
+ *   - the interface: the source is the owner's file unchanged; every asset is a crop or a
+ *     scale of it with its proportions kept; the sign-in screen, sidebar and top bar use it;
+ *     every referenced file exists; it is kept for offline use; it is hidden when printing.
+ *   - the documents: only the interface's own files may name the logo, and each kind of
+ *     generated PDF, rendered here, embeds no image at all (none of these has a photograph).
  */
 
 const ROOT = process.cwd();
 const file = (path: string) => readFileSync(join(ROOT, path));
+const source = (path: string) => file(path).toString('utf8');
 
 /** The SHA-256 of "EJE Icon.jpg" as EJE supplied it. */
 const OFFICIAL_SHA256 = 'be5eff04aeef909daef918c3c3a2723bfec05a846ef69cbb8010fd5a05fa6d45';
@@ -53,20 +62,48 @@ const webpSize = (bytes: Buffer) => {
   throw new Error(`unexpected WebP chunk ${chunk}`);
 };
 
-/** How many times the brand mark's exact JPEG stream is embedded in a PDF. */
-const markCount = (pdf: Uint8Array): number => {
-  const haystack = Buffer.from(pdf);
-  const needle = Buffer.from(brandMark().data);
-  let count = 0;
-  for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, at + 1)) count += 1;
-  return count;
-};
+/** Every source file under `dir`, tests excluded. */
+const sourcesUnder = (dir: string): string[] =>
+  readdirSync(join(ROOT, dir)).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(join(ROOT, path)).isDirectory()) return sourcesUnder(path);
+    return /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|css|html)$/u.test(name) && !/\.test\.|\.browser\.test\./u.test(name) ? [path] : [];
+  });
+
+/**
+ * How a file can show the logo: ANY module path ending in `/Logo` (alias, relative, with an extension, static or
+ * dynamic import), the logo's own files, or the icons — which are now cut from it.
+ */
+const NAMES_THE_LOGO = /['"`][^'"`]*\/Logo(\.[cm]?[jt]sx?)?['"`]|\/branding\/|\/icons\/|eje-logo|eje-mark/u;
+
+/**
+ * The ONLY files allowed to show the logo — the application's own furniture. A document, a
+ * PDF renderer, a print layout or a job card component appearing here is the failure this
+ * test exists to catch.
+ */
+const INTERFACE_FILES = new Set(
+  [
+    'src/components/layout/Logo.tsx', // the logo components themselves
+    'src/components/layout/Sidebar.tsx', // sidebar and the phone menu drawer
+    'src/components/layout/SignInGate.tsx', // the sign-in screen
+    'src/components/layout/TopBar.tsx', // the top bar on a tablet
+    'src/app/not-found.tsx', // the application's 404 page
+    'src/app/layout.tsx', // the favicon and home-screen icons (metadata)
+    'src/app/manifest.ts', // the installed application's icons
+    'src/lib/pwa/shell.ts', // offline caching of the logo files and icons
+    'src/lib/branding/branding.test.ts',
+  ].map((path) => path.replaceAll('/', '\\')),
+);
+const normalise = (path: string) => path.replaceAll('/', '\\');
+
+/** Image objects in a PDF. */
+const imageObjects = (pdf: Uint8Array): number => [...Buffer.from(pdf).toString('latin1').matchAll(/\/Subtype \/Image\b/gu)].length;
 
 describe('the official logo', () => {
   it('is the file EJE supplied, unchanged: 1536 × 1024 JPEG', () => {
-    const source = file('public/branding/eje-logo-original.jpg');
-    expect(createHash('sha256').update(source).digest('hex')).toBe(OFFICIAL_SHA256);
-    expect(jpegSize(source)).toEqual({ width: 1536, height: 1024 });
+    const original = file('public/branding/eje-logo-original.jpg');
+    expect(createHash('sha256').update(original).digest('hex')).toBe(OFFICIAL_SHA256);
+    expect(jpegSize(original)).toEqual({ width: 1536, height: 1024 });
   });
 
   it('is cut, never stretched: the full logo keeps 3:2, every mark and icon is square', () => {
@@ -86,34 +123,64 @@ describe('the official logo', () => {
       expect(pngSize(file(path))).toEqual({ width: size, height: size });
     }
   });
+});
 
-  it('every branding file a page names exists', () => {
+describe('the logo in the application', () => {
+  it('the sign-in screen, the sidebar (and phone menu) and the top bar show it', () => {
+    expect(source('src/components/layout/SignInGate.tsx')).toMatch(/<LogoFull\b/u);
+    expect(source('src/components/layout/SignInGate.tsx')).toMatch(/<Logo\b/u);
+    expect(source('src/components/layout/Sidebar.tsx')).toMatch(/<Logo\b/u);
+    expect(source('src/components/layout/TopBar.tsx')).toMatch(/<LogoMark\b/u);
+  });
+
+  it('every logo file the interface names exists', () => {
     const present = new Set(readdirSync(join(ROOT, 'public', 'branding')));
     const named = [
-      ...[...file('src/components/layout/Logo.tsx').toString('utf8').matchAll(/\/branding\/([\w.-]+)/gu)].map((match) => match[1]!),
+      ...[...source('src/components/layout/Logo.tsx').matchAll(/\/branding\/([\w.-]+)/gu)].map((match) => match[1]!),
       ...PRECACHE_PATHS.filter((path) => path.startsWith('/branding/')).map((path) => path.slice('/branding/'.length)),
     ];
     expect(named.length).toBeGreaterThan(0);
     for (const name of named) expect(present, name).toContain(name);
     for (const icon of manifest().icons ?? []) expect(() => file(join('public', icon.src))).not.toThrow();
+    expect(source('src/app/layout.tsx')).toContain("url: '/icons/icon-64.png'");
   });
 
-  it('the service worker keeps the mark for offline use', () => {
+  it('is kept for offline use', () => {
     expect(CACHEABLE_PREFIXES).toContain('/branding/');
     expect(isCacheablePath('/branding/eje-mark-96.webp')).toBe(true);
     expect(PRECACHE_PATHS).toContain('/branding/eje-mark-96.webp');
   });
+
+  it('is hidden when a page is printed: both logo images carry print:hidden', () => {
+    const images = [...source('src/components/layout/Logo.tsx').matchAll(/<img[\s\S]*?\/>/gu)].map((match) => match[0]);
+    expect(images).toHaveLength(2);
+    for (const image of images) expect(image).toContain('print:hidden');
+  });
 });
 
-describe('the mark on generated PDFs', () => {
-  it('is the square crop, embedded as the JPEG it is', () => {
-    const mark = brandMark();
-    expect({ width: mark.width, height: mark.height }).toEqual({ width: PDF_MARK_SIZE, height: PDF_MARK_SIZE });
-    expect(mark.filter).toBe('DCTDecode');
-    expect(mark.colorSpace).toBe('DeviceRGB');
+describe('the logo is never on a document', () => {
+  it('only the interface files name it — no document, PDF renderer, print layout, route or job card component', () => {
+    const offenders = ['src', 'scripts']
+      .flatMap(sourcesUnder)
+      .map(normalise)
+      .filter((path) => path !== normalise('scripts/generate-brand-assets.mjs'))
+      .filter((path) => NAMES_THE_LOGO.test(source(path)))
+      .filter((path) => !INTERFACE_FILES.has(path));
+    expect(offenders.map((path) => relative('.', path))).toEqual([]);
   });
 
-  it('the delivery note carries it once, and still names the company', () => {
+  it('the PDF code has no image of its own: nothing under the renderers embeds a logo', () => {
+    for (const path of [...sourcesUnder('src/services'), ...sourcesUnder('src/lib/pdf'), ...sourcesUnder('src/lib/job-card')]) {
+      expect(source(path), path).not.toMatch(/branding|BrandMark|LogoMark|eje-logo|eje-mark|EJE Icon/u);
+    }
+  });
+
+  it('an issued job card embeds no image (EJE-1044 has no photograph)', async () => {
+    const card = await loadFinalDocumentFile(buildHarness().as(seedUser('user-master-elmarie')), 'EJE-1044');
+    expect(imageObjects(card.bytes)).toBe(0);
+  });
+
+  it('a delivery note embeds no image', () => {
     const { bytes } = renderDeliveryNotePdf({
       title: 'Delivery Note',
       company: { name: 'EJE Industrial Electronics', address: '1 Test Road, Vereeniging', contactLine: '016 000 0000 · office@example.test' },
@@ -126,11 +193,10 @@ describe('the mark on generated PDFs', () => {
       signature: null,
       footer: 'EJE Industrial Electronics · Delivery Note',
     });
-    expect(markCount(bytes)).toBe(1);
-    expect(Buffer.from(bytes).toString('latin1')).toContain('EJE Industrial Electronics');
+    expect(imageObjects(bytes)).toBe(0);
   });
 
-  it('a timesheet carries it once on one page, and once (shared) across several', () => {
+  it('a timesheet — one page and several — embeds no image', () => {
     const doc = (rows: number): TimesheetDocument => ({
       companyName: 'EJE Industrial Electronics',
       technicianName: 'Test Technician',
@@ -162,9 +228,32 @@ describe('the mark on generated PDFs', () => {
     });
     const one = renderTimesheetPdf(doc(10), { generatedAt: '2026-10-31T16:00:00.000Z' });
     expect(one.pageCount).toBe(1);
-    expect(markCount(one.bytes)).toBe(1);
+    expect(imageObjects(one.bytes)).toBe(0);
     const many = renderTimesheetPdf(doc(400), { generatedAt: '2026-10-31T16:00:00.000Z' });
     expect(many.pageCount).toBeGreaterThan(1);
-    expect(markCount(many.bytes)).toBe(1);
+    expect(imageObjects(many.bytes)).toBe(0);
+  });
+
+  it('an attendance form embeds no image', () => {
+    const month = Array.from({ length: 31 }, (_, index) => ({
+      date: `2026-10-${String(index + 1).padStart(2, '0')}`,
+      status: index % 7 === 6 ? null : ('present' as const),
+      absenceReason: null,
+      note: '',
+    }));
+    const doc: AttendanceDocument = {
+      companyName: 'EJE Industrial Electronics',
+      technicianName: 'Test Technician',
+      fileName: 'TEST ATTEN OCTOBER.pdf',
+      month: '2026-10',
+      monthLabel: 'October 2026',
+      ...buildAttendanceRows(month, '2026-10-31'),
+      submittedAt: '2026-10-31T15:00:00.000Z',
+      submittedByName: 'Test Technician',
+      versionLabel: 'Original',
+      inForce: true,
+      changedAfterSubmission: [],
+    };
+    expect(imageObjects(renderAttendancePdf(doc, { generatedAt: '2026-10-31T16:00:00.000Z' }).bytes)).toBe(0);
   });
 });

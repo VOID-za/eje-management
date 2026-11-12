@@ -16,7 +16,6 @@ import { loadJobView } from './job-view';
 import { buildHarness, seedUser, type Harness } from './test-harness';
 import { loadPreviewPhotos, renderJobCardPdf } from '@/components/jobs/job-card-pdf';
 import { pdfPlainText } from '@/lib/pdf/inspect';
-import { brandMark } from '@/lib/branding/pdf-brand';
 import { SimulatedPdfService } from '@/services/simulated/pdf';
 import { StorageIntegrityFailed, type Clock } from '@/services/ports';
 import type { Job } from '@/domain';
@@ -48,14 +47,8 @@ interface EmbeddedImage {
   readonly data: Buffer;
 }
 
-/** Is this the EJE mark every job card carries in its header (BRAND-1), rather than a photograph? */
-const isBrandMark = (image: EmbeddedImage): boolean => Buffer.from(brandMark().data).equals(image.data);
-
-/** Every PHOTOGRAPH in the file, with its stream bytes exactly as stored — the header's EJE mark excluded. */
-const embeddedImages = (bytes: Uint8Array): EmbeddedImage[] => allEmbeddedImages(bytes).filter((image) => !isBrandMark(image));
-
 /** Every image XObject in the file, with its stream bytes exactly as stored. */
-const allEmbeddedImages = (bytes: Uint8Array): EmbeddedImage[] => {
+const embeddedImages = (bytes: Uint8Array): EmbeddedImage[] => {
   const text = Buffer.from(bytes).toString('latin1');
   const found: EmbeddedImage[] = [];
   const pattern = /<< \/Type \/XObject \/Subtype \/Image (.*?)\/Length (\d+) >>\nstream\n/gs;
@@ -79,17 +72,13 @@ const allEmbeddedImages = (bytes: Uint8Array): EmbeddedImage[] => {
 };
 
 /** Where each image was drawn: the box its matrix maps the unit square to. */
-/** The boxes PHOTOGRAPHS are drawn into — the header's EJE mark (BRAND-1) left out, by its resource name. */
-const drawnBoxes = (bytes: Uint8Array): { width: number; height: number }[] => {
-  // Resources are named /Im1, /Im2 … in the order the images are embedded, which is allEmbeddedImages' order.
-  const marks = new Set(allEmbeddedImages(bytes).flatMap((image, index) => (isBrandMark(image) ? [`Im${index + 1}`] : [])));
-  return [...Buffer.from(bytes).toString('latin1').matchAll(/q (\S+) (\S+) (\S+) (\S+) \S+ \S+ cm \/(Im\d+) Do Q/g)]
-    .filter((match) => !marks.has(match[5]!))
-    .map((match) => {
+const drawnBoxes = (bytes: Uint8Array): { width: number; height: number }[] =>
+  [...Buffer.from(bytes).toString('latin1').matchAll(/q (\S+) (\S+) (\S+) (\S+) \S+ \S+ cm \/Im\d+ Do Q/g)].map(
+    (match) => {
       const [a, b, c, d] = match.slice(1, 5).map(Number) as [number, number, number, number];
       return { width: Math.abs(a) + Math.abs(c), height: Math.abs(b) + Math.abs(d) };
-    });
-};
+    },
+  );
 
 describe('photographs in the job card PDF', () => {
   let harness: Harness;
@@ -145,8 +134,6 @@ describe('photographs in the job card PDF', () => {
     expect(images).toHaveLength(1);
     expect(images[0]).toMatchObject({ width: 320, height: 240, filter: 'DCTDecode' });
     expect(images[0]!.data.equals(Buffer.from(JPEG))).toBe(true);
-    // BRAND-1: and the EJE mark in the header, once, beside the photograph.
-    expect(allEmbeddedImages(bytes).filter(isBrandMark)).toHaveLength(1);
     // Drawn at its own 4:3 proportions, not stretched to the cell.
     const [box] = drawnBoxes(bytes);
     expect(box!.width / box!.height).toBeCloseTo(320 / 240, 2);
