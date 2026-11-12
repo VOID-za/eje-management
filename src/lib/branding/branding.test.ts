@@ -92,9 +92,10 @@ const INTERFACE_FILES = new Set(
     'src/app/manifest.ts', // the installed application's icons
     'src/lib/pwa/shell.ts', // offline caching of the logo files and icons
     'src/lib/branding/branding.test.ts',
-  ].map((path) => path.replaceAll('/', '\\')),
+  ],
 );
-const normalise = (path: string) => path.replaceAll('/', '\\');
+/** For COMPARING only, the same on Windows and Linux: forward slashes. Files are always read by their own path. */
+const normalise = (path: string) => path.replaceAll('\\', '/');
 
 /** Image objects in a PDF. */
 const imageObjects = (pdf: Uint8Array): number => [...Buffer.from(pdf).toString('latin1').matchAll(/\/Subtype \/Image\b/gu)].length;
@@ -160,13 +161,16 @@ describe('the logo in the application', () => {
 
 describe('the logo is never on a document', () => {
   it('only the interface files name it — no document, PDF renderer, print layout, route or job card component', () => {
-    const offenders = ['src', 'scripts']
-      .flatMap(sourcesUnder)
-      .map(normalise)
-      .filter((path) => path !== normalise('scripts/generate-brand-assets.mjs'))
+    const scanned = ['src', 'scripts'].flatMap(sourcesUnder);
+    // Not vacuous: the scan reaches the renderers and the document components it guards.
+    for (const guarded of ['src/services/simulated/job-card-pdf.ts', 'src/components/jobs/JobCardDocument.tsx']) {
+      expect(scanned.map(normalise)).toContain(guarded);
+    }
+    const offenders = scanned
+      .filter((path) => normalise(path) !== 'scripts/generate-brand-assets.mjs')
       .filter((path) => NAMES_THE_LOGO.test(source(path)))
-      .filter((path) => !INTERFACE_FILES.has(path));
-    expect(offenders.map((path) => relative('.', path))).toEqual([]);
+      .filter((path) => !INTERFACE_FILES.has(normalise(path)));
+    expect(offenders.map((path) => normalise(relative('.', path)))).toEqual([]);
   });
 
   it('the PDF code has no image of its own: nothing under the renderers embeds a logo', () => {
