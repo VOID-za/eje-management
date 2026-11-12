@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useSyncExternalStore } from 'react';
+import { LogoMark } from '@/components/layout/Logo';
 
 /**
  * The application's own 404.
@@ -42,6 +43,9 @@ const NotFound = () => {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-[42rem] flex-col justify-center px-6 py-16">
+      <Link href="/dashboard" aria-label="EJE — dashboard" className="mb-6 w-fit">
+        <LogoMark decorative className="size-11" />
+      </Link>
       <p className="font-mono text-sm font-semibold tracking-wide text-eje-600">ERROR 404</p>
       <h1 className="mt-2 text-3xl font-semibold text-steel-900">This page does not exist</h1>
 

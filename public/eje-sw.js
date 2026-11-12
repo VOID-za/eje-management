@@ -30,14 +30,18 @@
 // this file changing. These lines are also the one change that lets a tablet
 // still running the release before that (which registered plain `/eje-sw.js`)
 // notice this release: its browser sees new bytes here.
-const CACHE_VERSION = 'v3';
+//
+// v4 (BRAND-1): the icons are now cut from EJE's official logo, and the logo
+// itself (`/branding/`) is kept so the header and sidebar show it offline. A new
+// version drops the old icons a device has cached under the same paths.
+const CACHE_VERSION = 'v4';
 const SHELL_CACHE = `eje-shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `eje-assets-${CACHE_VERSION}`;
 const CACHE_PREFIX = 'eje-';
 const OFFLINE_PATH = '/offline';
 
-const PRECACHE_PATHS = [OFFLINE_PATH, '/icons/icon-192.png', '/icons/icon-512.png', '/vendor/pdfjs-4.10.38/pdf.min.mjs', '/vendor/pdfjs-4.10.38/pdf.worker.min.mjs'];
-const CACHEABLE_PREFIXES = ['/_next/static/', '/icons/', '/vendor/pdfjs-4.10.38/'];
+const PRECACHE_PATHS = [OFFLINE_PATH, '/icons/icon-192.png', '/icons/icon-512.png', '/branding/eje-mark-96.webp', '/branding/eje-mark-192.webp', '/vendor/pdfjs-4.10.38/pdf.min.mjs', '/vendor/pdfjs-4.10.38/pdf.worker.min.mjs'];
+const CACHEABLE_PREFIXES = ['/_next/static/', '/icons/', '/branding/', '/vendor/pdfjs-4.10.38/'];
 const CACHEABLE_PATHS = [OFFLINE_PATH, '/manifest.webmanifest'];
 const NEVER_CACHE_PREFIXES = ['/api/', '/eje-sw.js'];
 
