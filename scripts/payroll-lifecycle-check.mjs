@@ -301,7 +301,7 @@ await check('C. the completed timesheet refuses every direct request: change, ne
 });
 
 /* ---- D. My Monthly Forms ------------------------------------------------- */
-await check('D. My Monthly Forms: no pay-period filter; Timesheet before Attendance; the completed timesheet under its name; no editing', async () => {
+await check('D. My Monthly Forms: no pay-period filter; Timesheet before Attendance; the completed timesheet under its name; Correct / Edit its only change; no correction request', async () => {
   await myForms();
   for (const gone of ['my-monthly-period', 'my-monthly-from', 'my-monthly-to', 'monthly-timesheet-rename', 'monthly-attendance-rename']) {
     if ((await page.getByTestId(gone).count()) !== 0) fail(`${gone} is still on the page`);
@@ -311,8 +311,14 @@ await check('D. My Monthly Forms: no pay-period filter; Timesheet before Attenda
   if ((await page.getByTestId('my-forms-timesheet').getAttribute('data-state')) !== 'completed') fail('the timesheet is not shown as completed');
   if ((await page.getByTestId('my-forms-timesheet-file').innerText()).trim() !== `${NAME}.pdf`) fail('the completed name is not shown');
   if ((await page.getByTestId('my-forms-attendance').getAttribute('data-state')) !== 'not_completed') fail('the attendance is not shown as not completed');
-  const editing = await page.locator('[data-testid="my-forms-timesheet"]').getByRole('button', { name: /edit|rename|delete|reopen|remove/iu }).count();
-  if (editing !== 0) fail('the completed form offers an editing action');
+  // FORM-LIFECYCLE-2: before submission the owner's one way to change a completed form is Correct / Edit
+  // (it returns the form to its page); nothing else edits, renames, deletes, reopens or removes it in place.
+  const card = page.locator('[data-testid="my-forms-timesheet"]');
+  if ((await card.getByTestId('my-forms-timesheet-withdraw').count()) !== 1) fail('the owner is not offered Correct / Edit');
+  const editing = await card.locator('button:not([data-testid="my-forms-timesheet-withdraw"])').filter({ hasText: /edit|rename|delete|reopen|remove/iu }).count();
+  if (editing !== 0) fail('the completed form offers an editing action besides Correct / Edit');
+  // The obsolete "Ask for a correction" is gone (removed in e19418a).
+  if ((await page.getByRole('button', { name: /ask for a correction|request a correction/iu }).count()) !== 0) fail('an "Ask for a correction" button is on the page');
 });
 
 await check('D. Preview, Print, Download and Save PDF act on the completed PDF, under its name', async () => {
