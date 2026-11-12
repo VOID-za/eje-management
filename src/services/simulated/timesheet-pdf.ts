@@ -2,6 +2,7 @@ import type { TimesheetDocument, TimesheetDocumentRow } from '@/application/time
 import { formatCurrency, formatDateTime } from '@/lib/format';
 import { formatDayAndDate } from '@/lib/timesheet-dates';
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
+import { drawInlineBrandMark } from '@/lib/branding/pdf-brand';
 import { OnePageOverflow, renderOnePageForm, type FormLayout, type FormRow } from './one-page-form';
 import { BAND, BODY, CONTENT_WIDTH, GAP, INK, MARGIN, MUTED, RIGHT, RULE, RULE_SOFT, Sheet, SIZE, TRACK_TITLE } from './pdf-sheet';
 
@@ -192,7 +193,9 @@ const renderMultiPageTimesheet = (
   footer: string,
 ): { bytes: Uint8Array; pageCount: number } => {
   const sheet = new Sheet();
-  sheet.text(MARGIN, doc.companyName, { font: 'bold', size: SIZE.companyName, colour: INK });
+  // BRAND-1: the EJE mark beside the company name, sized to its line.
+  const named = MARGIN + drawInlineBrandMark(sheet.pdf, MARGIN, sheet.cursor, SIZE.companyName);
+  sheet.text(named, doc.companyName, { font: 'bold', size: SIZE.companyName, colour: INK });
   const title = 'TIME SHEET';
   sheet.pdf.text(RIGHT - textWidth(title, SIZE.jobNumber, 'bold', TRACK_TITLE), sheet.cursor, title, { font: 'bold', size: SIZE.jobNumber, colour: INK, tracking: TRACK_TITLE });
   sheet.move(GAP.sectionLarge);

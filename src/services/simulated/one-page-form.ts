@@ -1,5 +1,6 @@
 import { A4_HEIGHT, A4_WIDTH, PdfBuilder, textWidth } from '@/lib/pdf/writer';
 import { BAND, BODY, INK, MUTED, RULE, RULE_SOFT, TRACK_TITLE } from './pdf-sheet';
+import { drawInlineBrandMark } from '@/lib/branding/pdf-brand';
 
 /**
  * ONE PAGE, ALWAYS. PAY-04 (29 October 2026): every timesheet and attendance
@@ -288,7 +289,9 @@ export const renderOnePageForm = (spec: FormSpec): RenderedForm => {
   let y = A4_HEIGHT - MARGIN - Math.max(sizes.company, sizes.title) * 0.8;
 
   // Heading: the company, and the form's title on the right.
-  pdf.text(MARGIN, y, spec.companyName, { font: 'bold', size: sizes.company, colour: INK });
+  // BRAND-1: the EJE mark beside the company name, sized to its line — the fields below do not move.
+  const named = MARGIN + drawInlineBrandMark(pdf, MARGIN, y, sizes.company);
+  pdf.text(named, y, spec.companyName, { font: 'bold', size: sizes.company, colour: INK });
   const titleWidth = textWidth(spec.title, sizes.title, 'bold', TRACK_TITLE);
   pdf.text(A4_WIDTH - MARGIN - titleWidth, y, spec.title, { font: 'bold', size: sizes.title, colour: INK, tracking: TRACK_TITLE });
   y -= sizes.gap + sizes.field * 0.4;

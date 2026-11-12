@@ -29,6 +29,7 @@ import {
 } from '@/lib/job-card/installation-note';
 import { inspectPdf, pdfPageTexts as rawPageTexts, pdfPlainText as rawPlainText } from '@/lib/pdf/inspect';
 import { SimulatedPdfService } from '@/services/simulated/pdf';
+import { brandMark } from '@/lib/branding/pdf-brand';
 import type { Clock } from '@/services/ports';
 import {
   asChecklistTemplateId,
@@ -187,16 +188,28 @@ const preview = async (harness: Harness, job: Job) => {
   return renderJobCardPdf(view, new SimulatedPdfService(clock), clock, images);
 };
 
-/** Every image drawn: its box on the page (the matrix maps the unit square to it). */
+/**
+ * Every PHOTOGRAPH drawn: its box on the page (the matrix maps the unit square to it). The header's EJE mark
+ * (BRAND-1) — the 31pt square at the left margin — is not a photograph and is left out.
+ */
 const drawnImages = (bytes: Uint8Array) =>
-  [...Buffer.from(bytes).toString('latin1').matchAll(/q (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) cm \/Im\d+ Do Q/g)].map(
-    (match) => {
+  [...Buffer.from(bytes).toString('latin1').matchAll(/q (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) cm \/Im\d+ Do Q/g)]
+    .map((match) => {
       const [a, b, c, d, e, f] = match.slice(1, 7).map(Number) as [number, number, number, number, number, number];
       return { x: e, y: f, width: Math.abs(a) + Math.abs(c), height: Math.abs(b) + Math.abs(d) };
-    },
-  );
+    })
+    .filter((box) => !(box.x === 40 && box.width === 31 && box.height === 31));
+/** How many times the header's EJE mark (BRAND-1) is embedded — its exact JPEG stream. */
+const brandMarkCount = (bytes: Uint8Array): number => {
+  const haystack = Buffer.from(bytes);
+  const needle = Buffer.from(brandMark().data);
+  let count = 0;
+  for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, at + 1)) count += 1;
+  return count;
+};
+/** Image objects that are PHOTOGRAPHS: every image object but the header's EJE mark. */
 const imageObjectCount = (bytes: Uint8Array): number =>
-  [...Buffer.from(bytes).toString('latin1').matchAll(/\/Subtype \/Image /g)].length;
+  [...Buffer.from(bytes).toString('latin1').matchAll(/\/Subtype \/Image /g)].length - brandMarkCount(bytes);
 /** WinAnsi's em dash (0x97), read back as the character it is. */
 const emDash = (text: string): string => text.replace(/\u0097/gu, '—');
 const pdfPlainText = (bytes: Uint8Array): string => emDash(rawPlainText(bytes));
@@ -297,6 +310,8 @@ describe('an Installation is issued as its Delivery Note', () => {
   it('embeds the photographs, two across, and the customer signature', async () => {
     const { bytes } = await issue(harness, await signedInstallation(harness));
     expect(imageObjectCount(bytes)).toBe(1);
+    // BRAND-1: the EJE mark in the header, embedded once.
+    expect(brandMarkCount(bytes)).toBe(1);
     const [box] = drawnImages(bytes);
     // Half the content width (515pt), not the job card's third.
     expect(box!.width).toBeGreaterThan(240);

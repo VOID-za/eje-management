@@ -28,17 +28,21 @@ const JPEG = new Uint8Array(
   readFileSync(new URL('../lib/pdf/__fixtures__/quadrants.jpg', import.meta.url)),
 );
 
-/** The page and box the first photograph was drawn into. */
+/**
+ * The page and box the first photograph was drawn into. The header's EJE mark (BRAND-1) — the 31pt square at
+ * the left margin, drawn before any photograph — is not a photograph and is skipped.
+ */
 const photoPlacement = (bytes: Uint8Array) => {
   const text = Buffer.from(bytes).toString('latin1');
   const contents = [...text.matchAll(/<< \/Length (\d+) >>\nstream\n/g)].map((match) =>
     text.slice(match.index! + match[0].length, match.index! + match[0].length + Number(match[1])),
   );
   for (const [index, stream] of contents.entries()) {
-    const draw = /q (\S+) 0 0 (\S+) (\S+) (\S+) cm \/Im\d+ Do Q/.exec(stream);
-    if (draw === null) continue;
-    const [width, height, x, y] = draw.slice(1, 5).map(Number) as [number, number, number, number];
-    return { page: index + 1, x, y, width, height };
+    for (const draw of stream.matchAll(/q (\S+) 0 0 (\S+) (\S+) (\S+) cm \/Im\d+ Do Q/g)) {
+      const [width, height, x, y] = draw.slice(1, 5).map(Number) as [number, number, number, number];
+      if (x === 40 && width === 31 && height === 31) continue;
+      return { page: index + 1, x, y, width, height };
+    }
   }
   throw new Error('no photograph is drawn in this document');
 };

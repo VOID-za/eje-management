@@ -1,5 +1,6 @@
 import type { DeliveryNoteModel } from '@/lib/job-card/delivery-note';
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
+import { drawBrandMark } from '@/lib/branding/pdf-brand';
 import { fitSignatureBox, signatureFacsimile, SIGNATURE_INK } from '@/lib/signature';
 import {
   BAND,
@@ -27,7 +28,11 @@ import {
  */
 export const renderDeliveryNotePdf = (model: DeliveryNoteModel): { bytes: Uint8Array; pageCount: number } => {
   const sheet = new Sheet();
-  sheet.text(MARGIN, model.company.name, { font: 'bold', size: SIZE.companyName, colour: INK });
+  // BRAND-1: the EJE mark at the job card's size (31pt), its top level with the name's capitals,
+  // spanning the three company lines, which sit beside it as they do on the job card.
+  drawBrandMark(sheet.pdf, MARGIN, sheet.cursor + 9 - 31, 31);
+  const named = MARGIN + 39;
+  sheet.text(named, model.company.name, { font: 'bold', size: SIZE.companyName, colour: INK });
   const title = 'DELIVERY NOTE';
   sheet.pdf.text(RIGHT - textWidth(title, SIZE.jobNumber, 'bold', TRACK_TITLE), sheet.cursor, title, {
     font: 'bold',
@@ -36,10 +41,10 @@ export const renderDeliveryNotePdf = (model: DeliveryNoteModel): { bytes: Uint8A
     tracking: TRACK_TITLE,
   });
   sheet.move(GAP.line);
-  sheet.text(MARGIN, model.company.address, { size: SIZE.small, colour: MUTED });
+  sheet.text(named, model.company.address, { size: SIZE.small, colour: MUTED });
   sheet.textRight(RIGHT, model.jobNumber, { font: 'bold', size: SIZE.total, colour: INK });
   sheet.move(GAP.tight);
-  sheet.text(MARGIN, model.company.contactLine, { size: SIZE.small, colour: MUTED });
+  sheet.text(named, model.company.contactLine, { size: SIZE.small, colour: MUTED });
   sheet.move(GAP.sectionLarge);
 
   sheet.sectionTitle('Deliver to');

@@ -3,6 +3,7 @@ import { buildJobCardModel, type ChargeRow, type JobCardModel, type LabelValue }
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
 import { displaySize, type PreparedPhoto } from '@/lib/pdf/image';
 import { SIMULATED_NOTICE_PRINT } from '@/domain';
+import { drawBrandMark } from '@/lib/branding/pdf-brand';
 import type { FinalDocumentSource, RenderedPdf } from '../ports';
 
 /**
@@ -82,9 +83,9 @@ const labelValueRows = (
 const header = (sheet: Sheet, model: JobCardModel): void => {
   const top = sheet.cursor;
 
-  // The dark EJE tile, at the screen's size-11 (44px -> 31pt).
-  sheet.pdf.rect(MARGIN, top - 24, 31, 31, INK);
-  sheet.pdf.text(MARGIN + 6, top - 14, 'EJE', { font: 'bold', size: 9, colour: '#ffffff' });
+  // The EJE mark (BRAND-1), in the box the plain "EJE" tile had — the screen's size-11
+  // (44px -> 31pt) — so nothing else on the page moves.
+  drawBrandMark(sheet.pdf, MARGIN, top - 24, 31);
 
   sheet.pdf.text(MARGIN + 39, top - 6, model.company.name, {
     font: 'bold',

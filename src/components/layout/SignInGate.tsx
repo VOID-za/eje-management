@@ -5,7 +5,7 @@ import { Badge, Button, Icon, TextField } from '@/components/ui';
 import { useApp } from '@/providers/AppProvider';
 import { DEMO_PASSWORD_HINT } from '@/lib/demo-credentials';
 import { DemoUserSwitcher } from './DemoUserSwitcher';
-import { Logo } from './Logo';
+import { Logo, LogoFull } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
 
 /**
@@ -51,6 +51,8 @@ export const SignInGate = () => {
         <Logo />
 
         <div className="relative my-12 max-w-lg">
+          {/* BRAND-1: the whole logo where there is room for it; a phone keeps the compact mark above. */}
+          <LogoFull className="mb-8 hidden max-w-[18rem] md:block lg:max-w-[20rem]" />
           <p className="text-xs font-semibold tracking-[0.2em] text-eje-300 uppercase">
             EJE Industrial Electronics
           </p>

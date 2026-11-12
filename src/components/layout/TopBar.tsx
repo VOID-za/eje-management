@@ -8,6 +8,7 @@ import { useApp } from '@/providers/AppProvider';
 import { usePendingWork } from '@/hooks/usePendingWork';
 import { DemoUserSwitcher } from './DemoUserSwitcher';
 import { ThemeToggleButton } from './ThemeToggle';
+import { LogoMark } from './Logo';
 import { roleLabel, userFullName } from '@/domain';
 import { cn } from '@/lib/cn';
 
@@ -54,6 +55,18 @@ export const TopBar = ({ onOpenMenu, unreadCount }: TopBarProps) => {
       >
         <Icon name="menu" />
       </button>
+
+      {/*
+        BRAND-1: below lg the sidebar is a drawer, so the mark is here (tablet portrait). Not on a phone: at
+        390px it squeezed the search to a box too narrow to type in; the phone sees the mark in the drawer.
+      */}
+      <Link
+        href="/dashboard"
+        aria-label="EJE — dashboard"
+        className="hidden shrink-0 rounded-[0.55rem] focus-visible:ring-2 focus-visible:ring-eje-500 focus-visible:outline-none sm:block lg:hidden"
+      >
+        <LogoMark decorative className="size-8" />
+      </Link>
 
       <form onSubmit={submitSearch} className="relative min-w-0 flex-1 md:max-w-xl">
         <Icon

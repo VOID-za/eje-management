@@ -48,7 +48,8 @@
  */
 // v2 (29 October 2026): the icons changed to the application's own EJE mark (PWA-1).
 // v3 (31 October 2026): the PDF engine is kept for offline previews (PDF-VIEW-1).
-export const CACHE_VERSION = 'v3';
+// v4 (BRAND-1): the icons are cut from EJE's official logo; `/branding/` is kept for offline use.
+export const CACHE_VERSION = 'v4';
 
 export const SHELL_CACHE = `eje-shell-${CACHE_VERSION}`;
 export const ASSET_CACHE = `eje-assets-${CACHE_VERSION}`;
@@ -71,12 +72,15 @@ export const PRECACHE_PATHS: readonly string[] = [
   OFFLINE_PATH,
   '/icons/icon-192.png',
   '/icons/icon-512.png',
+  // BRAND-1: the mark the header and sidebar draw, so they show it offline.
+  '/branding/eje-mark-96.webp',
+  '/branding/eje-mark-192.webp',
   '/vendor/pdfjs-4.10.38/pdf.min.mjs',
   '/vendor/pdfjs-4.10.38/pdf.worker.min.mjs',
 ];
 
 /** Prefixes whose GET responses may be stored. Nothing else qualifies. */
-export const CACHEABLE_PREFIXES: readonly string[] = ['/_next/static/', '/icons/', '/vendor/pdfjs-4.10.38/'];
+export const CACHEABLE_PREFIXES: readonly string[] = ['/_next/static/', '/icons/', '/branding/', '/vendor/pdfjs-4.10.38/'];
 
 /** Exact paths that may be stored, beyond the prefixes above. */
 export const CACHEABLE_PATHS: readonly string[] = [OFFLINE_PATH, '/manifest.webmanifest'];
