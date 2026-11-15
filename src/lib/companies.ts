@@ -76,32 +76,6 @@ export const nextJobNumberOf = (company: Pick<CompanyAdminView, 'jobNumberPrefix
   formatJobNumber(company.jobNumberPrefix, company.nextJobSequence);
 
 /* ------------------------------------------------------------------------ */
-/* THE CUSTOMERS TAB, REMEMBERED. As FILTER-MEM-1 remembers a date range:     */
-/* per person, in this browser only, a convenience and never a record.         */
-/* ------------------------------------------------------------------------ */
-
-const tabKey = (userId: string): string => `eje.customers.company.${userId}`;
-
-export const readRememberedCompanyTab = (userId: string): string | null => {
-  try {
-    if (typeof window === 'undefined') return null;
-    const stored = window.localStorage.getItem(tabKey(userId));
-    return COMPANY_CHOICES.some((choice) => choice.id === stored) ? stored : null;
-  } catch {
-    return null;
-  }
-};
-
-export const rememberCompanyTab = (userId: string, companyId: string): void => {
-  try {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(tabKey(userId), companyId);
-  } catch {
-    // Not remembered; the page still shows the tab that was chosen.
-  }
-};
-
-/* ------------------------------------------------------------------------ */
 /* ADMINISTRATION → SYSTEM → COMPANY DETAILS                                  */
 /* ------------------------------------------------------------------------ */
 

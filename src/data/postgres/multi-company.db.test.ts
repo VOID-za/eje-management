@@ -260,9 +260,11 @@ describeDb('two companies on PostgreSQL', () => {
       expect(
         await refusalOf(db.execute(sql`update companies set job_number_prefix = 'WD J-' where id = 'wd-hearn-jhb'`)),
       ).toContain('companies_job_number_prefix_shape');
+      // An EMPTY prefix is refused too — by the overlap trigger, which runs before the CHECK (an empty string
+      // is the beginning of every other prefix), so the refusal names the conflict rather than the shape.
       expect(
         await refusalOf(db.execute(sql`update companies set job_number_prefix = '' where id = 'wd-hearn-jhb'`)),
-      ).toContain('companies_job_number_prefix_shape');
+      ).toMatch(/companies_job_number_prefix_shape|conflicts with another company/u);
     });
 
     it('refuses, in the repository, a prefix an existing job of another company carries', async () => {

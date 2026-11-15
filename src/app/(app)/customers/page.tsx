@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { can } from '@/domain';
 import {
   Badge,
@@ -23,8 +23,6 @@ import {
   COMPANY_CHOICES,
   companyLabel,
   customersForCompany,
-  readRememberedCompanyTab,
-  rememberCompanyTab,
 } from '@/lib/companies';
 
 interface CustomerRow {
@@ -54,19 +52,14 @@ const CustomersPage = () => {
   const [legacyOnly, setLegacyOnly] = useState(false);
   /*
    * WHICH COMPANY’S CUSTOMERS. MULTI-CO-1: "EJE Customers" and "WD Hearn
-   * Customers"; a customer of both is listed on both. Remembered per person in
-   * this browser, as FILTER-MEM-1 remembers a date range — read after the first
-   * render, because the server has no browser storage to render it from.
+   * Customers"; a customer of both is listed on both. The page always opens on
+   * EJE Customers (the default company): a remembered tab made the same page show
+   * different controls depending on where a person last clicked (the tablet parity
+   * audit, 15 November 2026), and nobody asked for it to be remembered.
    */
   const [company, setCompany] = useState<string>(COMPANY_CHOICES[0]!.id);
-  useEffect(() => {
-    const remembered = readRememberedCompanyTab(currentUser.id);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser storage is only readable after mount.
-    if (remembered !== null) setCompany(remembered);
-  }, [currentUser.id]);
   const chooseCompany = (next: string) => {
     setCompany(next);
-    rememberCompanyTab(currentUser.id, next);
   };
   // The official customer record belongs to the office, so only a Master adds one.
   const canManage = can(currentUser.role, 'customers.manage');
