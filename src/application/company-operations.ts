@@ -1,7 +1,7 @@
 import {
   asCompanyId,
   can,
-  CompanyRuleError,
+  isCompanyRuleError,
   type Company,
   type CompanyRates,
 } from '@/domain';
@@ -197,7 +197,7 @@ export const updateCompany = async (
     saved = await context.repos.companies.save(next);
   } catch (error) {
     // The repository's rules, in the same words, as a refusal the office can act on.
-    if (error instanceof CompanyRuleError) {
+    if (isCompanyRuleError(error)) {
       throw refuse(`${existing.name} could not be saved.`, error.code, error.message);
     }
     throw error;

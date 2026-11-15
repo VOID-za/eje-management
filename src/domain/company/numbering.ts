@@ -131,6 +131,17 @@ export class CompanyRuleError extends Error {
 }
 
 /**
+ * Whether `error` is a CompanyRuleError — by NAME and code, not `instanceof`. The production build was
+ * found to bundle this class into more than one chunk (the repository's copy and the operation's copy
+ * are different classes there), so `instanceof` was false and an overlapping prefix answered 500 instead
+ * of the refusal (browser check multi-company-check.mjs, 15 November 2026). Unit tests share one module
+ * graph and could not see it.
+ */
+export const isCompanyRuleError = (error: unknown): error is CompanyRuleError =>
+  error instanceof CompanyRuleError ||
+  (error instanceof Error && error.name === 'CompanyRuleError' && typeof (error as { code?: unknown }).code === 'string');
+
+/**
  * Every rule a company save must meet, in the order a person would fix them.
  * Throws the first broken one. `existing` is the company as stored (null for a
  * new one); `all` is every company as stored.

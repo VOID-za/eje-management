@@ -133,7 +133,19 @@ export const getDatabase = (): Database => {
   return shared;
 };
 
-/** Drops the shared handle. For tests, which create their own. */
+/**
+ * Drops the shared handle — and CLOSES its pool. For tests, which create their own.
+ *
+ * It used to drop the reference only. The PostgreSQL test files call it before every test
+ * (`startPostgresTestServer` in `beforeEach`), so each test left a pool of open connections behind;
+ * the suite sat just under the server's limit until MULTI-CO-1 added test files, and CI then failed
+ * with "sorry, too many clients already" (run 43704685617). Closing it here bounds the suite to one
+ * live pool at a time. Production never calls this.
+ */
 export const resetSharedDatabase = (): void => {
+  const previous = shared;
   shared = null;
+  // Not awaited: a caller is replacing the handle, and the old pool's in-flight work (if any) finishes
+  // within the timeout before its connections close.
+  void previous?.$client.end({ timeout: 5 }).catch(() => undefined);
 };

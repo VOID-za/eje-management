@@ -254,8 +254,14 @@ describeDb('two companies on PostgreSQL', () => {
       expect(
         await refusalOf(db.execute(sql`update companies set job_number_prefix = 'WDJ-' where id = 'eje'`)),
       ).toContain('conflicts with another company');
+      // The database's shape check is the LOOSE one (legacy settings prefixes such as "EJE/" mirror into the
+      // EJE row — see 0058): no whitespace, 1–12 characters. The strict rule for a NEW prefix (EJE-, WDJ-;
+      // "wdj" refused) is the application's, tested in numbering.test.ts and multi-company-api.test.ts.
       expect(
-        await refusalOf(db.execute(sql`update companies set job_number_prefix = 'wdj' where id = 'wd-hearn-jhb'`)),
+        await refusalOf(db.execute(sql`update companies set job_number_prefix = 'WD J-' where id = 'wd-hearn-jhb'`)),
+      ).toContain('companies_job_number_prefix_shape');
+      expect(
+        await refusalOf(db.execute(sql`update companies set job_number_prefix = '' where id = 'wd-hearn-jhb'`)),
       ).toContain('companies_job_number_prefix_shape');
     });
 
