@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { crc32, deflateSync } from 'node:zlib';
 import { preparePdfImage, type PdfImage } from '@/lib/pdf/image';
 import { inspectPdf, type TextRun } from '@/lib/pdf/inspect';
+import { LETTERHEAD_LINES, letterheadLineText } from '@/lib/branding/eje-letterhead';
 
 /**
  * LETTERHEAD-1 test material: a letterhead image made in the test, and the
@@ -74,3 +75,36 @@ export const runsBelow = (bytes: Uint8Array, y: number): readonly string[] =>
   textRuns(bytes)
     .filter((run) => run.page > 1 || run.y < y)
     .map(key);
+
+/**
+ * LETTERHEAD-2: every even-odd FILLED path (`f*`) — the master letterhead's traced mark —
+ * as its points, per page. Nothing else this writer draws is filled even-odd.
+ */
+export const filledPaths = (bytes: Uint8Array): readonly { readonly page: number; readonly points: readonly { x: number; y: number }[] }[] => {
+  const text = Buffer.from(bytes).toString('latin1');
+  const objects = new Map<number, string>();
+  for (const match of text.matchAll(/(\d+) 0 obj\n([\s\S]*?)\nendobj/gu)) objects.set(Number(match[1]), match[2] ?? '');
+  const kids = [...(/\/Kids \[(.*?)\]/u.exec(text)?.[1] ?? '').matchAll(/(\d+) 0 R/gu)].map((match) => Number(match[1]));
+  return kids.flatMap((kid, index) => {
+    const contents = /\/Contents (\d+) 0 R/u.exec(objects.get(kid) ?? '')?.[1];
+    const stream = objects.get(Number(contents)) ?? '';
+    return [...stream.matchAll(/rg ((?:[\d.-]+ [\d.-]+ [ml] |h )+)f\*/gu)].map((match) => ({
+      page: index + 1,
+      points: [...(match[1] ?? '').matchAll(/([\d.-]+) ([\d.-]+) [ml]/gu)].map((point) => ({ x: Number(point[1]), y: Number(point[2]) })),
+    }));
+  });
+};
+
+/**
+ * LETTERHEAD-2: a document's text without the EJE master letterhead's own lines. The official
+ * letterhead carries the company's VAT NUMBER ("VAT NO: 4950134991") — identity, not money — so
+ * a test that a document carries no price reads the document below its letterhead. Only whole
+ * lines that are exactly the letterhead's are removed.
+ */
+export const withoutMasterLetterhead = (text: string): string => {
+  const lines = new Set(LETTERHEAD_LINES.map(letterheadLineText));
+  return text
+    .split('\n')
+    .filter((line) => !lines.has(line))
+    .join('\n');
+};

@@ -576,7 +576,7 @@ export const submitPayrollForms = async (
     changedAfterSubmission: [],
     period: { from, to },
   });
-  // LETTERHEAD-1: EJE's own paperwork, on EJE's uploaded letterhead when it has one.
+  // LETTERHEAD-1, -2: EJE's own paperwork, on EJE's master letterhead.
   const letterhead = await defaultCompanyLetterhead(context);
   // Rendered once BEFORE anything is written: a form that cannot be printed is refused, not half-submitted.
   oneFormPage('attendance form', () => renderAttendancePdf(attendanceDocumentAt(null), { generatedAt: context.services.clock.now(), letterhead }));

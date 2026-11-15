@@ -1,4 +1,6 @@
 import type { DeliveryNoteModel } from '@/lib/job-card/delivery-note';
+import type { LetterheadReference } from '@/domain';
+import { DocumentLetterhead } from '@/components/documents/EjeLetterhead';
 import { SignatureDisplay } from './SignaturePad';
 
 /**
@@ -7,15 +9,37 @@ import { SignatureDisplay } from './SignaturePad';
  * The same `DeliveryNoteModel` the PDF is drawn from — no price exists in it to
  * show. Used where the browser cannot display a PDF (the tablets), and printed
  * from there.
+ *
+ * LETTERHEAD-2: its header is the job company's letterhead, chosen as the PDF
+ * chooses it — EJE's master letterhead, another company's uploaded image, or
+ * the text header as before. The model names the company only in words, so
+ * the caller passes the job's company and its letterhead reference.
  */
-export const DeliveryNoteDocument = ({ model }: { readonly model: DeliveryNoteModel }) => (
+export const DeliveryNoteDocument = ({
+  model,
+  companyId,
+  letterhead,
+}: {
+  readonly model: DeliveryNoteModel;
+  /** The job's company; absent, the text header. */
+  readonly companyId?: string;
+  readonly letterhead?: LetterheadReference | null;
+}) => (
   <article className="eje-document mx-auto max-w-[210mm] bg-white p-6 text-[12px] text-steel-900 shadow-sm" data-testid="delivery-note-document">
     <header className="flex items-start justify-between gap-4">
-      <div>
-        <p className="text-base font-bold">{model.company.name}</p>
-        <p className="text-xs text-steel-500">{model.company.address}</p>
-        <p className="text-xs text-steel-500">{model.company.contactLine}</p>
-      </div>
+      <DocumentLetterhead
+        companyId={companyId ?? ''}
+        companyName={model.company.name}
+        letterhead={letterhead}
+        className="min-w-0 flex-1"
+        fallback={
+          <div>
+            <p className="text-base font-bold">{model.company.name}</p>
+            <p className="text-xs text-steel-500">{model.company.address}</p>
+            <p className="text-xs text-steel-500">{model.company.contactLine}</p>
+          </div>
+        }
+      />
       <div className="text-right">
         <p className="text-xl font-bold tracking-[0.15em]">DELIVERY NOTE</p>
         <p className="text-base font-bold">{model.jobNumber}</p>

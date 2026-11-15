@@ -7,6 +7,7 @@ import {
 } from "@/lib/job-card/model";
 import { SignatureDisplay } from "./SignaturePad";
 import { DocumentPhoto } from "./DocumentPhoto";
+import { DocumentLetterhead } from "@/components/documents/EjeLetterhead";
 
 /**
  * The EJE job card document, on screen.
@@ -41,33 +42,45 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
       className="eje-document mx-auto max-w-[820px] bg-white p-8 text-[13px] leading-relaxed text-steel-800 shadow-[var(--shadow-card)] sm:p-10"
     >
       <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-steel-900 pb-5">
-        <div>
-          <div className="flex items-center gap-3">
-            {/*
-              MULTI-CO-1: the dark tile is EJE's own text mark, shown only on
-              EJE's documents. Another company's keeps an empty space of the
-              same size, so its name sits exactly where it does on the PDF.
-            */}
-            {model.company.id === DEFAULT_COMPANY_ID ? (
-              <span className="flex size-11 items-center justify-center rounded-[0.55rem] bg-steel-900 text-[13px] font-black tracking-tighter text-white">
-                EJE
-              </span>
-            ) : (
-              <span aria-hidden="true" className="size-11 shrink-0" data-testid="no-company-tile" />
-            )}
+        {/*
+          LETTERHEAD-2: the document's letterhead, chosen as the PDF chooses it — EJE's
+          master letterhead, another company's uploaded one, or this text header as before.
+        */}
+        <DocumentLetterhead
+          companyId={model.company.id}
+          companyName={model.company.name}
+          letterhead={view.companyLetterhead}
+          className="min-w-0 flex-1 basis-[22rem]"
+          fallback={
             <div>
-              <p className="text-lg leading-tight font-bold text-steel-900">
-                {model.company.name}
+              <div className="flex items-center gap-3">
+                {/*
+                  MULTI-CO-1: the dark tile is EJE's own text mark, shown only on
+                  EJE's documents. Another company's keeps an empty space of the
+                  same size, so its name sits exactly where it does on the PDF.
+                */}
+                {model.company.id === DEFAULT_COMPANY_ID ? (
+                  <span className="flex size-11 items-center justify-center rounded-[0.55rem] bg-steel-900 text-[13px] font-black tracking-tighter text-white">
+                    EJE
+                  </span>
+                ) : (
+                  <span aria-hidden="true" className="size-11 shrink-0" data-testid="no-company-tile" />
+                )}
+                <div>
+                  <p className="text-lg leading-tight font-bold text-steel-900">
+                    {model.company.name}
+                  </p>
+                  <p className="text-xs text-steel-500">{model.company.address}</p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-steel-500">
+                {model.company.contactLine}
+                <br />
+                {model.company.registrationLine}
               </p>
-              <p className="text-xs text-steel-500">{model.company.address}</p>
             </div>
-          </div>
-          <p className="mt-3 text-xs text-steel-500">
-            {model.company.contactLine}
-            <br />
-            {model.company.registrationLine}
-          </p>
-        </div>
+          }
+        />
 
         <div className="text-right">
           <p className="text-xs font-semibold tracking-[0.18em] text-steel-500 uppercase">

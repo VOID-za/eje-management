@@ -16,7 +16,8 @@ import type {
 } from '@/domain';
 export type { DeliveryFailureKind, DeliveryState } from '@/domain';
 import { isDeliveryFailureKind } from '@/domain';
-import type { PdfImage, PreparedPhoto } from '@/lib/pdf/image';
+import type { PreparedPhoto } from '@/lib/pdf/image';
+import type { DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 import type { GeocodeAnswer } from '@/domain';
 
 /**
@@ -284,8 +285,9 @@ export interface FinalDocumentSource {
    * across the top of the document in place of the text header. Absent — no
    * letterhead uploaded, or a document from before letterheads (a backfill of
    * history) — and the header is the text one, exactly as it always was.
+   * LETTERHEAD-2: for EJE, the master letterhead (EJE_MASTER_LETTERHEAD) instead.
    */
-  readonly letterhead?: PdfImage;
+  readonly letterhead?: DocumentLetterhead;
 }
 
 /** A rendered document: the bytes, and how many pages they actually are. */
@@ -383,8 +385,8 @@ export interface CorrectionDocumentSource {
   };
   /** True only for a demonstration job. Stamped on every page when it is. */
   readonly simulated: boolean;
-  /** LETTERHEAD-1: the job company's letterhead, prepared; absent, the text header. */
-  readonly letterhead?: PdfImage;
+  /** LETTERHEAD-1/-2: the job company's letterhead (EJE's master header, or an uploaded image); absent, the text header. */
+  readonly letterhead?: DocumentLetterhead;
 }
 
 export interface StoredFile {

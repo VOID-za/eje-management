@@ -1,5 +1,6 @@
 import { asCompanyId, DEFAULT_COMPANY_ID, isCompanyRuleError, type Company, type CompanyId, type CompanyLetterhead } from '@/domain';
-import { preparePdfImage, sniffImage, type PdfImage } from '@/lib/pdf/image';
+import { preparePdfImage, sniffImage } from '@/lib/pdf/image';
+import { EJE_MASTER_LETTERHEAD, carriesMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 import { sha256Hex } from '@/lib/job-card/document-identity';
 import { StorageIntegrityFailed } from '@/services/ports';
 import type { OperationContext } from './context';
@@ -205,11 +206,18 @@ export const downloadCompanyLetterheadFile = async (
  * (its bytes damaged or gone): a document must not fail to issue for want of
  * its letterhead, and the text header names the same company from the same
  * record, so nothing false is printed.
+ *
+ * EJE IS THE MASTER LETTERHEAD. LETTERHEAD-2 (15 November 2026): the owner had
+ * the official EJE letterhead recreated as a vector header, one for every EJE
+ * document, so EJE's documents carry that — not an uploaded image of it (one
+ * may still be stored; it is not printed), and no longer the text header. No
+ * file is read for it. Every other company is exactly as LETTERHEAD-1 left it.
  */
 export const loadCompanyLetterhead = async (
   context: Pick<OperationContext, 'repos' | 'services'>,
   companyId: CompanyId,
-): Promise<PdfImage | undefined> => {
+): Promise<DocumentLetterhead | undefined> => {
+  if (carriesMasterLetterhead(companyId)) return EJE_MASTER_LETTERHEAD;
   let file: Awaited<ReturnType<typeof readCompanyLetterheadFile>>;
   try {
     file = await readCompanyLetterheadFile(context, companyId);
@@ -224,8 +232,9 @@ export const loadCompanyLetterhead = async (
 
 /**
  * The letterhead of the DEFAULT company (EJE), for the paperwork that is no
- * job's: timesheets, attendance, payroll and finance packages are EJE's own.
+ * job's: timesheets, attendance, payroll and finance packages are EJE's own —
+ * so, since LETTERHEAD-2, the master letterhead.
  */
 export const defaultCompanyLetterhead = (
   context: Pick<OperationContext, 'repos' | 'services'>,
-): Promise<PdfImage | undefined> => loadCompanyLetterhead(context, DEFAULT_COMPANY_ID);
+): Promise<DocumentLetterhead | undefined> => loadCompanyLetterhead(context, DEFAULT_COMPANY_ID);

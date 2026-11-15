@@ -1,6 +1,6 @@
 import type { DeliveryNoteModel } from '@/lib/job-card/delivery-note';
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
-import type { PdfImage } from '@/lib/pdf/image';
+import type { DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 import { fitSignatureBox, signatureFacsimile, SIGNATURE_INK } from '@/lib/signature';
 import {
   BAND,
@@ -29,7 +29,7 @@ import {
  * image takes the band's whole width. Either way the cursor ends where the
  * text header leaves it, so "Deliver to" and everything below do not move.
  */
-const letterheadHeader = (sheet: Sheet, model: DeliveryNoteModel, letterhead: PdfImage): void => {
+const letterheadHeader = (sheet: Sheet, model: DeliveryNoteModel, letterhead: DocumentLetterhead): void => {
   const top = sheet.cursor;
   const title = 'DELIVERY NOTE';
   const titleWidth = textWidth(title, SIZE.jobNumber, 'bold', TRACK_TITLE);
@@ -65,7 +65,7 @@ const letterheadHeader = (sheet: Sheet, model: DeliveryNoteModel, letterhead: Pd
 export const renderDeliveryNotePdf = (
   model: DeliveryNoteModel,
   /** LETTERHEAD-1: the job company's uploaded letterhead, prepared; absent, the text header. */
-  letterhead?: PdfImage,
+  letterhead?: DocumentLetterhead,
 ): { bytes: Uint8Array; pageCount: number } => {
   const sheet = new Sheet();
   if (letterhead !== undefined) {

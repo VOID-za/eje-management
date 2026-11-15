@@ -13,7 +13,7 @@ export const GET = downloadRoute('timesheets.submissionPdf', async (context) => 
   );
   const operation = { repos: context.repos, services: context.services, actor: context.actor.user };
   const document = await loadSubmissionDocument(operation, context.params.periodId ?? '', parseTimesheetVersion(version));
-  // LETTERHEAD-1: EJE's own paperwork, on EJE's uploaded letterhead when it has one.
+  // LETTERHEAD-1, -2: EJE's own paperwork, on EJE's master letterhead.
   const letterhead = await defaultCompanyLetterhead(context);
   const rendered = renderTimesheetPdf(document, { generatedAt: context.services.clock.now(), letterhead });
   return { fileName: rendered.fileName, contentType: 'application/pdf', body: rendered.bytes };

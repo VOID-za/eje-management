@@ -272,7 +272,7 @@ export const JobCardPdfPreview = ({
         className="h-[min(82dvh,1100px)] overflow-hidden rounded-[var(--radius-control)] border border-steel-200"
         fallback={() =>
           courierNote ? (
-            <DeliveryNoteDocument model={buildDeliveryNoteModel(view, new Date().toISOString())} />
+            <DeliveryNoteDocument model={buildDeliveryNoteModel(view, new Date().toISOString())} companyId={view.job.companyId} letterhead={view.companyLetterhead} />
           ) : view.job.jobType === 'parts' ? (
             <PartsCollectionNote view={view} />
           ) : (

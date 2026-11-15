@@ -17,6 +17,8 @@ import { INTERFACE_IMAGE_SHA256, uploadCompanyLetterhead } from '@/application/c
 import { DEFAULT_COMPANY_ID } from '@/domain';
 import { GENERATED_AT, correctionSource, jobSource } from '@/test/letterhead-documents';
 import { embedsImageData, letterheadPng, preparedLetterhead } from '@/test/letterhead-fixture';
+import { EJE_MASTER_LETTERHEAD } from '@/lib/branding/eje-letterhead';
+import { pdfPlainText } from '@/lib/pdf/inspect';
 
 /**
  * BRAND-1: EJE's official logo — in the APPLICATION, and NEVER on a document.
@@ -34,7 +36,10 @@ import { embedsImageData, letterheadPng, preparedLetterhead } from '@/test/lette
  * AMENDED FOR LETTERHEAD-1 (15 November 2026): the owner has approved the company's OFFICIAL
  * LETTERHEAD on documents — the image the office uploads per company in Administration. So
  * a document may now carry exactly ONE image of its own: that company's uploaded
- * letterhead, and only once one is configured. Everything else stands: no document or
+ * letterhead, and only once one is configured. (LETTERHEAD-2, the same day: EJE's documents
+ * carry the MASTER letterhead instead — vector text and the mark traced from the official
+ * paper, no image at all; its modules live in this folder and are allowed by name below.)
+ * Everything else stands: no document or
  * renderer names the interface's logo files, the icons or the Logo components; with no
  * letterhead configured every document embeds no image at all; with one, it embeds that
  * image and nothing else; and the interface's own logo files cannot be uploaded AS the
@@ -89,7 +94,21 @@ const sourcesUnder = (dir: string): string[] =>
  * How a file can show the logo: ANY module path ending in `/Logo` (alias, relative, with an extension, static or
  * dynamic import), the logo's own files, or the icons — which are now cut from it.
  */
-const NAMES_THE_LOGO = /['"`][^'"`]*\/Logo(\.[cm]?[jt]sx?)?['"`]|\/branding\/|\/icons\/|eje-logo|eje-mark/u;
+const NAMES_THE_LOGO = /['"`][^'"`]*\/Logo(\.[cm]?[jt]sx?)?['"`]|\/branding\/(?!eje-letterhead)|\/icons\/|eje-logo|eje-mark/u;
+
+/**
+ * LETTERHEAD-2: the EJE MASTER LETTERHEAD's own modules. They live beside this test, so a
+ * document importing them names `lib/branding/eje-letterhead…` — which is the letterhead the
+ * owner approved for documents (its mark traced from the photographed paper), not the
+ * interface's logo. The scan above lets exactly those imports through, and this list is held
+ * to the rule that none of them names an interface logo file.
+ */
+const MASTER_LETTERHEAD_FILES = [
+  'src/lib/branding/eje-letterhead.ts',
+  'src/lib/branding/eje-letterhead-mark.ts',
+  'src/components/documents/EjeLetterhead.tsx',
+  'scripts/generate-eje-letterhead-mark.mjs',
+] as const;
 
 /**
  * The ONLY files allowed to show the logo — the application's own furniture. A document, a
@@ -197,8 +216,17 @@ describe('the logo is never on a document', () => {
 
   it('the PDF code has no image of its own: nothing under the renderers embeds a logo', () => {
     for (const path of [...sourcesUnder('src/services'), ...sourcesUnder('src/lib/pdf'), ...sourcesUnder('src/lib/job-card')]) {
-      expect(source(path), path).not.toMatch(/branding|BrandMark|LogoMark|eje-logo|eje-mark|EJE Icon/u);
+      expect(source(path), path).not.toMatch(/branding(?!\/eje-letterhead)|BrandMark|LogoMark|eje-logo|eje-mark|EJE Icon/u);
     }
+  });
+
+  it('LETTERHEAD-2: the master letterhead names no interface logo file, and its PDF embeds no image', async () => {
+    for (const path of MASTER_LETTERHEAD_FILES) {
+      expect(source(path), path).not.toMatch(/['"`][^'"`]*\/Logo(\.[cm]?[jt]sx?)?['"`]|public\/branding|\/icons\/|eje-logo|eje-mark|EJE Icon|\.webp/u);
+    }
+    const card = renderJobCardPdf({ ...(await jobSource('EJE-1044')), letterhead: EJE_MASTER_LETTERHEAD }, 'EJE-1044.pdf', GENERATED_AT).bytes;
+    expect(imageObjects(card)).toBe(0);
+    expect(pdfPlainText(card)).toContain('EJE Industrial Electronics cc');
   });
 
   it('with no letterhead configured, an issued job card embeds no image (EJE-1044 has no photograph)', async () => {

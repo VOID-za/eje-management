@@ -1,7 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PdfImage } from '@/lib/pdf/image';
 import { A4_HEIGHT, A4_WIDTH } from '@/lib/pdf/writer';
-import { pdfPlainText } from '@/lib/pdf/inspect';
+import { inspectPdf, pdfPlainText } from '@/lib/pdf/inspect';
+import { SUBSTITUTION_ALLOWANCE } from '@/lib/pdf/metrics';
+import { WD_HEARN_JHB_COMPANY_ID, type CompanyDetails } from '@/domain';
+import {
+  EJE_MASTER_LETTERHEAD,
+  LETTERHEAD_LINES,
+  LETTERHEAD_MARK_BOX,
+  LETTERHEAD_REFERENCE,
+  letterheadLineText,
+  type DocumentLetterhead,
+} from '@/lib/branding/eje-letterhead';
+import { EJE_MARK_POLYGONS } from '@/lib/branding/eje-letterhead-mark';
 import { renderJobCardPdf } from './job-card-pdf';
 import { renderCorrectionPdf } from './correction-pdf';
 import { renderDeliveryNotePdf } from './delivery-note-pdf';
@@ -22,6 +33,7 @@ import {
 import {
   drawnImages,
   embedsImageData,
+  filledPaths,
   imageObjectCount,
   letterheadPng,
   preparedLetterhead,
@@ -62,13 +74,18 @@ interface Generator {
   readonly name: Name;
   /** The header band: the letterhead must be drawn inside it, and nothing below `bottom` may move. */
   readonly band: { readonly bottom: number; readonly left: number; readonly right: number };
+  /**
+   * LETTERHEAD-2: how much LOWER the band reaches for the EJE master letterhead (one-page forms reserve
+   * MASTER_HEADER_EXTRA so its lines are readable). Everything below then moves down by exactly this much.
+   */
+  readonly masterBandDrop?: number;
   /** What must still read in the header with a letterhead. */
   readonly header: readonly string[];
-  readonly render: (letterhead: PdfImage | undefined, omit?: boolean) => Promise<Uint8Array>;
+  readonly render: (letterhead: DocumentLetterhead | undefined, omit?: boolean) => Promise<Uint8Array>;
 }
 
 const sources = new Map<string, FinalDocumentSource>();
-const job = (number: string) => async (letterhead: PdfImage | undefined, omit = false) => {
+const job = (number: string) => async (letterhead: DocumentLetterhead | undefined, omit = false) => {
   const source = sources.get(number)!;
   const given = omit ? source : { ...source, letterhead };
   return renderJobCardPdf(given, `${number}.pdf`, GENERATED_AT).bytes;
@@ -112,6 +129,7 @@ const GENERATORS: readonly Generator[] = [
   {
     name: 'timesheetOnePage',
     band: { bottom: 794, left: 28, right: A4_WIDTH - 28 },
+    masterBandDrop: 32,
     header: ['TIME SHEET'],
     render: async (letterhead, omit) =>
       renderTimesheetPdf(timesheet(10), omit === true ? { generatedAt: GENERATED_AT } : { generatedAt: GENERATED_AT, letterhead }).bytes,
@@ -119,6 +137,7 @@ const GENERATORS: readonly Generator[] = [
   {
     name: 'attendance',
     band: { bottom: 794, left: 28, right: A4_WIDTH - 28 },
+    masterBandDrop: 32,
     header: ['ATTENDANCE'],
     render: async (letterhead, omit) =>
       renderAttendancePdf(attendance(), omit === true ? { generatedAt: GENERATED_AT } : { generatedAt: GENERATED_AT, letterhead }).bytes,
@@ -230,5 +249,163 @@ describe('the delivery note with a job number too long to sit beside the letterh
     const [image] = drawnImages(withLetterhead);
     expect(image!.y).toBeGreaterThan(title.y + 12);
     expect(runsBelow(withLetterhead, 766)).toEqual(runsBelow(without, 766));
+  });
+});
+
+/**
+ * LETTERHEAD-2: the EJE MASTER LETTERHEAD on every generator — drawn as vector text and the
+ * traced mark in exactly the header band an uploaded image would occupy, and nothing below
+ * the band moved. And WD Hearn JHB (or any company that is not EJE) unchanged to the byte.
+ */
+const MASTER_TEXT = LETTERHEAD_LINES.map(letterheadLineText);
+
+describe.each(GENERATORS)('$name with the EJE master letterhead', (generator) => {
+  const drop = generator.masterBandDrop ?? 0;
+  const masterBottom = generator.band.bottom - drop;
+  it('carries every line of the official letterhead as text, inside the header band, and no image', async () => {
+    const bytes = await generator.render(EJE_MASTER_LETTERHEAD);
+    expect(imageObjectCount(bytes)).toBe(0);
+    const runs = textRuns(bytes).filter((run) => run.page === 1);
+    for (const line of MASTER_TEXT) {
+      const run = runs.find((candidate) => candidate.value === line);
+      expect(run, line).toBeDefined();
+      expect(run!.y, line).toBeGreaterThan(masterBottom);
+      expect(run!.y + run!.size * 0.75, line).toBeLessThanOrEqual(LETTERHEAD_TOP + 0.01);
+      expect(run!.x, line).toBeGreaterThanOrEqual(generator.band.left - 0.01);
+      expect(run!.x + run!.width / SUBSTITUTION_ALLOWANCE, line).toBeLessThanOrEqual(generator.band.right + 0.01);
+    }
+    // The faces of the paper: Helvetica-BoldOblique, Times-Bold and Times-BoldItalic, named and not embedded.
+    const text = Buffer.from(bytes).toString('latin1');
+    for (const font of ['Helvetica-BoldOblique', 'Times-Bold', 'Times-BoldItalic']) expect(text).toContain(`/BaseFont /${font} `);
+    expect(text).not.toContain('/FontFile');
+    // The en dash is WinAnsi 0x96, not a stand-in.
+    expect(text).toContain('7736 \x96 Peet Buitendag');
+    // Only on the first page: a multi-page document is not re-headed.
+    expect(textRuns(bytes).filter((run) => run.page > 1 && MASTER_TEXT.includes(run.value))).toEqual([]);
+  });
+
+  it('draws the EJE mark as filled vector outlines inside the band, against its left edge', async () => {
+    const paths = filledPaths(await generator.render(EJE_MASTER_LETTERHEAD));
+    expect(paths).toHaveLength(1);
+    const [path] = paths;
+    expect(path!.page).toBe(1);
+    expect(path!.points.length).toBe(EJE_MARK_POLYGONS.reduce((sum, polygon) => sum + polygon.length / 2, 0));
+    for (const point of path!.points) {
+      expect(point.x).toBeGreaterThanOrEqual(generator.band.left);
+      expect(point.x).toBeLessThanOrEqual(generator.band.right);
+      expect(point.y).toBeGreaterThanOrEqual(masterBottom);
+      expect(point.y).toBeLessThanOrEqual(LETTERHEAD_TOP);
+    }
+    // Near the band's left edge, as on the paper (16 of 3300 units in).
+    expect(Math.min(...path!.points.map((point) => point.x)) - generator.band.left).toBeLessThan(5);
+  });
+
+  it('keeps the title and number, drops the text header, and leaves every line below the band where it was', async () => {
+    const without = await generator.render(undefined);
+    const withMaster = await generator.render(EJE_MASTER_LETTERHEAD);
+    const header = textRuns(withMaster).filter((run) => run.page === 1 && run.y >= masterBottom - 8).map((run) => run.value);
+    for (const value of generator.header) expect(header.some((run) => run.startsWith(value)), value).toBe(true);
+    const companyLine = textRuns(without).find((run) => run.page === 1 && run.y > masterBottom && run.font === 'bold' && run.x < 100)!;
+    expect(header).not.toContain(companyLine.value);
+    if (drop === 0) {
+      expect(runsBelow(withMaster, masterBottom - 8)).toEqual(runsBelow(without, masterBottom - 8));
+    } else {
+      const below = (bytes: Uint8Array, y: number) => textRuns(bytes).filter((run) => run.page > 1 || run.y < y);
+      const moved = below(withMaster, masterBottom - 8);
+      const before = below(without, generator.band.bottom - 8);
+      expect(moved.map((run) => run.value)).toEqual(before.map((run) => run.value));
+      moved.forEach((run, index) => {
+        expect(run.x).toBeCloseTo(before[index]!.x, 3);
+        // The footer is anchored to the foot of the page and stays; every body line moves down by exactly `drop`.
+        const footer = before[index]!.y < 40;
+        expect(run.y).toBeCloseTo(footer ? before[index]!.y : before[index]!.y - drop, 3);
+        expect(run.size).toBeCloseTo(before[index]!.size, 3);
+      });
+    }
+    expect(inspectPdf(withMaster).pageCount).toBe(inspectPdf(without).pageCount);
+    // No new collision, overrun or off-page text. The edge is the letterhead's own limit
+    // (LETTERHEAD_TOP, 14pt from the paper's top): the band reaches it, image or master.
+    const read = { margin: generator.band.left, edge: A4_HEIGHT - LETTERHEAD_TOP };
+    expect(inspectPdf(withMaster, read).problems).toEqual(inspectPdf(without, read).problems);
+  });
+
+  // Where the master reserves a taller band (one-page forms) it is deliberately NOT where an image would be.
+  it.skipIf(drop !== 0)('is drawn in exactly the place an uploaded image of the same proportions would be', async () => {
+    const image = await preparedLetterhead(letterheadPng(LETTERHEAD_REFERENCE.width / 10, LETTERHEAD_REFERENCE.height / 10));
+    const [drawn] = drawnImages(await generator.render(image));
+    const mark = filledPaths(await generator.render(EJE_MASTER_LETTERHEAD))[0]!.points;
+    const scale = drawn!.width / LETTERHEAD_REFERENCE.width;
+    // Where the traced outline's own extremes fall inside the mark's box.
+    const xs = EJE_MARK_POLYGONS.flatMap((polygon) => polygon.filter((_, index) => index % 2 === 0));
+    const ys = EJE_MARK_POLYGONS.flatMap((polygon) => polygon.filter((_, index) => index % 2 === 1));
+    const left = drawn!.x + (LETTERHEAD_MARK_BOX.x + Math.min(...xs) * LETTERHEAD_MARK_BOX.width) * scale;
+    const top = drawn!.y + drawn!.height - (LETTERHEAD_MARK_BOX.y + Math.min(...ys) * LETTERHEAD_MARK_BOX.height) * scale;
+    expect(Math.min(...mark.map((point) => point.x))).toBeCloseTo(left, 1);
+    expect(Math.max(...mark.map((point) => point.y))).toBeCloseTo(top, 1);
+  });
+});
+
+describe('one-page forms stay one page with the master letterhead', () => {
+  it('the one-page timesheet and the attendance form', () => {
+    expect(renderTimesheetPdf(timesheet(10), { generatedAt: GENERATED_AT, letterhead: EJE_MASTER_LETTERHEAD }).pageCount).toBe(1);
+    expect(renderAttendancePdf(attendance(), { generatedAt: GENERATED_AT, letterhead: EJE_MASTER_LETTERHEAD }).pageCount).toBe(1);
+  });
+});
+
+/**
+ * WD HEARN JHB IS UNCHANGED, TO THE BYTE. sha256 of WD Hearn JHB's documents — with no
+ * letterhead, and with an uploaded one — rendered by the code BEFORE LETTERHEAD-2 (HEAD
+ * e5b9c4d, on the same frozen inputs), so they prove "unchanged", not merely "consistent".
+ */
+const WD_HEARN_BEFORE_MASTER = {
+  'jobCard:none': 'b79d408fbd6acc426248bd4dc4a17405f3741c27c77bdd85329bca4c0fc13a59',
+  'jobCard:image': '86a370fbf9024c782e40b5684db20abfbbbb50a8a4f90c3ba94f14aae71941bd',
+  'partsCollectionNote:none': '8ac0891d8c72daf8d96d9c0a912d16331d293c8bf19efd4616a66f35b0f1b741',
+  'partsCollectionNote:image': '61d1b289c1de24cf9030b349c31f798d42b7983cd7fda6c938aa1bf4381a6122',
+  'installationDeliveryNote:none': '2fc9118766a006db9d4b2e79beec08d3aed24b1f619be09666d72bd99abbd4be',
+  'installationDeliveryNote:image': 'f11b2cea7b70d4290340670709e56d3030b6f360e0def63517d04e1bac12260c',
+  'correction:none': '996642c99dcc2e3139947cbb48699280041336e462ff3e3bf692a41fa2b96d25',
+  'correction:image': '294041142df7c740bdbb682d156e39ce35b145ca26eee0f01c3ad1c8f1e8870b',
+  'deliveryNote:none': '019acc64b3255899c1467109c397e29a2c78d0d0d7702518091805b77dc5590b',
+  'deliveryNote:image': 'd20f8ccca38ac8d1b3c178fb1bf1faf5879a2b54f3f3aa5c5a3f277141a761fb',
+  'timesheetOnePage:image': 'f9a60dc9e315e9e1228255b470af78ffe538e3ad0417341dbdb45ac90fe85b91',
+  'timesheetMultiPage:image': '7e127ef2285a8e24492b8df8d2645d21c6a8e21edafd061744b158813c1862bf',
+  'attendance:image': '9cae1f013246b637781c26e42670619d87d9ad58bb17ab90b32afe1f59589c02',
+} as const;
+
+describe('WD Hearn JHB, with and without its uploaded letterhead', () => {
+  it('renders every document to the same bytes as before the master letterhead', async () => {
+    const WDJ: CompanyDetails = {
+      id: WD_HEARN_JHB_COMPANY_ID,
+      code: 'WDJ',
+      name: 'WD Hearn JHB',
+      registration: '',
+      vatNumber: '',
+      physicalAddress: '12 Hearn Street, Germiston',
+      postalAddress: '',
+      phone: '',
+      fax: '',
+      email: '',
+    };
+    const image = await preparedLetterhead(letterheadPng(500, 120, [200, 30, 30]));
+    const now: Record<string, string> = {};
+    for (const [name, number] of Object.entries(JOB_DOCUMENTS)) {
+      const source = { ...sources.get(number)!, company: WDJ };
+      now[`${name}:none`] = sha256(renderJobCardPdf(source, `${number}.pdf`, GENERATED_AT).bytes);
+      now[`${name}:image`] = sha256(renderJobCardPdf({ ...source, letterhead: image }, `${number}.pdf`, GENERATED_AT).bytes);
+    }
+    const wdCorrection = {
+      ...correctionSource,
+      company: { id: WD_HEARN_JHB_COMPANY_ID, name: 'WD Hearn JHB', address: '12 Hearn Street', contactLine: '', registrationLine: '' },
+    };
+    now['correction:none'] = sha256(renderCorrectionPdf(wdCorrection, 'C.pdf').bytes);
+    now['correction:image'] = sha256(renderCorrectionPdf({ ...wdCorrection, letterhead: image }, 'C.pdf').bytes);
+    const wdNote = { ...deliveryNoteModel, company: { name: 'WD Hearn JHB', address: '12 Hearn Street', contactLine: '' } };
+    now['deliveryNote:none'] = sha256(renderDeliveryNotePdf(wdNote).bytes);
+    now['deliveryNote:image'] = sha256(renderDeliveryNotePdf(wdNote, image).bytes);
+    now['timesheetOnePage:image'] = sha256(renderTimesheetPdf(timesheet(10), { generatedAt: GENERATED_AT, letterhead: image }).bytes);
+    now['timesheetMultiPage:image'] = sha256(renderTimesheetPdf(timesheet(400), { generatedAt: GENERATED_AT, letterhead: image }).bytes);
+    now['attendance:image'] = sha256(renderAttendancePdf(attendance(), { generatedAt: GENERATED_AT, letterhead: image }).bytes);
+    expect(now).toEqual(WD_HEARN_BEFORE_MASTER);
   });
 });

@@ -26,7 +26,9 @@ import { loadCorrectionDocument, raiseJobCorrection } from './job-corrections';
 import { loadFinalDocumentFile, storeFinalDocument } from './final-document';
 import { generateDeliveryNote } from './delivery-note';
 import { loadJobView } from './job-view';
+import { EJE_MASTER_LETTERHEAD } from '@/lib/branding/eje-letterhead';
 import {
+  defaultCompanyLetterhead,
   downloadCompanyLetterheadFile,
   loadCompanyLetterhead,
   removeCompanyLetterhead,
@@ -35,14 +37,24 @@ import {
 import { WorkflowError } from './errors';
 import { StorageIntegrityFailed } from '@/services/ports';
 import { buildHarness, seedUser, type Harness } from './test-harness';
-import { drawnImages, embedsImageData, imageObjectCount, letterheadPng, preparedLetterhead } from '@/test/letterhead-fixture';
+import { embedsImageData, imageObjectCount, letterheadPng, preparedLetterhead } from '@/test/letterhead-fixture';
 
 /**
  * LETTERHEAD-1 THROUGH THE REAL PATHS: a document issued NOW carries the
  * letterhead of the company its job belongs to — WD Hearn's on a WD Hearn job,
  * EJE's on an EJE job — through the same operations that issue it; history
  * rendered for a job issued before letterheads keeps its text header.
+ *
+ * LETTERHEAD-2: EJE's is the MASTER letterhead — vector text and the traced
+ * mark, no image — even when an EJE image has been uploaded; WD Hearn's is
+ * still its uploaded image.
  */
+const MASTER_LINES = ['Reg: CK1987/020035/23', 'EJE Industrial Electronics cc', 'VAT NO: 4950134991', 'P.O. Box 16282'];
+const carriesMaster = (bytes: Uint8Array) => {
+  const text = pdfPlainText(bytes);
+  for (const line of MASTER_LINES) expect(text, line).toContain(line);
+  expect(imageObjectCount(bytes)).toBe(0);
+};
 const master = seedUser('user-master-elmarie');
 const technician = seedUser('user-tech-sipho');
 
@@ -94,9 +106,10 @@ describe('each job document on its own company’s letterhead', () => {
     wd = await preparedLetterhead(WD_PNG);
   });
 
-  it('loads the right image for each company, prepared as the documents use it', async () => {
-    expect((await loadCompanyLetterhead(harness.as(master), DEFAULT_COMPANY_ID))?.data).toEqual(eje.data);
-    expect((await loadCompanyLetterhead(harness.as(master), WD_HEARN_JHB_COMPANY_ID))?.data).toEqual(wd.data);
+  it('loads the master letterhead for EJE (its uploaded image is not printed), and WD Hearn’s own image', async () => {
+    expect(await loadCompanyLetterhead(harness.as(master), DEFAULT_COMPANY_ID)).toBe(EJE_MASTER_LETTERHEAD);
+    expect(await defaultCompanyLetterhead(harness.as(master))).toBe(EJE_MASTER_LETTERHEAD);
+    expect(((await loadCompanyLetterhead(harness.as(master), WD_HEARN_JHB_COMPANY_ID)) as PdfImage).data).toEqual(wd.data);
     await removeCompanyLetterhead(harness.as(master), WD_HEARN_JHB_COMPANY_ID);
     expect(await loadCompanyLetterhead(harness.as(master), WD_HEARN_JHB_COMPANY_ID)).toBeUndefined();
   });
@@ -118,16 +131,15 @@ describe('each job document on its own company’s letterhead', () => {
 
     // A document is never withheld for want of its letterhead: no image, the text header.
     expect(await loadCompanyLetterhead(harness.as(master), WD_HEARN_JHB_COMPANY_ID)).toBeUndefined();
-    expect((await loadCompanyLetterhead(harness.as(master), DEFAULT_COMPANY_ID))?.data).toEqual(eje.data);
+    expect(await loadCompanyLetterhead(harness.as(master), DEFAULT_COMPANY_ID)).toBe(EJE_MASTER_LETTERHEAD);
   });
 
-  it('an EJE job card issued now carries EJE’s letterhead, and its correction addendum too', async () => {
+  it('an EJE job card issued now carries the EJE master letterhead, and its correction addendum too', async () => {
     const issued = await issuedEjeJob(harness);
     const card = await loadFinalDocumentFile(harness.as(master), issued.jobNumber);
-    expect(imageObjectCount(card.bytes)).toBe(1);
-    expect(embedsImageData(card.bytes, eje)).toBe(true);
+    carriesMaster(card.bytes);
+    expect(embedsImageData(card.bytes, eje)).toBe(false);
     expect(embedsImageData(card.bytes, wd)).toBe(false);
-    expect(drawnImages(card.bytes)[0]!.y).toBeGreaterThan(745);
     expect(pdfPlainText(card.bytes)).toContain(issued.jobNumber);
 
     const correction = await raiseJobCorrection(harness.as(master), issued, {
@@ -138,8 +150,7 @@ describe('each job document on its own company’s letterhead', () => {
     });
     const addendum = await loadCorrectionDocument(harness.as(master), issued, correction.id);
     expect(addendum).not.toBeNull();
-    expect(embedsImageData(addendum!.file.bytes, eje)).toBe(true);
-    expect(embedsImageData(addendum!.file.bytes, wd)).toBe(false);
+    carriesMaster(addendum!.file.bytes);
     expect(pdfPlainText(addendum!.file.bytes)).toContain('CORRECTION TO JOB CARD');
   });
 
@@ -214,8 +225,9 @@ describe('the delivery note produced now', () => {
     job = await setCollectionMethod(context, job, { courier: true, waybillNumber: 'DAW-1' });
     const note = await generateDeliveryNote(context, job);
     const bytes = new Uint8Array(Buffer.from(note.base64, 'base64'));
-    expect(imageObjectCount(bytes)).toBe(1);
-    expect(embedsImageData(bytes, eje)).toBe(true);
+    // LETTERHEAD-2: an EJE job's, so the master letterhead — the uploaded EJE image is not printed.
+    carriesMaster(bytes);
+    expect(embedsImageData(bytes, eje)).toBe(false);
     expect(pdfPlainText(bytes)).toContain('DELIVERY NOTE');
     expect(pdfPlainText(bytes)).toContain(job.jobNumber);
   });

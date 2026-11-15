@@ -454,7 +454,7 @@ export const prepareFinancePackage = async (
     );
   }
   const now = context.services.clock.now();
-  // LETTERHEAD-1: EJE's own paperwork, on EJE's uploaded letterhead when it has one.
+  // LETTERHEAD-1, -2: EJE's own paperwork, on EJE's master letterhead.
   const letterhead = await defaultCompanyLetterhead(context);
   const packageId = context.services.ids.next('fpk');
   const attachments: FinancePackageAttachment[] = [];

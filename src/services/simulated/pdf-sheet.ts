@@ -1,5 +1,14 @@
 import { A4_HEIGHT, A4_WIDTH, PdfBuilder, textWidth, type PdfFont } from '@/lib/pdf/writer';
 import { displaySize, type PdfImage } from '@/lib/pdf/image';
+import { charWidth } from '@/lib/pdf/metrics';
+import {
+  LETTERHEAD_INK,
+  isMasterLetterhead,
+  layoutLetterhead,
+  type DocumentLetterhead,
+  type LetterheadArea,
+  type LetterheadFontRole,
+} from '@/lib/branding/eje-letterhead';
 
 /**
  * THE PAPER ITSELF: page geometry, the type scale, the colours and the cursor.
@@ -195,12 +204,75 @@ export const fitLetterhead = (image: PdfImage, box: LetterheadBox): LetterheadBo
   return { x: box.x, y: box.y + (box.height - height) / 2, width, height };
 };
 
+const PDF_FONT: Record<LetterheadFontRole, PdfFont> = {
+  sansBoldItalic: 'boldItalic',
+  serifBold: 'serifBold',
+  serifBoldItalic: 'serifBoldItalic',
+};
+
+/** A run's width as the font's metrics give it — what the viewer advances — for centring. */
+const naturalWidth = (text: string, size: number, font: PdfFont): number => {
+  let thousandths = 0;
+  for (const character of text) thousandths += charWidth(character, font);
+  return (thousandths / 1000) * size;
+};
+
+/** The box in the y-DOWN space the master layout is described in (the page measured from its top). */
+const areaOf = (box: LetterheadBox): LetterheadArea => ({
+  left: box.x,
+  top: A4_HEIGHT - (box.y + box.height),
+  width: box.width,
+  height: box.height,
+});
+
+/**
+ * THE EJE MASTER LETTERHEAD, DRAWN INTO A BOX. LETTERHEAD-2 (15 November 2026).
+ *
+ * The owner: the official letterhead recreated as a header — crisp vector text and a clean
+ * logo, not a pasted image — the same on every EJE document and on the screen. So this draws
+ * `layoutLetterhead` (lib/branding/eje-letterhead.ts), the one description both renderers
+ * use: every line as real, searchable text in the paper's faces (Helvetica-BoldOblique,
+ * Times-Bold, Times-BoldItalic), centred on its own x by its metric width, and the EJE mark
+ * as its traced outline, filled even-odd. Fitted exactly as an uploaded image is: uniformly,
+ * against the box's left edge, centred top to bottom. Nothing outside the box moves.
+ */
+export const drawEjeLetterhead = (pdf: PdfBuilder, box: LetterheadBox): void => {
+  const placed = layoutLetterhead(areaOf(box));
+  const mark = placed.mark;
+  pdf.fillPolygons(
+    placed.markPolygons,
+    { x: mark.left, y: A4_HEIGHT - (mark.top + mark.height), width: mark.width, height: mark.height },
+    LETTERHEAD_INK,
+  );
+  for (const line of placed.lines) {
+    const font = PDF_FONT[line.role];
+    const width = line.runs.reduce((sum, part) => sum + naturalWidth(part.text, part.size, font), 0);
+    const x = line.x - width / 2;
+    const y = A4_HEIGHT - line.baseline;
+    const [only] = line.runs;
+    if (line.runs.length === 1 && only !== undefined) {
+      pdf.text(x, y, only.text, { font, size: only.size, colour: line.ink });
+    } else {
+      pdf.textLine(x, y, line.runs.map((part) => ({ value: part.text, size: part.size })), { font, colour: line.ink });
+    }
+  }
+};
+
+/**
+ * Draws the document's letterhead into its header box — the EJE master header
+ * (LETTERHEAD-2), or a company's uploaded image (LETTERHEAD-1) — and says whether
+ * it drew one.
+ */
 export const drawLetterhead = (
   pdf: PdfBuilder,
-  letterhead: PdfImage | undefined,
+  letterhead: DocumentLetterhead | undefined,
   box: LetterheadBox,
 ): boolean => {
   if (letterhead === undefined || box.width <= 0 || box.height <= 0) return false;
+  if (isMasterLetterhead(letterhead)) {
+    drawEjeLetterhead(pdf, box);
+    return true;
+  }
   const fitted = fitLetterhead(letterhead, box);
   pdf.image(letterhead, fitted.x, fitted.y, fitted.width, fitted.height);
   return true;
@@ -217,7 +289,7 @@ export const drawLetterhead = (
  */
 export const drawLetterheadOverTitle = (
   pdf: PdfBuilder,
-  letterhead: PdfImage,
+  letterhead: DocumentLetterhead,
   ruleY: number,
   title: string,
   number: string,

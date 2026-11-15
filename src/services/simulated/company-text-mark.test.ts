@@ -100,9 +100,16 @@ describe('the EJE tile is EJE’s alone', () => {
     expect(pdfPlainText(wd)).toContain('WD Hearn JHB');
   });
 
-  it('is on EJE’s on-screen job card and collection note, and not on WD Hearn JHB’s', () => {
-    expect(renderToStaticMarkup(createElement(JobCardDocument, { view: ejeView }))).toMatch(tileMarkup);
-    expect(renderToStaticMarkup(createElement(PartsCollectionNote, { view: ejePartsView }))).toMatch(tileMarkup);
+  it('is not on WD Hearn JHB’s on-screen job card and collection note; EJE’s carry the master letterhead instead', () => {
+    // LETTERHEAD-2: on screen, as in the PDF, EJE's header is the master letterhead — the
+    // text header (and its tile) is what a company WITHOUT a letterhead keeps.
+    for (const markup of [
+      renderToStaticMarkup(createElement(JobCardDocument, { view: ejeView })),
+      renderToStaticMarkup(createElement(PartsCollectionNote, { view: ejePartsView })),
+    ]) {
+      expect(markup).toContain('data-letterhead="eje-master"');
+      expect(markup).not.toMatch(tileMarkup);
+    }
     const wdCard = renderToStaticMarkup(createElement(JobCardDocument, { view: { ...ejeView, company: WDJ } }));
     const wdNote = renderToStaticMarkup(createElement(PartsCollectionNote, { view: { ...ejePartsView, company: WDJ } }));
     for (const markup of [wdCard, wdNote]) {
@@ -110,6 +117,18 @@ describe('the EJE tile is EJE’s alone', () => {
       expect(markup).not.toMatch(/>EJE</u);
       expect(markup).toContain('WD Hearn JHB');
       expect(markup).toContain('data-testid="no-company-tile"');
+      expect(markup).not.toContain('data-letterhead');
+    }
+    // With an uploaded letterhead, WD Hearn JHB's on-screen documents show that image instead.
+    const letterhead = { companyId: WD_HEARN_JHB_COMPANY_ID, sha256: 'wd-image' };
+    for (const markup of [
+      renderToStaticMarkup(createElement(JobCardDocument, { view: { ...ejeView, company: WDJ, companyLetterhead: letterhead } })),
+      renderToStaticMarkup(createElement(PartsCollectionNote, { view: { ...ejePartsView, company: WDJ, companyLetterhead: letterhead } })),
+    ]) {
+      expect(markup).toContain('data-letterhead="uploaded"');
+      expect(markup).toContain('alt="WD Hearn JHB letterhead"');
+      expect(markup).not.toContain('data-testid="no-company-tile"');
+      expect(markup).not.toContain('eje-master');
     }
   });
 

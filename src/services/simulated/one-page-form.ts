@@ -1,6 +1,16 @@
 import { A4_HEIGHT, A4_WIDTH, PdfBuilder, textWidth } from '@/lib/pdf/writer';
 import { BAND, BODY, INK, LETTERHEAD_TOP, MUTED, RULE, RULE_SOFT, TRACK_TITLE, drawLetterhead } from './pdf-sheet';
-import type { PdfImage } from '@/lib/pdf/image';
+import { EJE_MASTER_LETTERHEAD, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+
+/**
+ * LETTERHEAD-2 (the owner, 15 November 2026): the EJE master letterhead needs a readable band. In the room the
+ * text heading had (~33 pt) its serif lines came out ~2.5 pt; this much more makes the band ~65 pt and the lines
+ * ~5 pt, as on the job card. `plan` reserves it, so the rows are sized for the room that is left and the form is
+ * still ONE page (the worst-case months are tested). Only the master letterhead takes it: any other company's form
+ * — an uploaded image or the text heading — is laid out exactly as before.
+ */
+const MASTER_HEADER_EXTRA = 32;
+const headerExtra = (spec: Pick<FormSpec, 'letterhead'>): number => (spec.letterhead === EJE_MASTER_LETTERHEAD ? MASTER_HEADER_EXTRA : 0);
 
 /**
  * ONE PAGE, ALWAYS. PAY-04 (29 October 2026): every timesheet and attendance
@@ -60,7 +70,7 @@ export interface FormSpec {
   readonly comment?: { readonly title: string; readonly text: string };
   readonly footer: string;
   /** LETTERHEAD-1: the company's uploaded letterhead, prepared; absent, the company's name in text. */
-  readonly letterhead?: PdfImage;
+  readonly letterhead?: DocumentLetterhead;
 }
 
 export interface FormLayout {
@@ -249,7 +259,7 @@ export const plan = (spec: FormSpec, scale: number, panels: 1 | 2): Plan | null 
   const sizes = sizesAt(scale);
   const panelWidth = panels === 1 ? WIDTH : (WIDTH - PANEL_GAP) / 2;
   const widths = contentWidths(spec, panelWidth, sizes.body, panels);
-  const top = Math.max(sizes.company, sizes.title) + sizes.gap;
+  const top = Math.max(sizes.company, sizes.title) + sizes.gap + headerExtra(spec);
   const fieldsHeight = spec.fields.length * sizes.fieldLeading + sizes.gap * 0.6;
   const notes = spec.notes.flatMap((note) => PdfBuilder.wrap(note, WIDTH, sizes.note));
   const notesHeight = notes.length * sizes.note * 1.35 + (notes.length > 0 ? sizes.gap * 0.5 : 0);
@@ -288,7 +298,7 @@ export const renderOnePageForm = (spec: FormSpec): RenderedForm => {
   const { sizes, widths, panelWidth } = chosen;
   const pdf = new PdfBuilder();
   pdf.addPage();
-  let y = A4_HEIGHT - MARGIN - Math.max(sizes.company, sizes.title) * 0.8;
+  let y = A4_HEIGHT - MARGIN - Math.max(sizes.company, sizes.title) * 0.8 - headerExtra(spec);
 
   // Heading: the company, and the form's title on the right.
   const titleWidth = textWidth(spec.title, sizes.title, 'bold', TRACK_TITLE);

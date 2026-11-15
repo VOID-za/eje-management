@@ -40,7 +40,7 @@ import {
   TRACK_TITLE,
   drawLetterheadOverTitle,
 } from './pdf-sheet';
-import type { PdfImage } from '@/lib/pdf/image';
+import type { DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 
 
 const labelValueRows = (
@@ -81,7 +81,7 @@ const labelValueRows = (
   }
 };
 
-const header = (sheet: Sheet, model: JobCardModel, letterhead: PdfImage | undefined): void => {
+const header = (sheet: Sheet, model: JobCardModel, letterhead: DocumentLetterhead | undefined): void => {
   const top = sheet.cursor;
 
   /*

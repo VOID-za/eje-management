@@ -30,20 +30,35 @@ export const A4_HEIGHT = 841.89;
  * signature is a seeded label rather than captured geometry. Captured
  * signatures are drawn as paths and use no font at all.
  */
-export type PdfFont = 'regular' | 'bold' | 'italic' | 'script';
+export type PdfFont = 'regular' | 'bold' | 'italic' | 'script' | 'boldItalic' | 'serifBold' | 'serifBoldItalic';
 
+/**
+ * `boldItalic`, `serifBold` and `serifBoldItalic` are the EJE master letterhead's faces
+ * (LETTERHEAD-2): its name block in a bold italic sans, its address and contact columns in a
+ * bold serif, its PO Box in a bold italic serif — all base-14, named and not embedded, and,
+ * like every font, emitted only by a document that uses them.
+ */
 const FONT_RESOURCE: Record<PdfFont, string> = {
   regular: 'F1',
   bold: 'F2',
   italic: 'F3',
   script: 'F4',
+  boldItalic: 'F5',
+  serifBold: 'F6',
+  serifBoldItalic: 'F7',
 };
+
+/** In resource order, which is the order their objects are written in. */
+const FONT_ORDER: readonly PdfFont[] = ['regular', 'bold', 'italic', 'script', 'boldItalic', 'serifBold', 'serifBoldItalic'];
 
 const FONT_BASE: Record<PdfFont, string> = {
   regular: 'Helvetica',
   bold: 'Helvetica-Bold',
   italic: 'Helvetica-Oblique',
   script: 'Times-Italic',
+  boldItalic: 'Helvetica-BoldOblique',
+  serifBold: 'Times-Bold',
+  serifBoldItalic: 'Times-BoldItalic',
 };
 
 /**
@@ -264,6 +279,55 @@ export class PdfBuilder {
     );
   }
 
+  /**
+   * One line of text set in several sizes, as ONE text object: each run follows the last
+   * along the baseline exactly as the viewer advances it. The master letterhead's name needs
+   * it — "EJE Industrial Electronics" with its smaller "cc" (LETTERHEAD-2) — and a reader,
+   * and the inspector, see one line.
+   */
+  textLine(
+    x: number,
+    y: number,
+    runs: readonly { readonly value: string; readonly size: number }[],
+    options: { readonly font?: PdfFont; readonly colour?: string } = {},
+  ): void {
+    if (runs.length === 0) return;
+    const font = options.font ?? 'regular';
+    this.usedFonts.add(font);
+    const shown = runs.map((part, index) =>
+      index === 0
+        ? `/${FONT_RESOURCE[font]} ${round(part.size)} Tf 0 Tc 1 0 0 1 ${round(x)} ${round(y)} Tm (${escapeLiteral(part.value)}) Tj`
+        : `/${FONT_RESOURCE[font]} ${round(part.size)} Tf (${escapeLiteral(part.value)}) Tj`,
+    );
+    this.page().operations.push(`BT ${colourOperands(options.colour)} rg ${shown.join(' ')} ET`);
+  }
+
+  /**
+   * Fills closed outlines EVEN-ODD, so a hole inside an outline stays paper. How the EJE
+   * mark of the master letterhead reaches the page (LETTERHEAD-2): its traced vector
+   * outline, not a picture of it. Each polygon is a flat list x0, y0, x1, y1, … normalised
+   * 0..1 across the box with y DOWNWARDS, as it was traced; the box is in PDF user space.
+   */
+  fillPolygons(
+    polygons: readonly (readonly number[])[],
+    box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+    colour?: string,
+  ): void {
+    const parts: string[] = [];
+    for (const polygon of polygons) {
+      if (polygon.length < 6) continue;
+      for (let index = 0; index + 1 < polygon.length; index += 2) {
+        const x = box.x + polygon[index]! * box.width;
+        // PDF's origin is bottom-left; the traced geometry is top-left.
+        const y = box.y + box.height - polygon[index + 1]! * box.height;
+        parts.push(`${round(x)} ${round(y)} ${index === 0 ? 'm' : 'l'}`);
+      }
+      parts.push('h');
+    }
+    if (parts.length === 0) return;
+    this.page().operations.push(`${colourOperands(colour)} rg ${parts.join(' ')} f*`);
+  }
+
   line(x1: number, y1: number, x2: number, y2: number, width = 0.6, colour?: string): void {
     this.page().operations.push(
       `${colourOperands(colour)} RG ${round(width)} w ` +
@@ -374,9 +438,7 @@ export class PdfBuilder {
   toBytes(): Uint8Array {
     if (this.pages.length === 0) this.addPage();
 
-    const fonts: PdfFont[] = (['regular', 'bold', 'italic', 'script'] as PdfFont[]).filter((font) =>
-      this.usedFonts.has(font),
-    );
+    const fonts: PdfFont[] = FONT_ORDER.filter((font) => this.usedFonts.has(font));
     // A page with no text still needs a font resource dictionary to be valid.
     if (fonts.length === 0) fonts.push('regular');
 

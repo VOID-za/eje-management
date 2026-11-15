@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Job } from '@/domain';
 import { DEMO_USERS, signedInAs, startTestServer, type ApiTestClient } from '@/test/api-harness';
 import { embedsImageData, imageObjectCount, letterheadPng, preparedLetterhead, sha256 } from '@/test/letterhead-fixture';
+import { pdfPlainText } from '@/lib/pdf/inspect';
 
 /**
  * LETTERHEAD-1 OVER HTTP: uploading, reading back, replacing and removing a
@@ -167,7 +168,9 @@ describe('a company’s letterhead over HTTP', () => {
     expect(JSON.stringify(wd.raw)).not.toContain('storageKey');
   });
 
-  it('a timesheet and an attendance form are on EJE’s letterhead — EJE’s own paperwork, never WD Hearn’s', async () => {
+  // LETTERHEAD-2: EJE's letterhead is now the MASTER letterhead — vector text and the traced
+  // mark, no image — even with an EJE image uploaded; WD Hearn's image is never on them.
+  it('a timesheet and an attendance form are on EJE’s master letterhead — EJE’s own paperwork, never WD Hearn’s', async () => {
     const wdPng = letterheadPng(500, 120, [200, 30, 30]);
     expect((await upload(master, 'eje', { name: 'eje.png', type: 'image/png', bytes: PNG })).status).toBe(200);
     expect((await upload(master, 'wd-hearn-jhb', { name: 'wd.png', type: 'image/png', bytes: wdPng })).status).toBe(200);
@@ -176,13 +179,17 @@ describe('a company’s letterhead over HTTP', () => {
     const technician = await signedInAs(DEMO_USERS.technician);
     const sheet = await technician.download('/api/timesheets/user-tech-sipho/period/pdf?from=2026-10-01&to=2026-10-31');
     expect(sheet.status, sheet.error?.message).toBe(200);
-    expect(imageObjectCount(sheet.bytes)).toBe(1);
-    expect(embedsImageData(sheet.bytes, eje)).toBe(true);
+    expect(imageObjectCount(sheet.bytes)).toBe(0);
+    expect(embedsImageData(sheet.bytes, eje)).toBe(false);
     expect(embedsImageData(sheet.bytes, wd)).toBe(false);
+    expect(pdfPlainText(sheet.bytes)).toContain('EJE Industrial Electronics cc');
+    expect(pdfPlainText(sheet.bytes)).toContain('VAT NO: 4950134991');
 
     const attendance = await technician.download('/api/attendance/pdf?from=2026-10-01&to=2026-10-31');
     expect(attendance.status, attendance.error?.message).toBe(200);
-    expect(embedsImageData(attendance.bytes, eje)).toBe(true);
+    expect(imageObjectCount(attendance.bytes)).toBe(0);
     expect(embedsImageData(attendance.bytes, wd)).toBe(false);
+    expect(pdfPlainText(attendance.bytes)).toContain('EJE Industrial Electronics cc');
+    expect(pdfPlainText(attendance.bytes)).toContain('P.O. Box 16282');
   });
 });

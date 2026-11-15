@@ -3,7 +3,8 @@ import type { Clock } from '@/services/ports';
 import type { SimulatedPdfService } from '@/services/simulated/pdf';
 import { companies, jobs } from '@/api/endpoints';
 import { documentPhotos } from '@/lib/job-card/model';
-import { preparePdfImage, unavailable, type PdfImage, type PreparedPhoto } from '@/lib/pdf/image';
+import { preparePdfImage, unavailable, type PreparedPhoto } from '@/lib/pdf/image';
+import { EJE_MASTER_LETTERHEAD, carriesMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 
 /** A job card rendered to PDF bytes, with the name the document carries. */
 export interface RenderedJobCard {
@@ -69,11 +70,16 @@ export const loadPreviewPhotos = async (
  * letterhead's checksum, and prepared by the same function the server uses.
  * Undefined when the company has none — the document keeps its text header —
  * and, so a preview is never withheld, when it cannot be fetched or drawn.
+ *
+ * LETTERHEAD-2: an EJE job's documents carry the master letterhead, drawn from
+ * its own description — nothing is fetched, and an uploaded EJE image is not
+ * printed — exactly as the server's `loadCompanyLetterhead` decides.
  */
 export const loadPreviewLetterhead = async (
-  view: Pick<JobView, 'companyLetterhead'>,
+  view: Pick<JobView, 'companyLetterhead'> & { readonly job: Pick<JobView['job'], 'companyId'> },
   fetchImpl: typeof fetch = fetch,
-): Promise<PdfImage | undefined> => {
+): Promise<DocumentLetterhead | undefined> => {
+  if (carriesMasterLetterhead(view.job.companyId)) return EJE_MASTER_LETTERHEAD;
   const reference = view.companyLetterhead ?? null;
   if (reference === null) return undefined;
   try {
@@ -94,7 +100,7 @@ export const renderJobCardPdf = async (
   clock: Clock,
   photoImages?: ReadonlyMap<string, PreparedPhoto>,
   /** LETTERHEAD-1: already loaded; omitted, it is fetched (`loadPreviewLetterhead`). */
-  letterhead?: PdfImage,
+  letterhead?: DocumentLetterhead,
 ): Promise<RenderedJobCard> => {
   const descriptor =
     view.job.jobType === 'parts'

@@ -491,7 +491,7 @@ export const completePayrollForm = async (context: OperationContext, technicianI
 
   const { person, from, to } = checked;
   const now = context.services.clock.now();
-  // LETTERHEAD-1: EJE's own paperwork, on EJE's uploaded letterhead when it has one.
+  // LETTERHEAD-1, -2: EJE's own paperwork, on EJE's master letterhead.
   const letterhead = await defaultCompanyLetterhead(context);
   const id = context.services.ids.next('pfc');
   // The content and the document, frozen together from the same reading.

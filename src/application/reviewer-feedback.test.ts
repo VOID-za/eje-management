@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { asUserId, getJobTypeDefinition, type Job, type TimesheetEntry } from '@/domain';
 import { businessToday } from '@/lib/business-time';
 import { pdfPlainText } from '@/lib/pdf/inspect';
+import { withoutMasterLetterhead } from '@/test/letterhead-fixture';
 import {
   formatDayAndDate,
   formatPeriod,
@@ -558,7 +559,8 @@ describe('PARTS-03 / PARTS-04 / PARTS-05 — a priced job card AND a separate de
     for (const expected of ['DELIVERY NOTE', job.jobNumber, 'PSU-77', 'Power supply board', 'A06B-6117', 'Spindle amplifier', 'DAW-4471', 'Total items', '3']) {
       expect(text, expected).toContain(expected);
     }
-    for (const price of ['R 150,00', 'R 300,00', 'VAT', 'Subtotal']) expect(text, price).not.toContain(price);
+    // LETTERHEAD-2: read below the EJE master letterhead, whose VAT number is identity, not money.
+    for (const price of ['R 150,00', 'R 300,00', 'VAT', 'Subtotal']) expect(withoutMasterLetterhead(text), price).not.toContain(price);
     // No amount in rand anywhere on it.
     expect(text).not.toMatch(/R\s\d/u);
     // The job, and so its job card, is untouched; the production is on the trail.

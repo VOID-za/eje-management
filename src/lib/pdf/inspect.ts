@@ -51,7 +51,19 @@ const FONT_BY_RESOURCE: Record<string, PdfFont> = {
   F2: 'bold',
   F3: 'italic',
   F4: 'script',
+  F5: 'boldItalic',
+  F6: 'serifBold',
+  F7: 'serifBoldItalic',
 };
+
+/**
+ * WinAnsi's 0x80–0x9F, back to the characters they stand for — so the master letterhead's
+ * en dash (0x96) reads as "–", as a reader sees it (LETTERHEAD-2). Every other byte the
+ * writer emits is ASCII or Latin-1 and reads as itself.
+ */
+const WIN_ANSI_HIGH = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ';
+const fromWinAnsi = (value: string): string =>
+  value.replace(/[\u0080-\u009f]/g, (character) => WIN_ANSI_HIGH[character.charCodeAt(0) - 0x80] ?? character);
 
 export const pdfText = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
@@ -105,8 +117,15 @@ const pageStreams = (text: string): readonly string[] => {
     });
 };
 
+/**
+ * One text object. Its first run sets the position; any further runs (`textLine`, the
+ * master letterhead's "EJE Industrial Electronics" and its smaller "cc") follow along the
+ * same baseline and are read as part of the same line.
+ */
 const TEXT_RUN =
-  /BT [\d.]+ [\d.]+ [\d.]+ rg \/(F\d) ([\d.]+) Tf (?:([\d.]+) Tc )?1 0 0 1 ([\d.-]+) ([\d.-]+) Tm \((.*?)\) Tj ET/g;
+  /BT [\d.]+ [\d.]+ [\d.]+ rg \/(F\d) ([\d.]+) Tf (?:([\d.]+) Tc )?1 0 0 1 ([\d.-]+) ([\d.-]+) Tm \((.*?)\) Tj((?: \/F\d [\d.]+ Tf \((?:.*?)\) Tj)*) ET/g;
+const MORE_RUNS = / \/(F\d) ([\d.]+) Tf \((.*?)\) Tj/g;
+const unescape = (value: string): string => fromWinAnsi(value.replace(/\\([\\()])/g, '$1'));
 
 const measure = (value: string, size: number, font: PdfFont, tracking: number): number => {
   let thousandths = 0;
@@ -145,7 +164,13 @@ export const inspectPdf = (
       const font = FONT_BY_RESOURCE[match[1] ?? ''] ?? 'regular';
       const size = Number(match[2]);
       const tracking = match[3] === undefined ? 0 : Number(match[3]);
-      const value = (match[6] ?? '').replace(/\\([\\()])/g, '$1');
+      let value = unescape(match[6] ?? '');
+      let width = measure(value, size, font, tracking);
+      for (const more of (match[7] ?? '').matchAll(MORE_RUNS)) {
+        const part = unescape(more[3] ?? '');
+        value += part;
+        width += measure(part, Number(more[2]), FONT_BY_RESOURCE[more[1] ?? ''] ?? 'regular', 0);
+      }
       pageRuns.push({
         page,
         font,
@@ -153,7 +178,7 @@ export const inspectPdf = (
         x: Number(match[4]),
         y: Number(match[5]),
         value,
-        width: measure(value, size, font, tracking),
+        width,
       });
     }
 

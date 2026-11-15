@@ -17,6 +17,7 @@ import { loadJobView } from './job-view';
 import { buildHarness, seedUser, type Harness } from './test-harness';
 import { WorkflowError } from './errors';
 import { pdfPlainText } from '@/lib/pdf/inspect';
+import { withoutMasterLetterhead } from '@/test/letterhead-fixture';
 import { calculateJobTotals, canChooseUnsignedCopyDocuments, checkReadyForSignature, getJobTypeDefinition, type Job } from '@/domain';
 
 /**
@@ -153,7 +154,8 @@ describe('DELIVERY-NOTE-1: signed, issued, closed — never invoiced', () => {
     for (const expected of ['DELIVERY NOTE', closed.jobNumber, 'Delivery date', '03 Nov 2026', 'LU-200', 'Loan servo drive', 'Comment: Loan unit', 'ENC-1024', 'Comment: Part returned', 'Courier collection', 'DAW-77120', 'Thabo Dlamini', 'carries no prices']) {
       expect(text).toContain(expected);
     }
-    expect(text).not.toMatch(/R\s?\d|Total due|VAT|Invoice/u);
+    // LETTERHEAD-2: below the EJE master letterhead, whose VAT number is identity, not money.
+    expect(withoutMasterLetterhead(text)).not.toMatch(/R\s?\d|Total due|VAT|Invoice/u);
     // Nothing was emailed.
     expect(harness.outbox.listSync().filter((entry) => entry.channel === 'email')).toHaveLength(0);
   });

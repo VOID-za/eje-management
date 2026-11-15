@@ -14,7 +14,7 @@ export const GET = downloadRoute('payroll.month.timesheet.pdf', async (context) 
   const { version } = parseWith(z.object({ version: timesheetVersionParam }).strict(), Object.fromEntries(context.request.nextUrl.searchParams));
   const { from, to } = monthBounds(parseWith(month, context.params.month ?? ''));
   const document = await loadTimesheetDocument({ repos: context.repos, services: context.services, actor: context.actor.user }, context.params.userId ?? '', from, to, parseTimesheetVersion(version));
-  // LETTERHEAD-1: EJE's own paperwork, on EJE's uploaded letterhead when it has one.
+  // LETTERHEAD-1, -2: EJE's own paperwork, on EJE's master letterhead.
   const letterhead = await defaultCompanyLetterhead(context);
   const rendered = onePageOrRefuse(() => renderTimesheetPdf(document, { generatedAt: context.services.clock.now(), letterhead }));
   return { fileName: rendered.fileName, contentType: 'application/pdf', body: rendered.bytes, headers: { 'X-Page-Count': String(rendered.pageCount) } };

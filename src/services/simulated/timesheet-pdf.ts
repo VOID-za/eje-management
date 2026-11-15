@@ -4,7 +4,7 @@ import { formatDayAndDate } from '@/lib/timesheet-dates';
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
 import { OnePageOverflow, renderOnePageForm, type FormLayout, type FormRow } from './one-page-form';
 import { BAND, BODY, CONTENT_WIDTH, GAP, INK, LETTERHEAD_TOP, MARGIN, MUTED, RIGHT, RULE, RULE_SOFT, Sheet, SIZE, TRACK_TITLE, drawLetterhead } from './pdf-sheet';
-import type { PdfImage } from '@/lib/pdf/image';
+import type { DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 
 /**
  * THE TIMESHEET PDF LAYOUT. PDF-01 … PDF-04 (the real-world reviewer, and the
@@ -96,7 +96,7 @@ export const timesheetRecordedOnlyNote = (doc: Pick<TimesheetDocument, 'rows' | 
 export interface TimesheetPdfOptions {
   readonly generatedAt: string;
   /** LETTERHEAD-1: the default company's uploaded letterhead, prepared; absent, the text header. */
-  readonly letterhead?: PdfImage;
+  readonly letterhead?: DocumentLetterhead;
 }
 
 export interface RenderedTimesheet {
@@ -194,7 +194,7 @@ const renderMultiPageTimesheet = (
   fields: readonly (readonly [string, string])[],
   notes: readonly string[],
   footer: string,
-  letterhead: PdfImage | undefined,
+  letterhead: DocumentLetterhead | undefined,
 ): { bytes: Uint8Array; pageCount: number } => {
   const sheet = new Sheet();
   const title = 'TIME SHEET';

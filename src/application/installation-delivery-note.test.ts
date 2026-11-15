@@ -29,6 +29,7 @@ import {
 } from '@/lib/job-card/installation-note';
 import { inspectPdf, pdfPageTexts as rawPageTexts, pdfPlainText as rawPlainText } from '@/lib/pdf/inspect';
 import { SimulatedPdfService } from '@/services/simulated/pdf';
+import { withoutMasterLetterhead } from '@/test/letterhead-fixture';
 import type { Clock } from '@/services/ports';
 import {
   asChecklistTemplateId,
@@ -72,7 +73,10 @@ const FINANCIAL_WORDS = [
   /\bUnit price\b/iu,
 ];
 
-const expectNoMoney = (text: string): void => {
+const expectNoMoney = (document: string): void => {
+  // LETTERHEAD-2: the EJE master letterhead names the company's VAT number — identity, not
+  // money — so the money words are looked for in everything else on the document.
+  const text = withoutMasterLetterhead(document);
   expect(text).not.toMatch(CURRENCY);
   for (const word of FINANCIAL_WORDS) expect(text).not.toMatch(word);
 };
