@@ -334,16 +334,25 @@ await check('Signature: shown again at its own proportions, and drawn in the iss
   const pdf = { text: Buffer.from(opened.json.data.base64, 'base64').toString('latin1') };
   if (!pdf.text.startsWith('%PDF-')) fail('the issued document is not a PDF');
   // The signature is the longest run of line segments in the page's drawing.
+  // LETTERHEAD-2: only STROKED paths (painted with S) count. The EJE master letterhead's mark is also built
+  // of line segments, but FILLED (f*), and is not part of the signature.
   const runs = [];
+  let path = [];
   let run = [];
-  for (const match of pdf.text.matchAll(/(-?[\d.]+) (-?[\d.]+) ([ml])\b/gu)) {
+  for (const match of pdf.text.matchAll(/(-?[\d.]+) (-?[\d.]+) ([ml])\b|(?<=\s)(S|s|f\*|f|F|B\*|B|b\*|b|n)(?=\s)/gu)) {
+    if (match[4] !== undefined) {
+      if (run.length > 0) path.push(run);
+      if (match[4] === 'S' || match[4] === 's') runs.push(...path);
+      path = [];
+      run = [];
+      continue;
+    }
     const point = [Number(match[1]), Number(match[2])];
     if (match[3] === 'm') {
-      if (run.length > 0) runs.push(run);
+      if (run.length > 0) path.push(run);
       run = [point];
     } else run.push(point);
   }
-  if (run.length > 0) runs.push(run);
   const all = runs.filter((candidate) => candidate.length > 10).flat();
   if (all.length < 30) fail('the signature is not drawn in the PDF');
   const xs = all.map((p) => p[0]);
