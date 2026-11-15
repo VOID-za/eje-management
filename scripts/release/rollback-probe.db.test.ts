@@ -29,11 +29,11 @@ import { asCustomerId, asJobId, can, getJobTypeDefinition, notificationCategory,
 /**
  * ROLLBACK COMPATIBILITY, PHASE 2 OF 2: THE LIVE RELEASE'S OWN CODE.
  *
- * THIS FILE RUNS INSIDE A CHECKOUT OF THE LIVE RELEASE (c34d1e7, v1.8.0), copied there
+ * THIS FILE RUNS INSIDE A CHECKOUT OF THE LIVE RELEASE (8eb6aa4, v1.11.0), copied there
  * by `scripts/release/rollback-compat.sh`, so every `@/…` import below is the
  * LIVE code — the repository, the searchability wording and the preflight rule
  * as they are on the server today. It must therefore import only what exists
- * in c34d1e7, and it does: each of these was checked against that commit.
+ * in 8eb6aa4, and it does: every imported module exists there (checked 15 November 2026).
  *
  * The database was migrated to the newest migration THIS release ships (0049)
  * and populated by it (phase 1). The question is the one a rollback asks: after
@@ -101,6 +101,13 @@ const INTEGRATIONS = {
   templateVersion: '00000000-0000-4000-8000-0000000006a2',
   email: '00000000-0000-4000-8000-0000000006b1',
   outbox: '00000000-0000-4000-8000-0000000006c1',
+} as const;
+
+// A copy of ROLLBACK_0058 in `src/ops/release/rollback-fixture.ts`.
+const BATCH_0058 = {
+  wdHearnJob: '00000000-0000-4000-8000-000000058a01',
+  wdHearnCustomer: '00000000-0000-4000-8000-000000058b02',
+  liveCustomer: '00000000-0000-4000-8000-000000058c01',
 } as const;
 
 // A copy of ROLLBACK_0056 in `src/ops/release/rollback-fixture.ts`.
@@ -214,15 +221,15 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
       readFileSync(join(process.cwd(), 'src/db/migrations/meta/_journal.json'), 'utf8'),
     ) as { entries: { tag: string }[] };
     const shipped = journal.entries.map((entry) => entry.tag);
-    // c34d1e7 (v1.8.0) shipped up to 0056; this release adds 0057 (timesheets required per user).
-    expect(shipped).toHaveLength(57);
-    expect(shipped.at(-1)).toBe('0056_timesheet_repeated_dates');
-    expect(shipped).not.toContain('0057_user_timesheet_required');
+    // 8eb6aa4 (v1.11.0) shipped up to 0057; this release adds 0058 (two companies, MULTI-CO-1).
+    expect(shipped).toHaveLength(58);
+    expect(shipped.at(-1)).toBe('0057_user_timesheet_required');
+    expect(shipped).not.toContain('0058_multi_company');
 
     const rows = await db.execute<{ n: string }>(sql`select count(*)::text as n from drizzle.__drizzle_migrations`);
     const applied = Number(rows[0]?.n);
-    // 0057 applied beyond what the live release ships: the preflight warns, never fails.
-    expect(applied).toBe(58);
+    // 0058 applied beyond what the live release ships: the preflight warns, never fails.
+    expect(applied).toBe(59);
 
     const checks = checkMigrations(shipped, { applied, schemaPresent: true });
     expect(checks.every((check) => check.verdict !== 'fail')).toBe(true);
@@ -745,9 +752,8 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
   });
 
   /*
-   * 0057 (TS-USER-1). The live code (v1.8.0) has never heard of timesheet_required. Rolled back to, it reads the
-   * account (the column is simply unseen) and saves it without touching the column, so the setting the office made
-   * is still there when the release is rolled forward. Under v1.8.0 the role alone decides again.
+   * 0057 (TS-USER-1). Written for v1.8.0, which had never heard of timesheet_required; the live 8eb6aa4 knows it.
+   * Either way it reads the account and saves it leaving the setting the office made exactly as it is.
    */
   it('meets the 0057 rows: reads and saves an account whose timesheets are disabled, leaving the setting as it is', async () => {
     const users = new PostgresUserRepository(db);
@@ -758,5 +764,48 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
     const [row] = await db.execute<{ timesheet_required: boolean; job_title: string }>(sql`select timesheet_required, job_title from users where id = ${tech}`);
     expect(row?.job_title).toBe('Rollback probe 0057');
     expect(row?.timesheet_required).toBe(false);
+  });
+
+  /*
+   * 0058 (MULTI-CO-1). The live code (8eb6aa4, v1.11.0) has never heard of companies. Rolled back to, it reads and
+   * saves phase 1's WD Hearn JHB job without moving it to another company (it never writes company_id); the jobs it
+   * raises itself are EJE's (the column's default) and numbered from EJE's own sequence by allocate_job_number(); the
+   * customers it creates are linked to EJE (customers_link_default_company) and the ones it saves keep their links;
+   * and what it saves into the settings row reaches the EJE company (system_settings_mirror_to_eje).
+   */
+  it('meets the 0058 rows: keeps a WD Hearn JHB job WD Hearn’s; its own jobs and customers are EJE’s; its settings reach EJE', async () => {
+    const B = BATCH_0058;
+    const jobs = new PostgresJobRepository(db);
+    const wdHearn = await jobs.findById(asJobId(B.wdHearnJob));
+    expect(wdHearn?.jobNumber).toBe('WDJ-0001');
+    expect((await jobs.findByJobNumber('WDJ-0001'))?.id).toBe(B.wdHearnJob);
+    await jobs.save({ ...wdHearn!, referenceNumber: 'Rollback probe 0058' });
+    const [kept] = await db.execute<{ company_id: string; reference_number: string }>(
+      sql`select company_id, reference_number from jobs where id = ${B.wdHearnJob}`,
+    );
+    expect([kept?.company_id, kept?.reference_number]).toEqual(['wd-hearn-jhb', 'Rollback probe 0058']);
+
+    const allocated = await jobs.allocateJobNumber();
+    expect(allocated.jobNumber).toMatch(/^EJE-\d{4,}$/u);
+    await jobs.save(jobFixture(allocated.jobNumber));
+    const [own] = await db.execute<{ company_id: string }>(sql`select company_id from jobs where job_number = ${allocated.jobNumber}`);
+    expect(own?.company_id).toBe('eje');
+
+    const customers = new PostgresCustomerRepository(db);
+    const linksOf = async (customerId: string) =>
+      (await db.execute<{ company_id: string }>(sql`select company_id from customer_companies where customer_id = ${customerId} order by company_id`))
+        .map((link) => link.company_id);
+    const wdOnly = await customers.findById(asCustomerId(B.wdHearnCustomer));
+    expect(wdOnly?.name).toBe('Rollback probe 0058 WD Hearn only');
+    await customers.save({ ...wdOnly!, phone: '+27 11 000 0058' });
+    expect(await linksOf(B.wdHearnCustomer)).toEqual(['wd-hearn-jhb']);
+    expect(await linksOf(IDS.customer)).toEqual(['eje', 'wd-hearn-jhb']);
+    await customers.save({ ...wdOnly!, id: asCustomerId(B.liveCustomer), name: 'Rollback probe 0058 live', accountNumber: 'RB-0058-L', notes: [] });
+    expect(await linksOf(B.liveCustomer)).toEqual(['eje']);
+
+    const settings = new PostgresSettingsRepository(db);
+    await settings.save({ ...(await settings.get()), companyPhone: '+27 11 555 0158' });
+    const [eje] = await db.execute<{ phone: string }>(sql`select phone from companies where id = 'eje'`);
+    expect(eje?.phone).toBe('+27 11 555 0158');
   });
 });

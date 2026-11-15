@@ -27,6 +27,7 @@ import { contacts, customers, sites } from './customers';
 import { machines } from './machines';
 import { users } from './identity';
 import { jobTypes } from './settings';
+import { companies } from './companies';
 
 /**
  * The job.
@@ -55,8 +56,20 @@ export const jobs = pgTable(
      * and never from the client. See `0001_job_numbering.sql`.
      */
     jobNumber: text('job_number').notNull(),
-    /** The raw sequence value behind `job_number`, kept so ordering is numeric. */
+    /**
+     * The raw sequence value behind `job_number`, kept so ordering is numeric.
+     * Unique PER COMPANY (MULTI-CO-1): EJE-0001 and WDJ-0001 are both 1.
+     */
     jobNumberSeq: integer('job_number_seq').notNull(),
+    /**
+     * The company the job is raised for. MULTI-CO-1, migration 0058. Defaults to
+     * EJE so the release before companies can still insert; fixed once written
+     * (trigger `jobs_company_immutable`).
+     */
+    companyId: text('company_id')
+      .notNull()
+      .default('eje')
+      .references(() => companies.id, { onDelete: 'restrict' }),
 
     customerId: uuid('customer_id')
       .notNull()
@@ -242,7 +255,8 @@ export const jobs = pgTable(
   },
   (table) => [
     uniqueIndex('jobs_job_number_key').on(table.jobNumber),
-    uniqueIndex('jobs_job_number_seq_key').on(table.jobNumberSeq),
+    uniqueIndex('jobs_company_job_number_seq_key').on(table.companyId, table.jobNumberSeq),
+    index('jobs_company_idx').on(table.companyId),
 
     index('jobs_status_idx').on(table.status),
     index('jobs_primary_technician_idx').on(table.primaryTechnicianId, table.status),

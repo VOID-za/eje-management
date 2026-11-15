@@ -13,6 +13,7 @@ import {
   type Job,
   type PricingSnapshot,
   type UserId,
+  DEFAULT_COMPANY_ID,
 } from '@/domain';
 import { demoId } from './ids';
 import { dayOffset, nextMonday, timeAgo } from './calendar';
@@ -158,6 +159,7 @@ const completedResponses = (
 const base = (jobNumber: string): Job => ({
   id: jobId(jobNumber),
   jobNumber,
+  companyId: DEFAULT_COMPANY_ID,
   customerId: REGISTER.acme.id,
   siteId: REGISTER.acme.factory,
   contactId: REGISTER.acme.maintenance,

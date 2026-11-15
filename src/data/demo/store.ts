@@ -1,4 +1,5 @@
-import type { CustomerEmail, EmailTemplate, EmailTemplateVersion } from '@/domain';
+import type { Company, CustomerEmail, EmailTemplate, EmailTemplateVersion } from '@/domain';
+import { companiesFromSettings } from '@/domain';
 import type { GeocodeCacheEntry, WhatsAppWebhookEvent } from '../repositories';
 import type {
   CustomerDocument,
@@ -179,6 +180,15 @@ export interface DemoDatabase {
   chatMessages: ChatMessage[];
   settings: SystemSettings;
   /**
+   * EJE and WD Hearn JHB. MULTI-CO-1, v47 — as PostgreSQL migration 0058.
+   *
+   * EJE's counter stays `settings.nextJobSequence`, which the admin and new-job
+   * screens already show; its record's `nextJobSequence` is reported from it.
+   * Every other company counts in its own record, and remembers the last
+   * number it handed out so its start can never be moved back over it.
+   */
+  companies: DemoCompanyRecord[];
+  /**
    * Stored files, keyed by storage key — the demo's disk.
    *
    * Holds the bytes of a closed job's final document so a download returns the
@@ -293,8 +303,17 @@ export const STORAGE_KEY = 'eje.demo.database.v1';
  * v44 added removed timesheet line ids (PAYROLL-ONE-1 follow-up) — empty.
  *
  * v45 added completed forms awaiting the joint submission (FORM-LIFECYCLE-1) — empty.
+ *
+ * v47 added the companies (MULTI-CO-1): EJE from the settings and WD Hearn JHB
+ * with nothing invented; every existing job and customer is EJE's.
  */
-export const SCHEMA_VERSION = 46;
+export const SCHEMA_VERSION = 47;
+
+/** A company as the demonstration stores it. MULTI-CO-1. */
+export type DemoCompanyRecord = Company & {
+  /** The last number this company handed out; null until the first. Unused for EJE. */
+  readonly lastIssuedJobSequence: number | null;
+};
 
 interface PersistedEnvelope {
   readonly version: number;
@@ -378,6 +397,10 @@ export const createSeededDatabase = (): DemoDatabase => ({
   conversations: seedConversations.map((conversation) => ({ ...conversation })),
   chatMessages: seedChatMessages.map((message) => ({ ...message })),
   settings: { ...seedSettings },
+  // MULTI-CO-1: EJE from the settings, WD Hearn JHB with nothing invented.
+  companies: companiesFromSettings(seedSettings, new Date().toISOString() as Company['createdAt']).map(
+    (company) => ({ ...company, lastIssuedJobSequence: null }),
+  ),
   favouriteDocuments: {
     'user-tech-sipho': ['doc-lw-v40-electrical', 'doc-fanuc-alarms'],
     'user-master-elmarie': ['doc-safety-general'],

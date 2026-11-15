@@ -16,6 +16,7 @@ export { PostgresAvailabilityRepository } from './availability-repository';
 export { PostgresAttendanceRepository } from './attendance-repository';
 export { PostgresChatRepository } from './chat-repository';
 export { PostgresChecklistTemplateRepository } from './checklist-template-repository';
+export { PostgresCompanyRepository } from './company-repository';
 export { PostgresCustomerRepository } from './customer-repository';
 export { PostgresDocumentRepository } from './document-repository';
 export { PostgresJobRepository } from './job-repository';

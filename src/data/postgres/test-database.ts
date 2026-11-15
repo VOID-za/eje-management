@@ -92,6 +92,24 @@ export const truncateAll = async (db: Database): Promise<void> => {
     end $$;
   `);
   await db.execute(sql`select setval('eje_job_number_seq', 1068, false)`);
+  /*
+   * MULTI-CO-1: THE TWO COMPANIES, AS MIGRATION 0058 LEAVES THEM. Truncated with
+   * everything else — so a test that renumbered one does not leak into the next —
+   * and put back, because every job and customer needs a company. Only when the
+   * table exists: the upgrade tests truncate a database cut off at an older
+   * migration. EJE's name and rates arrive with the settings row
+   * (`system_settings_mirror_to_eje`).
+   */
+  await db.execute(sql`
+    do $$
+    begin
+      if to_regclass('public.companies') is not null then
+        insert into companies (id, code, name, job_number_prefix, job_number_start, next_job_sequence, is_default)
+        values ('eje', 'EJE', 'EJE', 'EJE-', 1068, null, true),
+               ('wd-hearn-jhb', 'WDJ', 'WD Hearn JHB', 'WDJ-', 1, 1, false);
+      end if;
+    end $$;
+  `);
 };
 
 /**

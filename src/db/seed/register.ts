@@ -10,6 +10,7 @@ import {
   type Machine,
   type MachineType,
   type Site,
+  DEFAULT_COMPANY_ID,
 } from '@/domain';
 import { demoId } from './ids';
 import { timeAgo } from './calendar';
@@ -54,6 +55,7 @@ const customer = (input: CustomerInput): Customer => ({
   email: input.email,
   industry: input.industry,
   paymentTerms: input.terms,
+  companyIds: [DEFAULT_COMPANY_ID],
   officeAddress: {
     line1: input.line1,
     line2: input.line2,

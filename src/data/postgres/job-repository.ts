@@ -467,12 +467,30 @@ export class PostgresJobRepository implements JobRepository {
    */
   async save(job: Job): Promise<Job> {
     const existing = await this.db
-      .select({ version: schema.jobs.version, seq: schema.jobs.jobNumberSeq })
+      .select({
+        version: schema.jobs.version,
+        seq: schema.jobs.jobNumberSeq,
+        companyId: schema.jobs.companyId,
+      })
       .from(schema.jobs)
       .where(eq(schema.jobs.id, job.id))
       .limit(1);
 
     const current = existing[0];
+
+    /*
+     * A JOB'S COMPANY IS FIXED WHEN IT IS RAISED. MULTI-CO-1.
+     *
+     * Refused here with a sentence, before the database trigger
+     * (`jobs_company_immutable`) refuses it with an exception: the number, the
+     * letterhead and the rates all follow from the company, so a save that
+     * moved it would leave an EJE- number on a WD Hearn job card.
+     */
+    if (current !== undefined && current.companyId !== job.companyId) {
+      throw new Error(
+        `${job.jobNumber} belongs to company ${current.companyId}; a job's company is fixed when it is raised and cannot become ${job.companyId}.`,
+      );
+    }
 
     if (current === undefined) {
       /*
@@ -495,11 +513,13 @@ export class PostgresJobRepository implements JobRepository {
        * concurrent writers lose rather than win.
        */
       const expected = this.versions.expected(job.id, current.version);
+      // The company is never part of an update (see above).
+      const { companyId: _fixedAtInsert, ...row } = toJobRow(job, current.seq);
 
       const updated = await this.db
         .update(schema.jobs)
         .set({
-          ...toJobRow(job, current.seq),
+          ...row,
           updatedAt: sql`now()`,
           version: expected + 1,
         })

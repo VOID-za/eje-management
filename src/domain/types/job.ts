@@ -16,6 +16,7 @@ import type {
 } from './common';
 import type { ChecklistInstance } from './checklist';
 import type { PricingInputs } from './settings';
+import type { CompanyId } from './company';
 
 /**
  * The pricing that was in force when a job became a financial commitment, with
@@ -652,6 +653,13 @@ export const storedRepairItems = (
 export interface Job {
   readonly id: JobId;
   readonly jobNumber: string;
+  /**
+   * The company the job is raised for. MULTI-CO-1. FIXED when the job is raised:
+   * its number, its letterhead and its rates follow from it, so no save can
+   * change it (the repositories refuse, and so does the database trigger
+   * `jobs_company_immutable`).
+   */
+  readonly companyId: CompanyId;
   readonly customerId: CustomerId;
   /**
    * DN-SITE-OPT-1 (3 November 2026): null only on a Delivery Note raised without

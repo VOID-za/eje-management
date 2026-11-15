@@ -2,6 +2,8 @@ import {
   asContactId,
   asCustomerId,
   asSiteId,
+  DEFAULT_COMPANY_ID,
+  WD_HEARN_JHB_COMPANY_ID,
   type Contact,
   type Customer,
   type Site,
@@ -28,6 +30,7 @@ export const seedCustomers: readonly Customer[] = [
       province: 'Gauteng',
       postalCode: '2094',
     },
+    companyIds: [DEFAULT_COMPANY_ID],
     active: true,
     notes: [
       {
@@ -67,6 +70,7 @@ export const seedCustomers: readonly Customer[] = [
       province: 'Gauteng',
       postalCode: '1501',
     },
+    companyIds: [DEFAULT_COMPANY_ID],
     active: true,
     notes: [
       {
@@ -98,6 +102,7 @@ export const seedCustomers: readonly Customer[] = [
       province: 'Gauteng',
       postalCode: '0157',
     },
+    companyIds: [DEFAULT_COMPANY_ID],
     active: true,
     notes: [
       {
@@ -129,6 +134,7 @@ export const seedCustomers: readonly Customer[] = [
       province: 'Gauteng',
       postalCode: '1930',
     },
+    companyIds: [DEFAULT_COMPANY_ID],
     active: true,
     notes: [],
     documents: [],
@@ -151,6 +157,8 @@ export const seedCustomers: readonly Customer[] = [
       province: 'Gauteng',
       postalCode: '1685',
     },
+    // MULTI-CO-1: a customer of BOTH companies, so the demonstration can raise a WD Hearn JHB job.
+    companyIds: [DEFAULT_COMPANY_ID, WD_HEARN_JHB_COMPANY_ID],
     active: true,
     notes: [],
     documents: [],

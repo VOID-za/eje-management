@@ -2,6 +2,7 @@ import {
   asCorrectedArea,
   asProvenance,
   asAttachmentId,
+  asCompanyId,
   asContactId,
   asCustomerId,
   asJobId,
@@ -373,6 +374,7 @@ export const toDomainJob = (rows: JobRowSet): Job => {
   return {
     id: asJobId(rows.job.id),
     jobNumber: rows.job.jobNumber,
+    companyId: asCompanyId(rows.job.companyId),
     customerId: asCustomerId(rows.job.customerId),
     siteId: rows.job.siteId === null ? null : asSiteId(rows.job.siteId),
     contactId: asContactId(rows.job.contactId),
@@ -483,6 +485,8 @@ export const toJobRow = (
   id: job.id,
   jobNumber: job.jobNumber,
   jobNumberSeq,
+  // MULTI-CO-1: written on insert only — `save` strips it from an update.
+  companyId: job.companyId,
   customerId: job.customerId,
   siteId: job.siteId,
   contactId: job.contactId,

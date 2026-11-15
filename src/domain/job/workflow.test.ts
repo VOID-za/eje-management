@@ -1,3 +1,4 @@
+import { DEFAULT_COMPANY_ID } from '../types/company';
 import { describe, expect, it } from 'vitest';
 import {
   canEditJob,
@@ -30,6 +31,7 @@ const technicianId = asUserId('user-tech-1');
 const buildJob = (overrides: Partial<Job> = {}, jobType: JobTypeCode = 'breakdown'): Job => ({
   id: asJobId('job-1'),
   jobNumber: 'EJE-1048',
+  companyId: DEFAULT_COMPANY_ID,
   customerId: asCustomerId('cust-1'),
   siteId: asSiteId('site-1'),
   contactId: asContactId('contact-1'),

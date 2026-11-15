@@ -98,6 +98,7 @@ import type {
 } from '../repositories';
 import type { DemoDatabase } from './store';
 import { DemoStandbyRepository } from './standby-repository';
+import { DemoCompanyRepository } from './company-repository';
 
 /**
  * Demo repository implementations.
@@ -253,6 +254,15 @@ class DemoJobRepository implements JobRepository {
    * history.
    */
   save(job: Job): Promise<Job> {
+    // MULTI-CO-1: a job's company is fixed when it is raised, as on PostgreSQL.
+    const stored = this.context.read().jobs.find((candidate) => candidate.id === job.id);
+    if (stored !== undefined && stored.companyId !== job.companyId) {
+      return Promise.reject(
+        new Error(
+          `${job.jobNumber} belongs to company ${stored.companyId}; a job's company is fixed when it is raised and cannot become ${job.companyId}.`,
+        ),
+      );
+    }
     this.context.commit((draft) => {
       const index = draft.jobs.findIndex((candidate) => candidate.id === job.id);
       if (index === -1) {
@@ -484,6 +494,10 @@ class DemoCustomerRepository implements CustomerRepository {
   }
 
   save(customer: Customer): Promise<Customer> {
+    // MULTI-CO-1: at least one company, as on PostgreSQL.
+    if (customer.companyIds.length === 0) {
+      return Promise.reject(new Error(`${customer.name} must belong to at least one company.`));
+    }
     this.context.commit((draft) => {
       const index = draft.customers.findIndex((candidate) => candidate.id === customer.id);
       draft.customers =
@@ -2267,6 +2281,7 @@ export const createDemoRepositories = (context: DemoContext): RepositoryBundle =
   payroll: new DemoPayrollRepository(context),
   notifications: new DemoNotificationRepository(context),
   settings: new DemoSettingsRepository(context),
+  companies: new DemoCompanyRepository(context),
   availability: new DemoAvailabilityRepository(context),
   attendance: new DemoAttendanceRepository(context),
   chat: new DemoChatRepository(context),

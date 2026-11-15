@@ -298,7 +298,9 @@ describe('concurrency and identity', () => {
     const unique = getTableConfig(schema.jobs).indexes.filter((index) => index.config.unique);
     const names = unique.map((index) => index.config.name);
     expect(names).toContain('jobs_job_number_key');
-    expect(names).toContain('jobs_job_number_seq_key');
+    // MULTI-CO-1 (0058): the sequence is unique per company; the number stays unique overall.
+    expect(names).toContain('jobs_company_job_number_seq_key');
+    expect(names).not.toContain('jobs_job_number_seq_key');
   });
 
   it('does not keep a mutable next-number counter', () => {

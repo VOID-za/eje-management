@@ -1,4 +1,6 @@
 export * from './types';
+export * from './company/numbering';
+export * from './company/from-settings';
 export * from './access';
 export * from './site/navigation';
 export * from './site/location';

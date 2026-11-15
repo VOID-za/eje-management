@@ -11,6 +11,7 @@ import {
   type Customer,
   type Machine,
   type Site,
+  DEFAULT_COMPANY_ID,
 } from '@/domain';
 import type { Database } from '@/db/client';
 import * as schema from '@/db/schema';
@@ -60,6 +61,7 @@ describeDb('the PostgreSQL registers', () => {
     accountNumber: `STR-${Math.random().toString(36).slice(2, 8)}`,
     registrationNumber: '2011/123456/07',
     vatNumber: '4560112233',
+    companyIds: [DEFAULT_COMPANY_ID],
     phone: '011 555 0100',
     email: '',
     officeAddress: {

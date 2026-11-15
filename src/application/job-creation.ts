@@ -9,6 +9,9 @@ import {
   machineDisplayName,
   roleLabel,
   userFullName,
+  DEFAULT_COMPANY_ID,
+  type Company,
+  type CompanyId,
   type Contact,
   type ContactId,
   type Customer,
@@ -23,7 +26,6 @@ import {
   type MachineId,
   type Site,
   type SiteId,
-  type SystemSettings,
   type UserId,
 } from '@/domain';
 import type { OperationContext } from './context';
@@ -50,6 +52,13 @@ import { normaliseRepairItems } from './repair-items';
  * Phase 2 REST handler will meet them too.
  */
 export interface NewJobInput {
+  /**
+   * The company the job is raised for. MULTI-CO-1. EJE when not given — which is
+   * what every caller from before companies means — and FIXED once the job
+   * exists: its number, letterhead and rates follow from it. The customer must
+   * be one of this company's customers.
+   */
+  readonly companyId?: CompanyId;
   readonly customerId: CustomerId;
   /** DN-SITE-OPT-1: null only on a job type whose site is optional (a Delivery Note). */
   readonly siteId: SiteId | null;
@@ -115,29 +124,18 @@ export interface NewJobInput {
 }
 
 /**
- * The next job number, from whoever can allocate one safely.
- *
- * A repository that offers `allocateJobNumber` does it atomically — a
- * PostgreSQL sequence — and has already consumed the value by the time this
- * returns, so nothing afterwards may write the counter back: a settings save
- * that moved the allocator would hand the same number out twice, or skip one.
- * That is what `atomic` says.
- *
- * The demonstration store has no concurrency to protect against and allocates
- * from its settings snapshot, so it still increments. Two Masters raising a job
- * in the same moment is a production problem, and production is where the
- * sequence is.
+ * The company a job is raised for, as the register of companies has it.
+ * MULTI-CO-1. An id nobody knows is refused rather than quietly read as EJE: a
+ * job raised for the wrong company carries the wrong number and letterhead for
+ * ever, because its company can never change.
  */
-const allocateJobNumber = async (
-  context: OperationContext,
-  settings: SystemSettings,
-): Promise<{ readonly jobNumber: string; readonly atomic: boolean }> => {
-  const repository = context.repos.jobs;
-  if (repository.allocateJobNumber === undefined) {
-    return { jobNumber: `${settings.jobNumberPrefix}${settings.nextJobSequence}`, atomic: false };
+const resolveCompany = async (context: OperationContext, companyId: CompanyId): Promise<Company> => {
+  const company = await context.repos.companies.findById(companyId);
+  if (company === null) {
+    throw refuse('That company is not one the system serves.', 'unknown_company',
+      'Choose EJE or WD Hearn JHB.');
   }
-  const allocated = await repository.allocateJobNumber();
-  return { jobNumber: allocated.jobNumber, atomic: true };
+  return company;
 };
 
 /**
@@ -170,10 +168,12 @@ interface ResolvedRegister {
 const refuse = (message: string, code: string, detail: string): WorkflowError =>
   new WorkflowError(message, [{ code, message: detail }]);
 
-/** Exactly the four ids this reads, so a caller cannot pass a cast. DRAFT-1. */
+/** Exactly the ids this reads, so a caller cannot pass a cast. DRAFT-1. */
 type RegisterInput = Pick<NewJobInput, 'customerId' | 'siteId' | 'contactId' | 'machineId'> & {
   /** DN-SITE-OPT-1: the job type allows no site. */
   readonly siteOptional?: boolean;
+  /** MULTI-CO-1: the company the job is for; the customer must be one of its customers. */
+  readonly company: Pick<Company, 'id' | 'name'>;
 };
 
 const resolveRegister = async (
@@ -187,6 +187,16 @@ const resolveRegister = async (
   if (!customer.active) {
     throw refuse(`${customer.name} is not an active account.`, 'customer_inactive',
       'Work cannot be raised against a withdrawn customer account.');
+  }
+  /*
+   * MULTI-CO-1: A COMPANY RAISES WORK ONLY FOR ITS OWN CUSTOMERS. Both ids are
+   * real; the question is whether they belong together, exactly as for the
+   * site and the contact below. The customer's sites, contacts and machines are
+   * shared between its companies, so nothing further is company-specific.
+   */
+  if (!customer.companyIds.includes(input.company.id)) {
+    throw refuse(`${customer.name} is not a customer of ${input.company.name}.`, 'customer_not_of_company',
+      `Raise the job for a company ${customer.name} is a customer of, or add ${input.company.name} to the customer first.`);
   }
 
   // DN-SITE-OPT-1: no site at all is allowed only where the job type says so.
@@ -481,7 +491,13 @@ export const createJob = async (
    * burn a number off the sequence, because EJE's job numbers are a continuous
    * commercial record and a gap in them is a question somebody has to answer.
    */
-  const { customer, site, contact, machine } = await resolveRegister(context, { ...input, siteOptional: getJobTypeDefinition(input.jobType).siteOptional });
+  // MULTI-CO-1: the company, then the customer as one of ITS customers — both before a number is allocated.
+  const company = await resolveCompany(context, input.companyId ?? DEFAULT_COMPANY_ID);
+  const { customer, site, contact, machine } = await resolveRegister(context, {
+    ...input,
+    company,
+    siteOptional: getJobTypeDefinition(input.jobType).siteOptional,
+  });
 
   /*
    * WHAT THE JOB IS ABOUT — ON THE JOB TYPES THAT HAVE SUCH A THING. CR-13.
@@ -536,13 +552,20 @@ export const createJob = async (
     ]);
   }
 
-  const settings = await context.repos.settings.get();
-  const allocated = await allocateJobNumber(context, settings);
+  /*
+   * The number, from the company's own sequence (MULTI-CO-1): EJE-, WDJ-, each
+   * counting independently. Allocated atomically by the repository — on
+   * PostgreSQL `allocate_company_job_number`, inside this transaction — and
+   * already consumed when it returns, so nothing afterwards writes a counter
+   * back.
+   */
+  const allocated = await context.repos.companies.allocateJobNumber(company.id);
   const now = context.services.clock.now();
 
   const job: Job = {
     id: asJobId(context.services.ids.next('job')),
     jobNumber: allocated.jobNumber,
+    companyId: company.id,
     /*
      * The RESOLVED ids, not the submitted ones.
      *
@@ -692,12 +715,6 @@ export const createJob = async (
   };
 
   const saved = await context.repos.jobs.save(job);
-  if (!allocated.atomic) {
-    await context.repos.settings.save({
-      ...settings,
-      nextJobSequence: settings.nextJobSequence + 1,
-    });
-  }
 
   await audit(context, {
     jobId: saved.id,
@@ -815,6 +832,8 @@ export const releaseDraft = async (context: OperationContext, job: Job): Promise
     machineId: job.machineId,
     contactId: job.contactId,
     siteOptional: getJobTypeDefinition(job.jobType).siteOptional,
+    // MULTI-CO-1: the draft's own company, which cannot change.
+    company: await resolveCompany(context, job.companyId),
   });
 
   const { primaryId, additionalIds } = await resolveTechnicians(context, {

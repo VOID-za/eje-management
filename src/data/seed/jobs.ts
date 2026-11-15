@@ -19,6 +19,7 @@ import {
   type Job,
   type MediaVisibility,
   type PricingSnapshot,
+  DEFAULT_COMPANY_ID,
 } from '@/domain';
 import { dateOffset, nextMonday, timeOffset } from './reference';
 
@@ -151,6 +152,7 @@ const ratesAt = (capturedAt: IsoDateTime, normal: number, callout: number): Pric
 const baseJob = (jobNumber: string): Job => ({
   id: asJobId(`job-${jobNumber.toLowerCase()}`),
   jobNumber,
+  companyId: DEFAULT_COMPANY_ID,
   customerId: asCustomerId('cust-abc'),
   siteId: asSiteId('site-abc-jhb'),
   contactId: asContactId('contact-abc-jhb'),

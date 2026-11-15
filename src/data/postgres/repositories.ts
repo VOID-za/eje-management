@@ -21,6 +21,7 @@ import {
   PostgresIntegrationRepository,
 } from './integration-repositories';
 import { PostgresSettingsRepository } from './settings-repository';
+import { PostgresCompanyRepository } from './company-repository';
 import { PostgresUserRepository } from './user-repository';
 import { PostgresStandbyRepository } from './standby-repository';
 
@@ -49,6 +50,7 @@ export const createPostgresRepositories = (db: DatabaseExecutor): RepositoryBund
   activity: new PostgresActivityRepository(db),
   notifications: new PostgresNotificationRepository(db),
   settings: new PostgresSettingsRepository(db),
+  companies: new PostgresCompanyRepository(db),
   availability: new PostgresAvailabilityRepository(db),
   attendance: new PostgresAttendanceRepository(db),
   chat: new PostgresChatRepository(db),

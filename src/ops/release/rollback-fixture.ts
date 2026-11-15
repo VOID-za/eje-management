@@ -162,6 +162,18 @@ export const ROLLBACK_0054 = {
   to: '2028-04-25',
 } as const;
 
+/**
+ * MULTI-CO-1 (0058): a WD Hearn JHB job (WDJ-0001) raised for the baseline
+ * customer, made a customer of BOTH companies, and a customer of WD Hearn JHB
+ * only. `liveCustomer` is the customer the live code creates in phase 2.
+ * Copied into the probe as `BATCH_0058`.
+ */
+export const ROLLBACK_0058 = {
+  wdHearnJob: '00000000-0000-4000-8000-000000058a01',
+  wdHearnCustomer: '00000000-0000-4000-8000-000000058b02',
+  liveCustomer: '00000000-0000-4000-8000-000000058c01',
+} as const;
+
 export const ROLLBACK_0052 = {
   replacedSubmission: '00000000-0000-4000-8000-000000000ca1',
   currentSubmission: '00000000-0000-4000-8000-000000000ca2',

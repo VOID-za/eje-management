@@ -8,6 +8,7 @@ import type {
   SiteId,
   UserId,
 } from './common';
+import type { CompanyId } from './company';
 
 /**
  * A South African postal address, structured rather than a single blob so it
@@ -271,6 +272,12 @@ export interface Customer {
   readonly paymentTerms: string;
   /** CUST-RATES-1. Absent on a record from before it existed: Default Rates. */
   readonly rateMode?: CustomerRateMode;
+  /**
+   * The companies this customer is a customer OF: one or both. MULTI-CO-1. At
+   * least one. Its sites, contacts and machines are shared between them; a job
+   * for the customer is raised for exactly one of these companies.
+   */
+  readonly companyIds: readonly CompanyId[];
   readonly active: boolean;
   readonly notes: readonly CustomerNote[];
   readonly documents: readonly Attachment[];

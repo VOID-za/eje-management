@@ -1,12 +1,14 @@
 import { vatBasisPointsFromPercent, vatPercentFromBasisPoints } from './job-mapper';
 import type { CustomerRates } from '@/domain';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, notInArray, sql } from 'drizzle-orm';
 import {
   asProvenance,
+  asCompanyId,
   asContactId,
   asCustomerId,
   asSiteId,
   asUserId,
+  type CompanyId,
   type Contact,
   type ContactId,
   type Customer,
@@ -267,6 +269,10 @@ export class PostgresCustomerRepository implements CustomerRepository {
   }
 
   async save(customer: Customer): Promise<Customer> {
+    // MULTI-CO-1: refused before anything is written, not halfway through.
+    if (customer.companyIds.length === 0) {
+      throw new Error(`${customer.name} must belong to at least one company.`);
+    }
     const values = {
       name: customer.name,
       accountNumber: customer.accountNumber,
@@ -315,6 +321,7 @@ export class PostgresCustomerRepository implements CustomerRepository {
     }
 
     await this.replaceNotes(customer);
+    await this.replaceCompanies(customer);
 
     const saved = await this.findById(customer.id);
     if (saved === null) throw new Error(`${customer.name} vanished during save.`);
@@ -556,11 +563,52 @@ export class PostgresCustomerRepository implements CustomerRepository {
     );
   }
 
+  /**
+   * The customer's companies, made exactly what the record says. MULTI-CO-1.
+   *
+   * At least one, refused otherwise: a customer of no company is one nobody can
+   * raise a job for. The insert above has already linked a NEW customer to EJE
+   * (trigger `customers_link_default_company`, for the release that names no
+   * company); this removes that link when the record says otherwise, in the
+   * same transaction, so nothing ever reads it.
+   */
+  private async replaceCompanies(customer: Customer): Promise<void> {
+    const wanted = [...new Set(customer.companyIds as readonly string[])];
+    if (wanted.length === 0) {
+      throw new Error(`${customer.name} must belong to at least one company.`);
+    }
+    await this.db
+      .delete(schema.customerCompanies)
+      .where(
+        and(
+          eq(schema.customerCompanies.customerId, customer.id),
+          notInArray(schema.customerCompanies.companyId, wanted),
+        ),
+      );
+    await this.db
+      .insert(schema.customerCompanies)
+      .values(wanted.map((companyId) => ({ customerId: customer.id as string, companyId })))
+      .onConflictDoNothing();
+  }
+
   private async assembleCustomers(
     rows: readonly CustomerRow[],
   ): Promise<readonly Customer[]> {
     if (rows.length === 0) return [];
     this.customerVersions.rememberAll(rows);
+
+    const links = await this.db
+      .select()
+      .from(schema.customerCompanies)
+      .where(
+        inArray(
+          schema.customerCompanies.customerId,
+          rows.map((row) => row.id),
+        ),
+      )
+      .orderBy(asc(schema.customerCompanies.companyId));
+    const companiesOf = (id: string): readonly CompanyId[] =>
+      links.filter((link) => link.customerId === id).map((link) => asCompanyId(link.companyId));
 
     const notes = await this.db
       .select()
@@ -594,6 +642,7 @@ export class PostgresCustomerRepository implements CustomerRepository {
       industry: row.industry,
       paymentTerms: row.paymentTerms,
       rateMode: row.rateMode === 'custom' ? 'custom' : 'default',
+      companyIds: companiesOf(row.id),
       active: row.active,
       notes: notesFor(row.id).map((note) => ({
         id: note.id,

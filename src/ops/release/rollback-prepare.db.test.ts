@@ -9,7 +9,7 @@ import { IDS, jobFixture, seedBaseline } from '@/data/postgres/test-fixtures';
 import { PostgresDocumentRepository } from '@/data/postgres/document-repository';
 import { PostgresJobRepository } from '@/data/postgres/job-repository';
 import { asDocumentId, asUserId, type DocumentTextIndex, type TechnicalDocument } from '@/domain';
-import { ROLLBACK_0047, ROLLBACK_0048, ROLLBACK_0049, ROLLBACK_0050, ROLLBACK_0051, ROLLBACK_0052, ROLLBACK_0054, ROLLBACK_0055, ROLLBACK_0056, ROLLBACK_DOCUMENTS, ROLLBACK_INTEGRATIONS, ROLLBACK_TIMESHEET } from './rollback-fixture';
+import { ROLLBACK_0047, ROLLBACK_0048, ROLLBACK_0049, ROLLBACK_0050, ROLLBACK_0051, ROLLBACK_0052, ROLLBACK_0054, ROLLBACK_0055, ROLLBACK_0056, ROLLBACK_0058, ROLLBACK_DOCUMENTS, ROLLBACK_INTEGRATIONS, ROLLBACK_TIMESHEET } from './rollback-fixture';
 import { asAttachmentId, asLineItemId } from '@/domain';
 import { PostgresStandbyRepository } from '@/data/postgres/standby-repository';
 import { PostgresCustomerRepository } from '@/data/postgres/customer-repository';
@@ -20,6 +20,8 @@ import { asCustomerId, asJobId, type TimesheetEntry } from '@/domain';
 import { PostgresPayrollRepository } from '@/data/postgres/payroll-repository';
 import { PostgresSettingsRepository } from '@/data/postgres/settings-repository';
 import { PostgresUserRepository } from '@/data/postgres/user-repository';
+import { PostgresCompanyRepository } from '@/data/postgres/company-repository';
+import { DEFAULT_COMPANY_ID, WD_HEARN_JHB_COMPANY_ID } from '@/domain';
 
 /**
  * ROLLBACK COMPATIBILITY, PHASE 1 OF 2: THIS RELEASE PREPARES THE DATABASE.
@@ -652,5 +654,32 @@ describePhase('rollback compatibility — phase 1: this release migrates to 0030
     }
     const ledger = await db.execute<{ n: string }>(sql`select count(*)::text as n from timesheet_submitted_lines where entry_id in (${B.firstLine}, ${B.secondLine})`);
     expect(ledger[0]?.n).toBe('2');
+  });
+
+  /*
+   * 0058 (MULTI-CO-1): a WD Hearn JHB job, numbered from WD Hearn's own sequence, for the baseline customer made a
+   * customer of BOTH companies, and a customer of WD Hearn JHB only. Phase 2 has the live code read and save them.
+   */
+  it('writes the rows only this release can (0058): a WD Hearn JHB job, a customer of both companies, one of WD Hearn only', async () => {
+    const B = ROLLBACK_0058;
+    const customers = new PostgresCustomerRepository(db);
+    const baseline = (await customers.findById(asCustomerId(IDS.customer)))!;
+    await customers.save({ ...baseline, companyIds: [DEFAULT_COMPANY_ID, WD_HEARN_JHB_COMPANY_ID] });
+    const wdOnly = await customers.save({
+      ...baseline,
+      id: asCustomerId(B.wdHearnCustomer),
+      name: 'Rollback probe 0058 WD Hearn only',
+      accountNumber: 'RB-0058-W',
+      notes: [],
+      companyIds: [WD_HEARN_JHB_COMPANY_ID],
+    });
+    expect(wdOnly.companyIds).toEqual([WD_HEARN_JHB_COMPANY_ID]);
+
+    const allocated = await new PostgresCompanyRepository(db).allocateJobNumber(WD_HEARN_JHB_COMPANY_ID);
+    expect(allocated.jobNumber).toBe('WDJ-0001');
+    const saved = await new PostgresJobRepository(db).save(
+      jobFixture(allocated.jobNumber, { id: asJobId(B.wdHearnJob), companyId: WD_HEARN_JHB_COMPANY_ID }),
+    );
+    expect(saved.companyId).toBe(WD_HEARN_JHB_COMPANY_ID);
   });
 });

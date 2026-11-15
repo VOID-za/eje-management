@@ -529,12 +529,68 @@ describe('v41 -> v42: the business’s own checklists (CHK-SRC-1, 4 November 202
   });
 
   it('leaves every job’s answered checklist exactly as it was', () => {
-    expect(migrate().jobs).toEqual([answered]);
+    // v47 (MULTI-CO-1) adds the job's company, EJE; nothing about the checklist moves.
+    expect(migrate().jobs).toEqual([{ ...answered, companyId: 'eje' }]);
   });
 
   it('does not add them twice', () => {
     const once = migrate();
     const twice = migrateDatabase(41, once, SCHEMA_VERSION) as unknown as { checklistTemplates: unknown[] };
     expect(twice.checklistTemplates).toHaveLength(once.checklistTemplates.length);
+  });
+});
+
+/*
+ * v46 -> v47 (MULTI-CO-1, 15 November 2026): the two companies, as PostgreSQL
+ * migration 0058. Everything already held is EJE's; WD Hearn JHB has nothing
+ * invented.
+ */
+describe('v46 -> v47: the companies (MULTI-CO-1)', () => {
+  const settings = {
+    companyName: 'EJE Industrial Electronics',
+    companyRegistration: '2004/018273/07',
+    companyVatNumber: '4180276351',
+    companyPhone: '+27 11 555 0100',
+    companyEmail: 'service@eje-demo.co.za',
+    companyAddress: '14 Anvil Road, Isando',
+    labourRates: { normal: 95000, overtime: 142500, double: 190000 },
+    calloutRate: 85000,
+    testBenchFee: 45000,
+    kilometreRate: 1850,
+    vatPercentage: 15,
+    jobNumberPrefix: 'EJE-',
+    nextJobSequence: 1070,
+    quietHoursStart: '18:00',
+    quietHoursEnd: '07:00',
+  };
+  const migrate = () =>
+    migrateDatabase(46, { settings, jobs: [{ id: 'job-1' }], customers: [{ id: 'cust-1' }] }, SCHEMA_VERSION) as unknown as {
+      companies: Record<string, unknown>[];
+      jobs: { companyId: string }[];
+      customers: { companyIds: string[] }[];
+    };
+
+  it('makes every job and customer already held EJE’s', () => {
+    const migrated = migrate();
+    expect(migrated.jobs.map((job) => job.companyId)).toEqual(['eje']);
+    expect(migrated.customers.map((customer) => customer.companyIds)).toEqual([['eje']]);
+  });
+
+  it('creates EJE from the settings and WD Hearn JHB with nothing invented', () => {
+    const [eje, wdHearn] = migrate().companies;
+    expect(eje).toMatchObject({ id: 'eje', name: 'EJE Industrial Electronics', jobNumberPrefix: 'EJE-', jobNumberStart: 1070, isDefault: true });
+    expect(wdHearn).toMatchObject({
+      id: 'wd-hearn-jhb', name: 'WD Hearn JHB', jobNumberPrefix: 'WDJ-', jobNumberStart: 1, nextJobSequence: 1,
+      registration: '', vatNumber: '', physicalAddress: '', postalAddress: '', phone: '', fax: '', email: '',
+      letterhead: null, isDefault: false, lastIssuedJobSequence: null,
+    });
+    // A copy of EJE's rates, as the starting point the office must confirm.
+    expect(wdHearn?.rates).toEqual(eje?.rates);
+  });
+
+  it('keeps a company a snapshot already has', () => {
+    const once = migrate();
+    const again = migrateDatabase(46, once, SCHEMA_VERSION) as unknown as { companies: unknown[] };
+    expect(again.companies).toEqual(once.companies);
   });
 });

@@ -7,8 +7,10 @@ import {
   can,
   checkCoordinates,
   contactFullName,
+  DEFAULT_COMPANY_ID,
   emptyAddress,
   machineDisplayName,
+  type CompanyId,
   type Contact,
   type Customer,
   type CustomerId,
@@ -75,6 +77,11 @@ export interface NewCustomerInput {
   readonly paymentTerms: string;
   /** CUST-RATES-1: Default Rates unless the office creating the customer chose Custom Rates. */
   readonly rateMode?: CustomerRateMode;
+  /**
+   * MULTI-CO-1: the companies the customer is a customer of — one or both. EJE
+   * when not given, which is what every caller from before companies means.
+   */
+  readonly companyIds?: readonly CompanyId[];
   /** The first site. A customer with nowhere to send a technician is not useful. */
   readonly site: NewSiteInput;
   /** Optional first contact for that site. */
@@ -120,6 +127,32 @@ export const findCustomerNameClash = (
   );
 };
 
+/**
+ * The companies a customer is to belong to, checked against the companies that
+ * exist. MULTI-CO-1. At least one; each named once; an unknown id is refused
+ * rather than dropped, because a customer silently left with fewer companies
+ * than the office chose is a customer nobody can raise the right job for.
+ */
+export const resolveCustomerCompanies = async (
+  context: OperationContext,
+  requested: readonly CompanyId[],
+): Promise<readonly CompanyId[]> => {
+  const unique = [...new Set(requested)];
+  if (unique.length === 0) {
+    throw new WorkflowError('Choose at least one company for the customer.', [
+      { code: 'customer_company_required', message: 'A customer is a customer of EJE, of WD Hearn JHB, or of both.' },
+    ]);
+  }
+  const known = new Set((await context.repos.companies.list()).map((company) => company.id as string));
+  const unknown = unique.filter((companyId) => !known.has(companyId));
+  if (unknown.length > 0) {
+    throw new WorkflowError('That company is not one the system serves.', [
+      { code: 'unknown_company', message: `Unknown company: ${unknown.join(', ')}.` },
+    ]);
+  }
+  return unique;
+};
+
 export const createCustomer = async (
   context: OperationContext,
   input: NewCustomerInput,
@@ -139,6 +172,8 @@ export const createCustomer = async (
     ]);
   }
 
+  const companyIds = await resolveCustomerCompanies(context, input.companyIds ?? [DEFAULT_COMPANY_ID]);
+
   const now = context.services.clock.now();
   const customer: Customer = {
     id: asCustomerId(context.services.ids.next('cust')),
@@ -152,6 +187,7 @@ export const createCustomer = async (
     industry: input.industry.trim(),
     paymentTerms: input.paymentTerms.trim(),
     rateMode: input.rateMode ?? 'default',
+    companyIds,
     active: true,
     notes: [],
     documents: [],
@@ -183,7 +219,9 @@ export const updateCustomer = async (
   customer: Customer,
 ): Promise<Customer> => {
   assertManages(context);
-  const saved = await context.repos.customers.save(customer);
+  // MULTI-CO-1: the company links are held to the same rule as on creation.
+  const companyIds = await resolveCustomerCompanies(context, customer.companyIds);
+  const saved = await context.repos.customers.save({ ...customer, companyIds });
   await audit(context, {
     jobId: null,
     type: 'customer_updated',

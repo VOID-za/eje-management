@@ -1,5 +1,6 @@
 import type { DemoDatabase } from './store';
 import { sourceChecklists } from '@/data/checklists/source-checklists';
+import { companiesFromSettings, type IsoDateTime, type SystemSettings } from '@/domain';
 
 /**
  * Migrations for the persisted demonstration dataset.
@@ -733,6 +734,49 @@ const v40ToV41 = (data: Loose): Loose => ({
 });
 
 /** FORM-WITHDRAW-1: correction drafts, as PostgreSQL migration 0055. Nothing existing is rewritten (a completed form without withdrawnAt is not withdrawn). */
+/**
+ * MULTI-CO-1 (15 November 2026): the companies, as PostgreSQL migration 0058.
+ * EJE from what the settings already say; WD Hearn JHB with its name, prefix
+ * and a start of 1 and nothing else invented (its rates a copy of EJE's, for
+ * the office to confirm). Every job and customer already held is EJE's —
+ * nobody else's existed. Nothing else is rewritten.
+ */
+/** The settings as far as a snapshot has them; anything missing reads as not captured (empty, 0). */
+const looseSettings = (value: unknown): SystemSettings => {
+  const settings = typeof value === 'object' && value !== null ? (value as Loose) : {};
+  const amount = (field: unknown): number => (typeof field === 'number' ? field : 0);
+  const labour = typeof settings.labourRates === 'object' && settings.labourRates !== null ? (settings.labourRates as Loose) : {};
+  return {
+    companyName: text(settings.companyName) || 'EJE',
+    companyRegistration: text(settings.companyRegistration),
+    companyVatNumber: text(settings.companyVatNumber),
+    companyPhone: text(settings.companyPhone),
+    companyEmail: text(settings.companyEmail),
+    companyAddress: text(settings.companyAddress),
+    labourRates: { normal: amount(labour.normal), overtime: amount(labour.overtime), double: amount(labour.double) },
+    calloutRate: amount(settings.calloutRate),
+    testBenchFee: amount(settings.testBenchFee),
+    kilometreRate: amount(settings.kilometreRate),
+    vatPercentage: amount(settings.vatPercentage),
+    jobNumberPrefix: text(settings.jobNumberPrefix) || 'EJE-',
+    nextJobSequence: amount(settings.nextJobSequence) || 1,
+    quietHoursStart: text(settings.quietHoursStart),
+    quietHoursEnd: text(settings.quietHoursEnd),
+  };
+};
+
+const v46ToV47 = (data: Loose): Loose => ({
+  ...data,
+  companies: Array.isArray(data.companies)
+    ? data.companies
+    : companiesFromSettings(looseSettings(data.settings), new Date().toISOString() as IsoDateTime).map((company) => ({
+        ...company,
+        lastIssuedJobSequence: null,
+      })),
+  jobs: rows(data, 'jobs').map((job) => ({ companyId: 'eje', ...job })),
+  customers: rows(data, 'customers').map((customer) => ({ companyIds: ['eje'], ...customer })),
+});
+
 const v45ToV46 = (data: Loose): Loose => ({
   ...data,
   payrollCorrectionDrafts: Array.isArray(data.payrollCorrectionDrafts) ? data.payrollCorrectionDrafts : [],
@@ -823,6 +867,7 @@ const STEPS: Readonly<Record<number, (data: Loose) => Loose>> = {
   43: v43ToV44,
   44: v44ToV45,
   45: v45ToV46,
+  46: v46ToV47,
 };
 
 /**

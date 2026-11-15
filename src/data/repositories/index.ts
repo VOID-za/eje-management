@@ -15,6 +15,8 @@ import type {
   CustomerDocument,
   ChecklistTemplate,
   ChecklistTemplateId,
+  Company,
+  CompanyId,
   Contact,
   ContactId,
   Customer,
@@ -686,6 +688,31 @@ export interface ChatRepository {
   saveMessage(message: ChatMessage): Promise<ChatMessage>;
 }
 
+/**
+ * THE COMPANIES. MULTI-CO-1.
+ *
+ * `save` enforces the company rules SERVER-SIDE (`assertCompanySaveAllowed`):
+ * the prefix shape, no prefix conflicting with another company's, the start
+ * number only ever moving forward once numbers are issued, the default fixed.
+ * It throws `CompanyRuleError`. It never writes `nextJobSequence` except as the
+ * start rule moves it, so a stale editor cannot move the allocator back.
+ *
+ * Saving EJE also writes its details and rates into the legacy
+ * `system_settings` columns, so a rollback to the release before companies
+ * still shows EJE as the office last left it.
+ */
+export interface CompanyRepository {
+  list(): Promise<readonly Company[]>;
+  findById(id: CompanyId): Promise<Company | null>;
+  save(company: Company): Promise<Company>;
+  /**
+   * The next job number for this company, allocated ATOMICALLY: two people
+   * raising a job for the same company at the same moment are never handed the
+   * same number. Refuses an unknown company (`CompanyRuleError`).
+   */
+  allocateJobNumber(companyId: CompanyId): Promise<{ readonly jobNumber: string; readonly sequence: number }>;
+}
+
 export interface SettingsRepository {
   get(): Promise<SystemSettings>;
   save(settings: SystemSettings): Promise<SystemSettings>;
@@ -1113,6 +1140,8 @@ export interface RepositoryBundle {
   readonly activity: ActivityRepository;
   readonly notifications: NotificationRepository;
   readonly settings: SettingsRepository;
+  /** EJE and WD Hearn JHB: details, numbering, rates. MULTI-CO-1. */
+  readonly companies: CompanyRepository;
   readonly availability: AvailabilityRepository;
   /** Who was at work, and the timesheet's daily comments. ATTEND-1, TIMESHEET-1. */
   readonly attendance: AttendanceRepository;

@@ -8,6 +8,7 @@ import {
   asSiteId,
   asUserId,
   type Job,
+  DEFAULT_COMPANY_ID,
 } from '@/domain';
 import type { Database } from '@/db/client';
 import { machineTypeCodeFor, syncReferenceData } from '@/db/reference-data';
@@ -151,6 +152,7 @@ export const seedBaseline = async (db: Database): Promise<void> => {
 export const jobFixture = (jobNumber: string, over: Partial<Job> = {}): Job => ({
   id: asJobId(crypto.randomUUID()),
   jobNumber,
+  companyId: DEFAULT_COMPANY_ID,
   customerId: asCustomerId(IDS.customer),
   siteId: asSiteId(IDS.site),
   contactId: asContactId(IDS.contact),

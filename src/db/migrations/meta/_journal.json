@@ -407,6 +407,13 @@
       "when": 1795100000000,
       "tag": "0057_user_timesheet_required",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1795200000000,
+      "tag": "0058_multi_company",
+      "breakpoints": true
     }
   ]
 }
