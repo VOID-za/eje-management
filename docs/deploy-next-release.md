@@ -32,6 +32,16 @@ release is bigger than its commits say, `stage-release.ps1 -Bump minor` (or
 `major`) raises the step. The commit remains what identifies a deployment;
 `/api/health` reports both.
 
+## RELEASED — `a7e2a31` = v1.13.0, the EJE master letterhead on every EJE document (LETTERHEAD-2, 15 November 2026)
+
+- **Candidate:** `14e7340` (feature) + `adc07f4` (the independent review's fixes) + `a7e2a31` (a browser check that took the letterhead's filled mark for the signature). CI run 43742592358 green on `a7e2a31`: lint/types/tests/build 12/12, PostgreSQL 13/13, routes/workflow/smoke 67/67. Two independent reviews: the first found 1 HIGH + 4 MEDIUM (screen views of timesheet/attendance, unreadable bands, worst-case months, history on screen, font substitution) — all fixed; the second found no CRITICAL/HIGH.
+- **Release:** `stage-release.ps1 -CheckOnly` passed; `-ExpectPending none` (no migration; 59 applied). Backup `/var/backups/eje/eje-eje_production-2026-11-15T18-27-51Z`: verified, key matched, RESTORE-TESTED (jobs 125, final_documents 68, 310 documents unpacked; 13 storage keys were already missing before this backup, recorded in its manifest). Switched 18:28:11 UTC, healthy 18:28:13. Rollback target `/opt/eje/releases/f287078` (`bash deploy-release.sh --rollback`).
+- **Data unchanged:** the read-only fingerprint of every table is identical before and after (the audit log grew by the inspection's own sign-in and preview entries only). No document was issued between v1.12.0 and this release (last final document 09:59 UTC), so no issued document carries the uploaded EJE image.
+- **Live, new output (read-only inspection):** EJE-2120 (breakdown) and EJE-2110 (test & repair): the on-screen job card and the PDF preview both carry the master letterhead, no tile, no demo details; a new attendance PDF carries it as text + vector (no image). Printed in Chrome and Edge on A4: stored EJE-2016 2→2 sheets, EJE-2120 1→1, EJE-2110 2→2, attendance 1→1.
+- **History:** stored EJE-2019, EJE-2119, EJE-2017, EJE-2021, EJE-2016 byte-identical (sha256 before = after). WD Hearn JHB configuration identical; still no letterhead.
+- **Known, not changed by this release:** the server's `pdf_generated` audit entry counts EJE-2120 as 2 pages and EJE-2110 as 3 while the browser preview shows 1 and 2 — identical before and after the release; to be looked at separately.
+- **Limitations:** on job cards the master fills about 58 % of the page width (the header band's height is kept so the body does not move); the EJE uploaded image stays on file but is no longer printed (the admin card says so).
+
 ## CONFIGURED — the EJE letterhead activated on v1.12.0 (`f287078`), LETTERHEAD-1, 15 November 2026 15:46 UTC
 
 A configuration change, not a release: no code, migration, job, customer or document changed.
