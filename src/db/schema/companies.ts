@@ -66,7 +66,8 @@ export const companies = pgTable(
     uniqueIndex('companies_code_key').on(table.code),
     uniqueIndex('companies_job_number_prefix_key').on(table.jobNumberPrefix),
     uniqueIndex('companies_one_default').on(table.isDefault).where(sql`${table.isDefault}`),
-    check('companies_job_number_prefix_shape', sql`${table.jobNumberPrefix} ~ '^[A-Z0-9]{1,8}-$'`),
+    // Looser than the application's rule for a new prefix: see 0058 (legacy settings prefixes such as "EJE/").
+    check('companies_job_number_prefix_shape', sql`${table.jobNumberPrefix} ~ '^\\S{1,12}$'`),
     check('companies_job_number_start_positive', sql`${table.jobNumberStart} >= 1`),
   ],
 );

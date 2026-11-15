@@ -89,10 +89,12 @@ CREATE TABLE IF NOT EXISTS "companies" (
 	"version" integer DEFAULT 1 NOT NULL,
 	CONSTRAINT "companies_letterhead_uploaded_by_fk" FOREIGN KEY ("letterhead_uploaded_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action,
 	CONSTRAINT "companies_updated_by_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action,
-	-- 1–8 capitals or digits and a closing hyphen: EJE-, WDJ-. The hyphen is what
-	-- keeps the number readable as a number (the repository reads the trailing
-	-- digits as the sequence), and capitals only make the prefix comparison exact.
-	CONSTRAINT "companies_job_number_prefix_shape" CHECK ("job_number_prefix" ~ '^[A-Z0-9]{1,8}-$'),
+	-- Non-empty, no whitespace, at most 12 characters. DELIBERATELY looser than the
+	-- application's rule for a NEW prefix (1–8 capitals or digits and a hyphen:
+	-- EJE-, WDJ-): the EJE row mirrors system_settings.job_number_prefix, which the
+	-- settings screens (and the live release, on a rollback) have always accepted in
+	-- other shapes such as "EJE/" — a stricter check here made saving settings fail.
+	CONSTRAINT "companies_job_number_prefix_shape" CHECK ("job_number_prefix" ~ '^\S{1,12}$'),
 	CONSTRAINT "companies_job_number_start_positive" CHECK ("job_number_start" >= 1),
 	-- EJE counts in `eje_job_number_seq` and has no counter here; every other
 	-- company counts here, never below its start, and remembers the last number

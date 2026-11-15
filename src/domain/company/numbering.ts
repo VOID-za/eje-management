@@ -143,8 +143,12 @@ export const assertCompanySaveAllowed = (
   if (company.name.trim().length === 0) {
     throw new CompanyRuleError('company_name_required', 'A company needs a name.');
   }
-  const prefixProblem = jobNumberPrefixProblem(company.jobNumberPrefix);
-  if (prefixProblem !== null) throw new CompanyRuleError('job_number_prefix_invalid', prefixProblem);
+  // The shape rule applies to a prefix being SET or CHANGED. A prefix the settings already held before
+  // MULTI-CO-1 (any the old screens accepted, e.g. "EJE/") is kept as it is when the rest of the company is saved.
+  if (existing === null || existing.jobNumberPrefix !== company.jobNumberPrefix) {
+    const prefixProblem = jobNumberPrefixProblem(company.jobNumberPrefix);
+    if (prefixProblem !== null) throw new CompanyRuleError('job_number_prefix_invalid', prefixProblem);
+  }
   const conflict = prefixConflictProblem(company.id, company.jobNumberPrefix, all);
   if (conflict !== null) throw new CompanyRuleError('job_number_prefix_conflict', conflict);
   if ((existing?.isDefault ?? false) !== company.isDefault) {
