@@ -1,3 +1,4 @@
+import { defaultCompanyLetterhead } from '@/application/company-letterhead';
 import { z } from 'zod';
 import { loadAttendancePeriodDocument } from '@/application/attendance-document';
 import { onePageOrRefuse } from '@/application/payroll-pdf';
@@ -14,6 +15,8 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, 'Expected a date as YYYY-MM
 export const GET = downloadRoute('attendance.period.pdf', async (context) => {
   const { from, to } = parseWith(z.object({ from: day, to: day }).strict(), Object.fromEntries(context.request.nextUrl.searchParams));
   const document = await loadAttendancePeriodDocument({ repos: context.repos, services: context.services, actor: context.actor.user }, from, to);
-  const rendered = onePageOrRefuse(() => renderAttendancePdf(document, { generatedAt: context.services.clock.now() }));
+  // LETTERHEAD-1: EJE's own paperwork, on EJE's uploaded letterhead when it has one.
+  const letterhead = await defaultCompanyLetterhead(context);
+  const rendered = onePageOrRefuse(() => renderAttendancePdf(document, { generatedAt: context.services.clock.now(), letterhead }));
   return { fileName: rendered.fileName, contentType: 'application/pdf', body: rendered.bytes, headers: { 'X-Page-Count': String(rendered.pageCount) } };
 });

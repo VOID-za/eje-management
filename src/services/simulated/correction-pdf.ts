@@ -20,6 +20,7 @@ import {
   SIZE,
   TRACK_HEADING,
   TRACK_TITLE,
+  drawLetterheadOverTitle,
 } from './pdf-sheet';
 import type { CorrectionDocumentSource, RenderedPdf } from '../ports';
 
@@ -49,6 +50,25 @@ import type { CorrectionDocumentSource, RenderedPdf } from '../ports';
 
 const heading = (sheet: Sheet, source: CorrectionDocumentSource): void => {
   const top = sheet.cursor;
+
+  /*
+   * LETTERHEAD-1: the company's uploaded letterhead in place of the text
+   * header, and "CORRECTION TO JOB CARD" with its number on one line above the
+   * same rule, which closes the header where it always has.
+   */
+  if (source.letterhead !== undefined) {
+    drawLetterheadOverTitle(
+      sheet.pdf,
+      source.letterhead,
+      top - 68,
+      'CORRECTION TO JOB CARD',
+      `${source.jobNumber} · ${source.correction.sequence}`,
+    );
+    sheet.setCursor(top - 68);
+    sheet.rule();
+    sheet.move(GAP.section);
+    return;
+  }
 
   sheet.pdf.rect(MARGIN, top - 24, 31, 31, INK);
   sheet.pdf.text(MARGIN + 6, top - 14, 'EJE', { font: 'bold', size: 9, colour: '#ffffff' });

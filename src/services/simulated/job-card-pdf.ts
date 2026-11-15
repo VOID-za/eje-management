@@ -38,7 +38,9 @@ import {
   SIZE,
   TRACK_HEADING,
   TRACK_TITLE,
+  drawLetterheadOverTitle,
 } from './pdf-sheet';
+import type { PdfImage } from '@/lib/pdf/image';
 
 
 const labelValueRows = (
@@ -79,8 +81,23 @@ const labelValueRows = (
   }
 };
 
-const header = (sheet: Sheet, model: JobCardModel): void => {
+const header = (sheet: Sheet, model: JobCardModel, letterhead: PdfImage | undefined): void => {
   const top = sheet.cursor;
+
+  /*
+   * LETTERHEAD-1: the company's uploaded letterhead in place of the text
+   * header — the tile, the name, the address, the contact and registration
+   * lines are all ON it — with the document's name and number on one line
+   * above the same rule. The cursor moves exactly as below, so the body
+   * starts where it always has.
+   */
+  if (letterhead !== undefined) {
+    drawLetterheadOverTitle(sheet.pdf, letterhead, top - 56, model.documentTitle.toUpperCase(), model.jobNumber);
+    sheet.move(56);
+    sheet.rule(INK, 1.4);
+    sheet.move(GAP.section);
+    return;
+  }
 
   // The dark EJE tile, at the screen's size-11 (44px -> 31pt).
   sheet.pdf.rect(MARGIN, top - 24, 31, 31, INK);
@@ -1033,7 +1050,7 @@ export const renderJobCardPdf = (
      * was installed, the work, the labour, the checklist, the photographs,
      * the sign-off — and with no charges block, because the model has none.
      */
-    header(sheet, model);
+    header(sheet, model, source.letterhead);
     parties(sheet, model);
     installationDelivered(sheet, model);
     work(sheet, model);
@@ -1046,7 +1063,7 @@ export const renderJobCardPdf = (
     return { bytes: sheet.pdf.toBytes(), pageCount: sheet.pdf.pageCount };
   }
 
-  header(sheet, model);
+  header(sheet, model, source.letterhead);
   parties(sheet, model);
   fault(sheet, model);
   partsReceived(sheet, model);

@@ -1,5 +1,6 @@
 import { A4_HEIGHT, A4_WIDTH, PdfBuilder, textWidth } from '@/lib/pdf/writer';
-import { BAND, BODY, INK, MUTED, RULE, RULE_SOFT, TRACK_TITLE } from './pdf-sheet';
+import { BAND, BODY, INK, LETTERHEAD_TOP, MUTED, RULE, RULE_SOFT, TRACK_TITLE, drawLetterhead } from './pdf-sheet';
+import type { PdfImage } from '@/lib/pdf/image';
 
 /**
  * ONE PAGE, ALWAYS. PAY-04 (29 October 2026): every timesheet and attendance
@@ -58,6 +59,8 @@ export interface FormSpec {
   /** A boxed comment, e.g. "Comments". Omitted when undefined. */
   readonly comment?: { readonly title: string; readonly text: string };
   readonly footer: string;
+  /** LETTERHEAD-1: the company's uploaded letterhead, prepared; absent, the company's name in text. */
+  readonly letterhead?: PdfImage;
 }
 
 export interface FormLayout {
@@ -288,8 +291,19 @@ export const renderOnePageForm = (spec: FormSpec): RenderedForm => {
   let y = A4_HEIGHT - MARGIN - Math.max(sizes.company, sizes.title) * 0.8;
 
   // Heading: the company, and the form's title on the right.
-  pdf.text(MARGIN, y, spec.companyName, { font: 'bold', size: sizes.company, colour: INK });
   const titleWidth = textWidth(spec.title, sizes.title, 'bold', TRACK_TITLE);
+  /*
+   * LETTERHEAD-1: the default company's uploaded letterhead in place of its
+   * name — a strip in the room the heading has today plus the top margin, left
+   * of the title and clear of the first field's capitals. `plan` is not told:
+   * the letterhead takes no room the text heading did not, so the form is
+   * sized, and every line below placed, exactly as without it.
+   */
+  const firstField = y - sizes.gap - sizes.field * 0.4;
+  const bandBottom = firstField + sizes.field * 0.75 + 2;
+  if (!drawLetterhead(pdf, spec.letterhead, { x: MARGIN, y: bandBottom, width: WIDTH - titleWidth - 12, height: LETTERHEAD_TOP - bandBottom })) {
+    pdf.text(MARGIN, y, spec.companyName, { font: 'bold', size: sizes.company, colour: INK });
+  }
   pdf.text(A4_WIDTH - MARGIN - titleWidth, y, spec.title, { font: 'bold', size: sizes.title, colour: INK, tracking: TRACK_TITLE });
   y -= sizes.gap + sizes.field * 0.4;
 

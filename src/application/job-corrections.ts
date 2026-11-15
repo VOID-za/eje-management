@@ -19,6 +19,7 @@ import { formatDateTime } from '@/lib/format';
 import { canReadFinalDocument, FINAL_DOCUMENT_CONTENT_TYPE } from './final-document';
 import { StorageIntegrityFailed, type StoredDocument } from '@/services/ports';
 import { measureStored } from './stored-file';
+import { loadCompanyLetterhead } from './company-letterhead';
 
 /**
  * CORRECTING AN ISSUED JOB CARD. BD-02, IMMUT-9, AUD-3.
@@ -208,6 +209,8 @@ export const raiseJobCorrection = async (
         contactLine: letterhead.contactLine,
         registrationLine: letterhead.registrationLine,
       },
+      // LETTERHEAD-1: drawn now, so on the company's uploaded letterhead when it has one.
+      letterhead: await loadCompanyLetterhead(context, job.companyId),
       jobNumber: job.jobNumber,
       customerName: customer?.name ?? 'Customer no longer on the register',
       machineDescription: machine === null ? '' : machineLabel(machine),

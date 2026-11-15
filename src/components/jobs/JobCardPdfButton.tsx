@@ -6,7 +6,7 @@ import { Button, Icon } from '@/components/ui';
 import { DocumentPreviewDialog } from '@/components/documents/DocumentPreviewDialog';
 import { SimulatedPdfService } from '@/services/simulated/pdf';
 import { SystemClock } from '@/services/simulated/system';
-import { renderJobCardPdf } from './job-card-pdf';
+import { loadPreviewLetterhead, renderJobCardPdf } from './job-card-pdf';
 import { DeliveryNoteDocument } from './DeliveryNoteDocument';
 import { getJobTypeDefinition } from '@/domain';
 import { buildDeliveryNoteModel, deliveryNoteFileName } from '@/lib/job-card/delivery-note';
@@ -63,7 +63,8 @@ export const JobCardPdfButton = ({
         loadPdf={async () => {
           // DELIVERY-NOTE-1: a Delivery Note previews as itself — price-less — never as a job card.
           if (!getJobTypeDefinition(view.job.jobType).priced) {
-            const note = renderDeliveryNotePdf(buildDeliveryNoteModel(view, clock.now()));
+            // LETTERHEAD-1: on the job company's letterhead, as the issued copy will be.
+            const note = renderDeliveryNotePdf(buildDeliveryNoteModel(view, clock.now()), await loadPreviewLetterhead(view));
             return { bytes: note.bytes, fileName: deliveryNoteFileName(view.job) };
           }
           const rendered = await renderJobCardPdf(view, pdf, clock);

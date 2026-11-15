@@ -15,7 +15,7 @@ import type {
 } from '@/domain';
 export type { DeliveryFailureKind, DeliveryState } from '@/domain';
 import { isDeliveryFailureKind } from '@/domain';
-import type { PreparedPhoto } from '@/lib/pdf/image';
+import type { PdfImage, PreparedPhoto } from '@/lib/pdf/image';
 import type { GeocodeAnswer } from '@/domain';
 
 /**
@@ -278,6 +278,13 @@ export interface FinalDocumentSource {
    * not be shown, never as a blank that looks like a photograph.
    */
   readonly photoImages?: ReadonlyMap<string, PreparedPhoto>;
+  /**
+   * LETTERHEAD-1: the job company's uploaded letterhead, prepared, printed
+   * across the top of the document in place of the text header. Absent — no
+   * letterhead uploaded, or a document from before letterheads (a backfill of
+   * history) — and the header is the text one, exactly as it always was.
+   */
+  readonly letterhead?: PdfImage;
 }
 
 /** A rendered document: the bytes, and how many pages they actually are. */
@@ -369,6 +376,8 @@ export interface CorrectionDocumentSource {
   };
   /** True only for a demonstration job. Stamped on every page when it is. */
   readonly simulated: boolean;
+  /** LETTERHEAD-1: the job company's letterhead, prepared; absent, the text header. */
+  readonly letterhead?: PdfImage;
 }
 
 export interface StoredFile {

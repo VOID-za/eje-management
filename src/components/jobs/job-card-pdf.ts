@@ -1,9 +1,9 @@
 import type { JobView } from '@/application/job-view';
 import type { Clock } from '@/services/ports';
 import type { SimulatedPdfService } from '@/services/simulated/pdf';
-import { jobs } from '@/api/endpoints';
+import { companies, jobs } from '@/api/endpoints';
 import { documentPhotos } from '@/lib/job-card/model';
-import { preparePdfImage, unavailable, type PreparedPhoto } from '@/lib/pdf/image';
+import { preparePdfImage, unavailable, type PdfImage, type PreparedPhoto } from '@/lib/pdf/image';
 
 /** A job card rendered to PDF bytes, with the name the document carries. */
 export interface RenderedJobCard {
@@ -61,11 +61,40 @@ export const loadPreviewPhotos = async (
   return new Map(entries);
 };
 
+/**
+ * THE JOB COMPANY'S LETTERHEAD, FOR THE PREVIEW. LETTERHEAD-1.
+ *
+ * The browser draws the document itself, so it needs the image the server
+ * prints: read through the authorised route by the company's id and the
+ * letterhead's checksum, and prepared by the same function the server uses.
+ * Undefined when the company has none — the document keeps its text header —
+ * and, so a preview is never withheld, when it cannot be fetched or drawn.
+ */
+export const loadPreviewLetterhead = async (
+  view: Pick<JobView, 'companyLetterhead'>,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PdfImage | undefined> => {
+  const reference = view.companyLetterhead ?? null;
+  if (reference === null) return undefined;
+  try {
+    const response = await fetchImpl(companies.letterheadUrl(reference.companyId, reference.sha256), {
+      credentials: 'same-origin',
+    });
+    if (!response.ok) return undefined;
+    const prepared = await preparePdfImage(new Uint8Array(await response.arrayBuffer()));
+    return prepared.kind === 'image' ? prepared.image : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const renderJobCardPdf = async (
   view: JobView,
   pdf: SimulatedPdfService,
   clock: Clock,
   photoImages?: ReadonlyMap<string, PreparedPhoto>,
+  /** LETTERHEAD-1: already loaded; omitted, it is fetched (`loadPreviewLetterhead`). */
+  letterhead?: PdfImage,
 ): Promise<RenderedJobCard> => {
   const descriptor =
     view.job.jobType === 'parts'
@@ -83,6 +112,7 @@ export const renderJobCardPdf = async (
       checklistTemplate: view.checklistTemplate,
       users: view.users,
       photoImages: photoImages ?? (await loadPreviewPhotos(view)),
+      letterhead: letterhead ?? (await loadPreviewLetterhead(view)),
     },
     'preview',
     clock.now(),

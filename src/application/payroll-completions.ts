@@ -17,6 +17,7 @@ import { sha256Hex } from '@/lib/job-card/document-identity';
 import { monthBounds } from '@/lib/payroll-files';
 import { normalisePdfFileName, sameFileName } from '@/lib/pdf-file-name';
 import { formatDayAndDate, formatPeriod } from '@/lib/timesheet-dates';
+import { defaultCompanyLetterhead } from './company-letterhead';
 import { renderAttendancePdf } from '@/services/simulated/attendance-pdf';
 import { renderTimesheetPdf } from '@/services/simulated/timesheet-pdf';
 import type { OperationContext } from './context';
@@ -490,6 +491,8 @@ export const completePayrollForm = async (context: OperationContext, technicianI
 
   const { person, from, to } = checked;
   const now = context.services.clock.now();
+  // LETTERHEAD-1: EJE's own paperwork, on EJE's uploaded letterhead when it has one.
+  const letterhead = await defaultCompanyLetterhead(context);
   const id = context.services.ids.next('pfc');
   // The content and the document, frozen together from the same reading.
   let timesheet: PayrollFormCompletion['timesheet'] = null;
@@ -502,12 +505,12 @@ export const completePayrollForm = async (context: OperationContext, technicianI
       loadTimesheetDocument(context, person.id, from, to, 'working'),
     ]);
     timesheet = { comment: working?.comment ?? '', entries: [...entries].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)) };
-    rendered = renderTimesheetPdf({ ...document, fileName, versionLabel: 'Completed — awaiting submission to the office' }, { generatedAt: now });
+    rendered = renderTimesheetPdf({ ...document, fileName, versionLabel: 'Completed — awaiting submission to the office' }, { generatedAt: now, letterhead });
   } else {
     const records = await context.repos.attendance.listRecords(from, to, person.id);
     attendance = attendancePeriodDays(from, to, records);
     const document = await workingAttendanceDocument(context, person, from, to, fileName);
-    rendered = oneFormPage('attendance form', () => renderAttendancePdf({ ...document, versionLabel: 'Completed — awaiting submission to the office' }, { generatedAt: now }));
+    rendered = oneFormPage('attendance form', () => renderAttendancePdf({ ...document, versionLabel: 'Completed — awaiting submission to the office' }, { generatedAt: now, letterhead }));
   }
   const storageKey = `payroll-completions/${id}/${kind}.pdf`;
   await context.services.storage.putDocument({ storageKey, fileName, contentType: 'application/pdf', bytes: rendered.bytes, renderer: 1, backfilled: false });

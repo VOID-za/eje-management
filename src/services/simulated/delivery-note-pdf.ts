@@ -1,5 +1,6 @@
 import type { DeliveryNoteModel } from '@/lib/job-card/delivery-note';
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
+import type { PdfImage } from '@/lib/pdf/image';
 import { fitSignatureBox, signatureFacsimile, SIGNATURE_INK } from '@/lib/signature';
 import {
   BAND,
@@ -15,7 +16,43 @@ import {
   Sheet,
   SIZE,
   TRACK_TITLE,
+  LETTERHEAD_TOP,
+  drawLetterhead,
 } from './pdf-sheet';
+
+/**
+ * LETTERHEAD-1: the header with the company's uploaded letterhead in place of
+ * its name, address and contact line. "DELIVERY NOTE" and the job number stay
+ * where they are today, right-aligned, with the image in the space beside
+ * them; if a job number were ever so long that the space beside them could not
+ * hold a readable letterhead, they go on one line just above the body and the
+ * image takes the band's whole width. Either way the cursor ends where the
+ * text header leaves it, so "Deliver to" and everything below do not move.
+ */
+const letterheadHeader = (sheet: Sheet, model: DeliveryNoteModel, letterhead: PdfImage): void => {
+  const top = sheet.cursor;
+  const title = 'DELIVERY NOTE';
+  const titleWidth = textWidth(title, SIZE.jobNumber, 'bold', TRACK_TITLE);
+  const numberWidth = textWidth(model.jobNumber, SIZE.total, 'bold');
+  const titleStyle = { font: 'bold', size: SIZE.jobNumber, colour: INK, tracking: TRACK_TITLE } as const;
+  const numberStyle = { font: 'bold', size: SIZE.total, colour: INK } as const;
+  // The body's first line ("Deliver to", 7.5pt capitals) reaches about 763.
+  const bandBottom = top - 34;
+  const beside = CONTENT_WIDTH - Math.max(titleWidth, numberWidth) - 12;
+
+  if (beside >= CONTENT_WIDTH / 2) {
+    sheet.pdf.text(RIGHT - titleWidth, top, title, titleStyle);
+    sheet.pdf.text(RIGHT - numberWidth, top - GAP.line, model.jobNumber, numberStyle);
+    drawLetterhead(sheet.pdf, letterhead, { x: MARGIN, y: bandBottom, width: beside, height: LETTERHEAD_TOP - bandBottom });
+  } else {
+    const baseline = bandBottom;
+    sheet.pdf.text(RIGHT - numberWidth, baseline, model.jobNumber, numberStyle);
+    sheet.pdf.text(RIGHT - numberWidth - 8 - titleWidth, baseline, title, titleStyle);
+    const bottom = baseline + SIZE.jobNumber * 0.72 + 4;
+    drawLetterhead(sheet.pdf, letterhead, { x: MARGIN, y: bottom, width: CONTENT_WIDTH, height: LETTERHEAD_TOP - bottom });
+  }
+  sheet.setCursor(top - GAP.line - GAP.tight - GAP.sectionLarge);
+};
 
 /**
  * THE DELIVERY NOTE AS A PDF. PARTS-03, PARTS-04.
@@ -25,22 +62,30 @@ import {
  * given. Signature lines at the foot for the courier and for EJE, because the
  * printed copy travels with the goods and is signed on paper at the counter.
  */
-export const renderDeliveryNotePdf = (model: DeliveryNoteModel): { bytes: Uint8Array; pageCount: number } => {
+export const renderDeliveryNotePdf = (
+  model: DeliveryNoteModel,
+  /** LETTERHEAD-1: the job company's uploaded letterhead, prepared; absent, the text header. */
+  letterhead?: PdfImage,
+): { bytes: Uint8Array; pageCount: number } => {
   const sheet = new Sheet();
-  sheet.text(MARGIN, model.company.name, { font: 'bold', size: SIZE.companyName, colour: INK });
-  const title = 'DELIVERY NOTE';
-  sheet.pdf.text(RIGHT - textWidth(title, SIZE.jobNumber, 'bold', TRACK_TITLE), sheet.cursor, title, {
-    font: 'bold',
-    size: SIZE.jobNumber,
-    colour: INK,
-    tracking: TRACK_TITLE,
-  });
-  sheet.move(GAP.line);
-  sheet.text(MARGIN, model.company.address, { size: SIZE.small, colour: MUTED });
-  sheet.textRight(RIGHT, model.jobNumber, { font: 'bold', size: SIZE.total, colour: INK });
-  sheet.move(GAP.tight);
-  sheet.text(MARGIN, model.company.contactLine, { size: SIZE.small, colour: MUTED });
-  sheet.move(GAP.sectionLarge);
+  if (letterhead !== undefined) {
+    letterheadHeader(sheet, model, letterhead);
+  } else {
+    sheet.text(MARGIN, model.company.name, { font: 'bold', size: SIZE.companyName, colour: INK });
+    const title = 'DELIVERY NOTE';
+    sheet.pdf.text(RIGHT - textWidth(title, SIZE.jobNumber, 'bold', TRACK_TITLE), sheet.cursor, title, {
+      font: 'bold',
+      size: SIZE.jobNumber,
+      colour: INK,
+      tracking: TRACK_TITLE,
+    });
+    sheet.move(GAP.line);
+    sheet.text(MARGIN, model.company.address, { size: SIZE.small, colour: MUTED });
+    sheet.textRight(RIGHT, model.jobNumber, { font: 'bold', size: SIZE.total, colour: INK });
+    sheet.move(GAP.tight);
+    sheet.text(MARGIN, model.company.contactLine, { size: SIZE.small, colour: MUTED });
+    sheet.move(GAP.sectionLarge);
+  }
 
   sheet.sectionTitle('Deliver to');
   for (const line of model.deliverTo) sheet.paragraph(line, { size: SIZE.body, colour: BODY });

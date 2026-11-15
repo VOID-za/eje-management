@@ -1,5 +1,6 @@
 import {
   DEFAULT_COMPANY_ID,
+  type CompanyId,
   type Company,
   type CompanyRates,
 } from '../types/company';
@@ -144,3 +145,19 @@ export const settingsForCompany = (
   kilometreRate: company.rates.kilometreRate,
   vatPercentage: company.rates.vatPercentage,
 });
+
+/**
+ * WHICH LETTERHEAD A COMPANY'S DOCUMENTS CARRY. LETTERHEAD-1.
+ *
+ * Enough for the browser to fetch the image through its authorised route
+ * (`/api/companies/:id/letterhead`) and to know when it has been replaced —
+ * never the storage key. Null when none is uploaded: the documents keep the
+ * text header above.
+ */
+export interface LetterheadReference {
+  readonly companyId: CompanyId;
+  readonly sha256: string;
+}
+
+export const letterheadReferenceOf = (company: Pick<Company, 'id' | 'letterhead'> | null): LetterheadReference | null =>
+  company === null || company.letterhead === null ? null : { companyId: company.id, sha256: company.letterhead.sha256 };

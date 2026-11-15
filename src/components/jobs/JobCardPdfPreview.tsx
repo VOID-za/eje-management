@@ -8,7 +8,7 @@ import { SystemClock } from '@/services/simulated/system';
 import { downloadBytes } from '@/lib/download';
 import { JobCardDocument } from './JobCardDocument';
 import { PdfViewer } from '@/components/documents/PdfViewer';
-import { loadPreviewPhotos, renderJobCardPdf } from './job-card-pdf';
+import { loadPreviewLetterhead, loadPreviewPhotos, renderJobCardPdf } from './job-card-pdf';
 import { documentPhotos } from '@/lib/job-card/model';
 import {
   canComputeDocumentIdentity,
@@ -144,6 +144,8 @@ export const JobCardPdfPreview = ({
         // The shared renderer (`renderJobCardPdf`): the same document the PDF
         // button on the review screens produces, and the one that is issued.
         const prepared = photoImages ?? (await loadPreviewPhotos(view));
+        // LETTERHEAD-1: the job company's letterhead, as the issued copy will carry it.
+        const letterhead = await loadPreviewLetterhead(view);
         /*
          * A COURIER COLLECTION IS SIGNED ON ITS DELIVERY NOTE (PARTS-03/04): the
          * courier is shown the price-less Delivery Note, not the priced job
@@ -152,10 +154,10 @@ export const JobCardPdfPreview = ({
          */
         const rendered = courierNote
           ? (() => {
-              const note = renderDeliveryNotePdf(buildDeliveryNoteModel(view, clock.now()));
+              const note = renderDeliveryNotePdf(buildDeliveryNoteModel(view, clock.now()), letterhead);
               return { fileName: deliveryNoteFileName(view.job), bytes: note.bytes, pageCount: note.pageCount };
             })()
-          : await renderJobCardPdf(view, pdf, clock, prepared);
+          : await renderJobCardPdf(view, pdf, clock, prepared, letterhead);
         if (cancelled) return;
 
         if (onRendered !== undefined) {

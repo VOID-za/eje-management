@@ -4,6 +4,8 @@ import {
   can,
   companyDetailsFromSettings,
   companyDetailsOf,
+  letterheadReferenceOf,
+  type LetterheadReference,
   customerRateModeOf,
   pricingInputsFrom,
   settingsForCompany,
@@ -61,6 +63,8 @@ export interface JobRateSource {
   readonly problem: string | null;
   /** The job's company, whose letterhead the job's documents carry. */
   readonly company: CompanyDetails;
+  /** LETTERHEAD-1: the company's uploaded letterhead, by reference; null when it has none. */
+  readonly companyLetterhead: LetterheadReference | null;
 }
 
 const ZERO_RATES: PricingInputs = {
@@ -110,13 +114,14 @@ export const resolveCustomerRateSource = async (
 ): Promise<JobRateSource> => {
   const { company: stored, settings: defaults } = await resolveCompanyDefaults(context, job.companyId);
   const company = stored === null ? companyDetailsFromSettings(defaults) : companyDetailsOf(stored);
+  const companyLetterhead = letterheadReferenceOf(stored);
   const customer = await context.repos.customers.findById(asCustomerId(job.customerId));
   if (customer === null || customerRateModeOf(customer) === 'default') {
-    return { mode: 'default', settings: defaults, problem: null, company };
+    return { mode: 'default', settings: defaults, problem: null, company, companyLetterhead };
   }
   const rates = await context.repos.customers.findCustomRates(customer.id);
-  if (rates === null) return { mode: 'custom', settings: withRates(defaults, ZERO_RATES), problem: customRatesMissing(customer), company };
-  return { mode: 'custom', settings: withRates(defaults, rates), problem: null, company };
+  if (rates === null) return { mode: 'custom', settings: withRates(defaults, ZERO_RATES), problem: customRatesMissing(customer), company, companyLetterhead };
+  return { mode: 'custom', settings: withRates(defaults, rates), problem: null, company, companyLetterhead };
 };
 
 /**

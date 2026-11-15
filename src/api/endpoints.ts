@@ -1271,6 +1271,18 @@ export const settings = {
 export const companies = {
   update: (companyId: string, input: CompanyUpdate) =>
     apiPatch<CompanyAdminView>(`/api/admin/companies/${segment(companyId)}`, input),
+  /** LETTERHEAD-1: upload or replace the company's letterhead (PNG or JPEG, at most 2 MB). */
+  uploadLetterhead: (companyId: string, file: File) =>
+    apiUpload<CompanyAdminView>(`/api/admin/companies/${segment(companyId)}/letterhead`, file),
+  /** LETTERHEAD-1: new documents of this company go back to the text header. */
+  removeLetterhead: (companyId: string) =>
+    apiPost<CompanyAdminView>(`/api/admin/companies/${segment(companyId)}/letterhead/remove`),
+  /**
+   * LETTERHEAD-1: where the letterhead image is read from, authorised on every
+   * request. `sha256` names the version, so a replaced one is never a stale copy.
+   */
+  letterheadUrl: (companyId: string, sha256: string) =>
+    `/api/companies/${segment(companyId)}/letterhead?v=${encodeURIComponent(sha256)}`,
 };
 
 /**

@@ -3,6 +3,7 @@ import type { OperationContext } from './context';
 import { WorkflowError } from './errors';
 import { loadJobView } from './job-view';
 import { loadDocumentPhotos } from './document-photos';
+import { loadCompanyLetterhead } from './company-letterhead';
 import { StorageIntegrityFailed, type FinalDocumentSource, type StoredDocument } from '@/services/ports';
 
 /**
@@ -112,7 +113,12 @@ export const storeFinalDocument = async (
   // recorded on the job agree to the millisecond. The photographs are read
   // from storage here, on the server, because the job holds only their keys.
   const rendered = await context.services.pdf.render(
-    { ...source, photoImages: await loadDocumentPhotos(context.services.storage, source.job) },
+    {
+      ...source,
+      photoImages: await loadDocumentPhotos(context.services.storage, source.job),
+      // LETTERHEAD-1: a document issued NOW carries its company's letterhead, if one is uploaded.
+      letterhead: await loadCompanyLetterhead(context, source.job.companyId),
+    },
     'final',
     descriptor.generatedAt,
   );
@@ -205,7 +211,9 @@ export const loadFinalDocumentFile = async (
    * written: this is a read.
    */
   // Stamped with the timestamp already recorded on the job, so this renders
-  // byte-identically however many times it is called.
+  // byte-identically however many times it is called. NO LETTERHEAD
+  // (LETTERHEAD-1), deliberately: this is history issued before letterheads,
+  // drawn as it was issued — the same reason RENDERER_VERSION is unchanged.
   const rendered = await context.services.pdf.render(
     { ...source, photoImages: await loadDocumentPhotos(context.services.storage, source.job) },
     'final',

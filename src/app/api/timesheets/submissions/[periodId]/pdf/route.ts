@@ -1,3 +1,4 @@
+import { defaultCompanyLetterhead } from '@/application/company-letterhead';
 import { z } from 'zod';
 import { loadSubmissionDocument } from '@/application/timesheets';
 import { downloadRoute, parseWith } from '@/server/api/handler';
@@ -12,6 +13,8 @@ export const GET = downloadRoute('timesheets.submissionPdf', async (context) => 
   );
   const operation = { repos: context.repos, services: context.services, actor: context.actor.user };
   const document = await loadSubmissionDocument(operation, context.params.periodId ?? '', parseTimesheetVersion(version));
-  const rendered = renderTimesheetPdf(document, { generatedAt: context.services.clock.now() });
+  // LETTERHEAD-1: EJE's own paperwork, on EJE's uploaded letterhead when it has one.
+  const letterhead = await defaultCompanyLetterhead(context);
+  const rendered = renderTimesheetPdf(document, { generatedAt: context.services.clock.now(), letterhead });
   return { fileName: rendered.fileName, contentType: 'application/pdf', body: rendered.bytes };
 });

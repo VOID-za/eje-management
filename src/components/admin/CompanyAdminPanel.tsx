@@ -16,11 +16,12 @@ import {
   TextField,
 } from '@/components/ui';
 import { AdminNotice } from '@/components/admin/AdminNotice';
+import { CompanyLetterheadCard } from '@/components/admin/CompanyLetterheadCard';
 import { RuleViolationNotice } from '@/components/jobs/RuleViolationNotice';
 import { companies as companiesApi, reads } from '@/api/endpoints';
 import { useOperation } from '@/hooks/useOperation';
 import { useQuery } from '@/hooks/useQuery';
-import { formatCurrency, formatDateTime } from '@/lib/format';
+import { formatCurrency } from '@/lib/format';
 import {
   RATE_FIELDS,
   companyFormFrom,
@@ -100,6 +101,7 @@ export const CompanyAdminPanel = ({
           query.refetch();
         }}
         onEdited={() => setSavedFor(null)}
+        onLetterheadChanged={() => query.refetch()}
         onOpenRates={onOpenRates}
       />
     </div>
@@ -131,6 +133,7 @@ const CompanyEditor = ({
   saved,
   onSaved,
   onEdited,
+  onLetterheadChanged,
   onOpenRates,
 }: {
   readonly section: Section;
@@ -139,6 +142,7 @@ const CompanyEditor = ({
   readonly saved: boolean;
   readonly onSaved: () => void;
   readonly onEdited: () => void;
+  readonly onLetterheadChanged: () => void;
   readonly onOpenRates?: () => void;
 }) => {
   const operation = useOperation();
@@ -372,18 +376,8 @@ const CompanyEditor = ({
             </div>
           </Card>
 
-          <Card>
-            <CardHeader title="Letterhead" />
-            {company.letterhead === null ? (
-              <p className="mt-3 text-sm text-steel-500" data-testid="company-letterhead">
-                No letterhead uploaded.
-              </p>
-            ) : (
-              <p className="mt-3 text-sm text-steel-700" data-testid="company-letterhead">
-                Uploaded {formatDateTime(company.letterhead.uploadedAt)} ({company.letterhead.contentType}).
-              </p>
-            )}
-          </Card>
+          {/* LETTERHEAD-1: uploaded, replaced and removed on its own, never through the details save. */}
+          <CompanyLetterheadCard company={company} onChanged={onLetterheadChanged} />
         </div>
       </div>
 

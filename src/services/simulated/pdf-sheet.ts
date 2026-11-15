@@ -1,4 +1,5 @@
 import { A4_HEIGHT, A4_WIDTH, PdfBuilder, textWidth, type PdfFont } from '@/lib/pdf/writer';
+import { displaySize, type PdfImage } from '@/lib/pdf/image';
 
 /**
  * THE PAPER ITSELF: page geometry, the type scale, the colours and the cursor.
@@ -149,3 +150,88 @@ export class Sheet {
     }
   }
 }
+
+/**
+ * THE COMPANY'S OWN LETTERHEAD, ACROSS THE TOP OF A NEW DOCUMENT. LETTERHEAD-1
+ * (15 November 2026).
+ *
+ * The owner: every newly generated document carries the official letterhead of
+ * the company it is from — the image the office uploaded in Administration, as
+ * it was supplied (logo, name, registration, VAT, addresses, telephone, fax,
+ * email, PO Box). Nothing on it is drawn by us, so nothing on it can be wrong
+ * in a way the office did not put there.
+ *
+ * ONE DRAWING, EVERY DOCUMENT. Each renderer hands its own fixed header box —
+ * the band its text header uses today, plus the top margin — and this fits the
+ * image into it: its own proportions kept (never stretched, never cropped),
+ * against the left edge, centred top to bottom. No cursor moves: everything
+ * below the header is exactly where it always was.
+ *
+ * NO LETTERHEAD, NO CHANGE. Returns false without drawing anything, and the
+ * caller draws its text header exactly as it did before letterheads existed —
+ * which is how every document of a company whose letterhead has not been
+ * supplied must look, operation for operation.
+ */
+export interface LetterheadBox {
+  /** Bottom-left corner, in PDF points from the page's bottom-left. */
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * How high a letterhead may reach: 14pt (5mm) below the paper's top edge,
+ * inside what an office printer can print.
+ */
+export const LETTERHEAD_TOP = A4_HEIGHT - 14;
+
+/** Where the image lands inside the box, its proportions kept. */
+export const fitLetterhead = (image: PdfImage, box: LetterheadBox): LetterheadBox => {
+  const natural = displaySize(image);
+  const scale = Math.min(box.width / natural.width, box.height / natural.height);
+  const width = natural.width * scale;
+  const height = natural.height * scale;
+  return { x: box.x, y: box.y + (box.height - height) / 2, width, height };
+};
+
+export const drawLetterhead = (
+  pdf: PdfBuilder,
+  letterhead: PdfImage | undefined,
+  box: LetterheadBox,
+): boolean => {
+  if (letterhead === undefined || box.width <= 0 || box.height <= 0) return false;
+  const fitted = fitLetterhead(letterhead, box);
+  pdf.image(letterhead, fitted.x, fitted.y, fitted.width, fitted.height);
+  return true;
+};
+
+/**
+ * THE JOB CARD'S AND THE ADDENDUM'S HEADER WITH A LETTERHEAD: the image above,
+ * and the document's name and number on ONE line, right-aligned, just above the
+ * rule that closes the header — so somebody filing paper still reads "JOB CARD
+ * EJE-1044" in the corner, and the letterhead has the band to itself.
+ *
+ * `ruleY` is where that rule is drawn today; the caller still draws it, and
+ * moves its cursor exactly as before.
+ */
+export const drawLetterheadOverTitle = (
+  pdf: PdfBuilder,
+  letterhead: PdfImage,
+  ruleY: number,
+  title: string,
+  number: string,
+): void => {
+  const baseline = ruleY + 6;
+  const numberWidth = textWidth(number, SIZE.jobNumber, 'bold');
+  pdf.text(RIGHT - numberWidth, baseline, number, { font: 'bold', size: SIZE.jobNumber, colour: INK });
+  pdf.text(
+    RIGHT - numberWidth - 8 - textWidth(title, SIZE.small, 'bold', TRACK_TITLE),
+    baseline,
+    title,
+    { font: 'bold', size: SIZE.small, colour: MUTED, tracking: TRACK_TITLE },
+  );
+  // Clear of the number's capitals (about 0.72 of its size) by a few points.
+  const bottom = baseline + SIZE.jobNumber * 0.72 + 4;
+  drawLetterhead(pdf, letterhead, { x: MARGIN, y: bottom, width: CONTENT_WIDTH, height: LETTERHEAD_TOP - bottom });
+};

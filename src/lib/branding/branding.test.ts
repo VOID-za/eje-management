@@ -11,6 +11,12 @@ import { loadFinalDocumentFile } from '@/application/final-document';
 import { buildHarness, seedUser } from '@/application/test-harness';
 import { CACHEABLE_PREFIXES, PRECACHE_PATHS, isCacheablePath } from '@/lib/pwa/shell';
 import manifest from '@/app/manifest';
+import { renderJobCardPdf } from '@/services/simulated/job-card-pdf';
+import { renderCorrectionPdf } from '@/services/simulated/correction-pdf';
+import { INTERFACE_IMAGE_SHA256, uploadCompanyLetterhead } from '@/application/company-letterhead';
+import { DEFAULT_COMPANY_ID } from '@/domain';
+import { GENERATED_AT, correctionSource, jobSource } from '@/test/letterhead-documents';
+import { embedsImageData, letterheadPng, preparedLetterhead } from '@/test/letterhead-fixture';
 
 /**
  * BRAND-1: EJE's official logo — in the APPLICATION, and NEVER on a document.
@@ -24,6 +30,15 @@ import manifest from '@/app/manifest';
  *     every referenced file exists; it is kept for offline use; it is hidden when printing.
  *   - the documents: only the interface's own files may name the logo, and each kind of
  *     generated PDF, rendered here, embeds no image at all (none of these has a photograph).
+ *
+ * AMENDED FOR LETTERHEAD-1 (15 November 2026): the owner has approved the company's OFFICIAL
+ * LETTERHEAD on documents — the image the office uploads per company in Administration. So
+ * a document may now carry exactly ONE image of its own: that company's uploaded
+ * letterhead, and only once one is configured. Everything else stands: no document or
+ * renderer names the interface's logo files, the icons or the Logo components; with no
+ * letterhead configured every document embeds no image at all; with one, it embeds that
+ * image and nothing else; and the interface's own logo files cannot be uploaded AS the
+ * letterhead, whatever they are renamed to.
  */
 
 const ROOT = process.cwd();
@@ -163,7 +178,14 @@ describe('the logo is never on a document', () => {
   it('only the interface files name it — no document, PDF renderer, print layout, route or job card component', () => {
     const scanned = ['src', 'scripts'].flatMap(sourcesUnder);
     // Not vacuous: the scan reaches the renderers and the document components it guards.
-    for (const guarded of ['src/services/simulated/job-card-pdf.ts', 'src/components/jobs/JobCardDocument.tsx']) {
+    // LETTERHEAD-1: and the letterhead's own code — the drawing, the upload and the Administration card.
+    for (const guarded of [
+      'src/services/simulated/job-card-pdf.ts',
+      'src/components/jobs/JobCardDocument.tsx',
+      'src/services/simulated/pdf-sheet.ts',
+      'src/application/company-letterhead.ts',
+      'src/components/admin/CompanyLetterheadCard.tsx',
+    ]) {
       expect(scanned.map(normalise)).toContain(guarded);
     }
     const offenders = scanned
@@ -179,12 +201,12 @@ describe('the logo is never on a document', () => {
     }
   });
 
-  it('an issued job card embeds no image (EJE-1044 has no photograph)', async () => {
+  it('with no letterhead configured, an issued job card embeds no image (EJE-1044 has no photograph)', async () => {
     const card = await loadFinalDocumentFile(buildHarness().as(seedUser('user-master-elmarie')), 'EJE-1044');
     expect(imageObjects(card.bytes)).toBe(0);
   });
 
-  it('a delivery note embeds no image', () => {
+  it('with no letterhead configured, a delivery note embeds no image', () => {
     const { bytes } = renderDeliveryNotePdf({
       title: 'Delivery Note',
       company: { name: 'EJE Industrial Electronics', address: '1 Test Road, Vereeniging', contactLine: '016 000 0000 · office@example.test' },
@@ -200,7 +222,7 @@ describe('the logo is never on a document', () => {
     expect(imageObjects(bytes)).toBe(0);
   });
 
-  it('a timesheet — one page and several — embeds no image', () => {
+  it('with no letterhead configured, a timesheet — one page and several — embeds no image', () => {
     const doc = (rows: number): TimesheetDocument => ({
       companyName: 'EJE Industrial Electronics',
       technicianName: 'Test Technician',
@@ -238,7 +260,7 @@ describe('the logo is never on a document', () => {
     expect(imageObjects(many.bytes)).toBe(0);
   });
 
-  it('an attendance form embeds no image', () => {
+  it('with no letterhead configured, an attendance form embeds no image', () => {
     const month = Array.from({ length: 31 }, (_, index) => ({
       date: `2026-10-${String(index + 1).padStart(2, '0')}`,
       status: index % 7 === 6 ? null : ('present' as const),
@@ -259,5 +281,66 @@ describe('the logo is never on a document', () => {
       changedAfterSubmission: [],
     };
     expect(imageObjects(renderAttendancePdf(doc, { generatedAt: '2026-10-31T16:00:00.000Z' }).bytes)).toBe(0);
+  });
+});
+
+describe('LETTERHEAD-1: a document carries only the company’s uploaded letterhead', () => {
+  /** Every PNG and JPEG the interface ships: the logo as supplied and the icons. */
+  const interfaceImages = (['public/branding', 'public/icons'] as const).flatMap((dir) =>
+    readdirSync(join(ROOT, dir))
+      .filter((name) => /\.(png|jpe?g)$/u.test(name))
+      .map((name) => join(dir, name)),
+  );
+
+  it('the upload knows every interface image by its checksum, and refuses each one renamed as a letterhead', async () => {
+    expect(interfaceImages.length).toBeGreaterThan(3);
+    const sums = new Set(interfaceImages.map((path) => createHash('sha256').update(file(path)).digest('hex')));
+    expect(sums).toEqual(INTERFACE_IMAGE_SHA256);
+    const harness = buildHarness();
+    for (const path of interfaceImages) {
+      const attempt = uploadCompanyLetterhead(harness.as(seedUser('user-master-elmarie')), DEFAULT_COMPANY_ID, {
+        fileName: 'letterhead.png',
+        bytes: new Uint8Array(file(path)),
+      });
+      await expect(attempt, path).rejects.toThrow('That is the application’s logo, not a letterhead.');
+    }
+    expect((await harness.repos.companies.findById(DEFAULT_COMPANY_ID))?.letterhead).toBeNull();
+  });
+
+  it('with a letterhead configured, every kind of document embeds that image and no other', async () => {
+    const letterhead = await preparedLetterhead(letterheadPng(600, 100));
+    const logo = file('public/branding/eje-logo-original.jpg');
+    const rendered = [
+      renderJobCardPdf({ ...(await jobSource('EJE-1044')), letterhead }, 'EJE-1044.pdf', GENERATED_AT).bytes,
+      renderJobCardPdf({ ...(await jobSource('EJE-1062')), letterhead }, 'EJE-1062.pdf', GENERATED_AT).bytes,
+      renderCorrectionPdf({ ...correctionSource, letterhead }, 'C.pdf').bytes,
+      renderDeliveryNotePdf(
+        {
+          title: 'Delivery Note',
+          company: { name: 'EJE Industrial Electronics', address: '1 Test Road', contactLine: '016 000 0000' },
+          jobNumber: 'EJE-9001',
+          deliverTo: ['Customer (Pty) Ltd'],
+          details: [{ label: 'Job number', value: 'EJE-9001' }],
+          items: [{ kind: 'Part', partNumber: 'P-1', description: 'Relay', quantity: '1' }],
+          totalQuantity: '1',
+          priceNote: 'No prices on this copy.',
+          signature: null,
+          footer: 'Delivery Note',
+        },
+        letterhead,
+      ).bytes,
+    ];
+    for (const [index, bytes] of rendered.entries()) {
+      expect(imageObjects(bytes), `document ${index}`).toBe(1);
+      expect(embedsImageData(bytes, letterhead), `document ${index}`).toBe(true);
+      expect(Buffer.from(bytes).includes(logo.subarray(0, 4096)), `document ${index}`).toBe(false);
+    }
+  });
+
+  it('a job issued before letterheads keeps its document as issued, with no image, even once one is uploaded', async () => {
+    const harness = buildHarness();
+    const master = harness.as(seedUser('user-master-elmarie'));
+    await uploadCompanyLetterhead(master, DEFAULT_COMPANY_ID, { fileName: 'eje.png', bytes: letterheadPng(600, 100) });
+    expect(imageObjects((await loadFinalDocumentFile(master, 'EJE-1044')).bytes)).toBe(0);
   });
 });

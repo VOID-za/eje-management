@@ -15,6 +15,7 @@ import {
 import { sha256Hex } from '@/lib/job-card/document-identity';
 import { correctedFileName, documentNameOf, monthBounds, monthTitle } from '@/lib/payroll-files';
 import { deliveryFailureKindOf } from '@/services/ports';
+import { defaultCompanyLetterhead } from './company-letterhead';
 import { renderAttendancePdf } from '@/services/simulated/attendance-pdf';
 import { OnePageOverflow } from '@/services/simulated/one-page-form';
 import { renderTimesheetPdf } from '@/services/simulated/timesheet-pdf';
@@ -453,6 +454,8 @@ export const prepareFinancePackage = async (
     );
   }
   const now = context.services.clock.now();
+  // LETTERHEAD-1: EJE's own paperwork, on EJE's uploaded letterhead when it has one.
+  const letterhead = await defaultCompanyLetterhead(context);
   const packageId = context.services.ids.next('fpk');
   const attachments: FinancePackageAttachment[] = [];
   // Names people chose themselves (PAYROLL-ONE-1): another person's may be the same, and is told apart by whose it is.
@@ -482,14 +485,14 @@ export const prepareFinancePackage = async (
         const half = periodsOfMonth.find((submission) => submission.timesheetPeriodId === period.id);
         const document = half === undefined ? timesheetDocument : { ...timesheetDocument, fileName: half.fileNames.timesheet };
         if (half !== undefined) chosenNames.add(half.fileNames.timesheet);
-        sheets.push({ document, rendered: renderTimesheetPdf(document, { generatedAt: now }) });
+        sheets.push({ document, rendered: renderTimesheetPdf(document, { generatedAt: now, letterhead }) });
       }
       // The calendar month's attendance, when it was submitted the way it was before PAYROLL-ONE-1 (and is still current).
       const legacy = await context.repos.payroll.findSubmission(row.technician.id, month);
       if (legacy !== null && (legacy.supersededAt ?? null) === null && fresh(`month:${legacy.id}`)) {
         // As SUBMITTED: a submitted record is what goes to Finance, never the register as it is now.
         const attendanceDocument = await loadAttendanceDocument(context, technicianId, month, 'submitted');
-        attendances.push({ rendered: renderAttendancePdf(attendanceDocument, { generatedAt: now }), versionLabel: attendanceDocument.versionLabel });
+        attendances.push({ rendered: renderAttendancePdf(attendanceDocument, { generatedAt: now, letterhead }), versionLabel: attendanceDocument.versionLabel });
       }
       // A period's attendance: exactly the PDF stored when it was submitted, under its name.
       for (const submission of periodsOfMonth) {

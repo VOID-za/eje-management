@@ -17,6 +17,7 @@ import type { OperationContext } from './context';
 import { audit } from './audit';
 import { WorkflowError } from './errors';
 import { loadJobView } from './job-view';
+import { loadCompanyLetterhead } from './company-letterhead';
 
 /**
  * THE COURIER'S DELIVERY NOTE. PARTS-03, PARTS-04, PARTS-05, and the owner's
@@ -56,7 +57,8 @@ export const issueDeliveryNote = async (
   const existing = await context.repos.deliveryNotes.findByJob(job.id);
   if (existing !== null) return existing;
 
-  const rendered = renderDeliveryNotePdf(buildDeliveryNoteModel(input, generatedAt));
+  // LETTERHEAD-1: issued now, so on its company's letterhead when one is uploaded.
+  const rendered = renderDeliveryNotePdf(buildDeliveryNoteModel(input, generatedAt), await loadCompanyLetterhead(context, job.companyId));
   const storageKey = deliveryNoteStorageKey(jobCardStorageKey);
   const fileName = deliveryNoteFileName(job);
   await context.services.storage.putDocument({
@@ -165,7 +167,7 @@ export const generateDeliveryNote = async (
   if (view === null) throw new WorkflowError(`${job.jobNumber} could not be loaded.`);
   const generatedAt = context.services.clock.now();
   const model = buildDeliveryNoteModel(view, generatedAt);
-  const rendered = renderDeliveryNotePdf(model);
+  const rendered = renderDeliveryNotePdf(model, await loadCompanyLetterhead(context, job.companyId));
   await audit(context, {
     jobId: job.id,
     type: 'delivery_note_generated',
@@ -204,6 +206,7 @@ export const issueSignedDeliveryNote = async (context: OperationContext, job: Jo
       { job, customer: view.customer, site: view.site, contact: view.contact, settings: view.settings, company: view.company, users: view.users },
       now,
     ),
+    await loadCompanyLetterhead(context, job.companyId),
   );
   const fileName = deliveryNoteFileName(job);
   const storageKey = `jobcards/final/${job.jobNumber}-Delivery-Note.pdf`;

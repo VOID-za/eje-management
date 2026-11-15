@@ -26,7 +26,7 @@ import { WorkflowError } from './errors';
  *  - the start number only sets the INITIAL value; once numbers are issued it
  *    may only move forward, so an active sequence is never silently reset;
  *  - which company is the default (EJE) and its short code are fixed;
- *  - the letterhead is not set here (it is uploaded, stage D).
+ *  - the letterhead is not set here (it is uploaded: `company-letterhead.ts`).
  *
  * NOTHING ALREADY PRICED MOVES. A rate change prices new and unfrozen job
  * cards of THIS company only; a signed or issued job card keeps its snapshot.
@@ -40,7 +40,7 @@ import { WorkflowError } from './errors';
  * always written, so a technician's feed never shows it.
  */
 
-const assertAdministers = (context: OperationContext): void => {
+export const assertAdministers = (context: OperationContext): void => {
   if (!can(context.actor.role, 'settings.rates')) {
     throw new WorkflowError('Only the office can change a company’s details, numbering or rates.', [
       {
@@ -56,7 +56,7 @@ export type CompanyAdminView = Omit<Company, 'letterhead'> & {
   readonly letterhead: Omit<NonNullable<Company['letterhead']>, 'storageKey'> | null;
 };
 
-const adminViewOf = (company: Company): CompanyAdminView => {
+export const adminViewOf = (company: Company): CompanyAdminView => {
   const { letterhead, ...rest } = company;
   if (letterhead === null) return { ...rest, letterhead: null };
   const { storageKey: _storageKey, ...visible } = letterhead;

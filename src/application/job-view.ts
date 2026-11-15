@@ -14,6 +14,7 @@ import type {
   Site,
   SystemSettings,
   CompanyDetails,
+  LetterheadReference,
   User,
 } from '@/domain';
 import {
@@ -100,6 +101,13 @@ export interface JobView {
    * in.
    */
   readonly company: CompanyDetails;
+  /**
+   * LETTERHEAD-1: the job company's uploaded letterhead, by reference, for the
+   * browser's preview to fetch (`/api/companies/:id/letterhead`) and print as
+   * the server will. Null — or absent, from a client older than letterheads —
+   * when the company has none: the documents keep their text header.
+   */
+  readonly companyLetterhead?: LetterheadReference | null;
   /** Everyone who could be named on this job, for resolving note and entry authors. */
   readonly users: readonly User[];
   /**
@@ -365,6 +373,7 @@ export const loadJobView = async (
     // DELIVERY-NOTE-1: a type that prices nothing has no rates to be missing.
     rateSource: { mode: rateSource.mode, problem: getJobTypeDefinition(job.jobType).priced ? rateSource.problem : null },
     company: rateSource.company,
+    companyLetterhead: rateSource.companyLetterhead,
     users,
     checklistTemplate,
     checklistOptions,

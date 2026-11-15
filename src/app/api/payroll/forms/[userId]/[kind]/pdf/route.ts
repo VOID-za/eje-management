@@ -1,3 +1,4 @@
+import { defaultCompanyLetterhead } from '@/application/company-letterhead';
 import { z } from 'zod';
 import { loadPayrollFormDocument } from '@/application/payroll-forms';
 import type { AttendanceDocument } from '@/application/attendance-document';
@@ -20,9 +21,11 @@ export const GET = downloadRoute('payroll.forms.pdf', async (context) => {
   const operation = { repos: context.repos, services: context.services, actor: context.actor.user };
   const document = await loadPayrollFormDocument(operation, context.params.userId ?? '', which, from, to);
   const generatedAt = context.services.clock.now();
+  // LETTERHEAD-1: EJE's own paperwork, on EJE's uploaded letterhead when it has one.
+  const letterhead = await defaultCompanyLetterhead(context);
   const rendered =
     which === 'attendance'
-      ? onePageOrRefuse(() => renderAttendancePdf(document as AttendanceDocument, { generatedAt }))
-      : renderTimesheetPdf(document as TimesheetDocument, { generatedAt });
+      ? onePageOrRefuse(() => renderAttendancePdf(document as AttendanceDocument, { generatedAt, letterhead }))
+      : renderTimesheetPdf(document as TimesheetDocument, { generatedAt, letterhead });
   return { fileName: rendered.fileName, contentType: 'application/pdf', body: rendered.bytes, headers: { 'X-Page-Count': String(rendered.pageCount) } };
 });
