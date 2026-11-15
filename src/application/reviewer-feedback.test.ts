@@ -483,7 +483,12 @@ describe('TR-PARTS-2 — a Test & Repair job’s parts add and remove in complet
     expect((await harness.repos.jobs.findById(job.id))?.parts).toHaveLength(2);
   });
 
-  it('a breakdown job is unchanged: parts stay locked in completion (TR-01)', async () => {
+  /*
+   * BD-PARTS-1 (the owner, 15 November 2026) SUPERSEDES the owner's 28 October decision that a breakdown's
+   * parts lock in completion (TR-01): a breakdown now keeps them open there, as Test & Repair does, and locks
+   * them at the signature. The full breakdown cases are in `breakdown-completion-parts.test.ts`.
+   */
+  it('a seeded breakdown (EJE-1048) adds a part in completion now (BD-PARTS-1), and locks it at the signature', async () => {
     const tech = harness.as(sipho);
     let job = (await harness.repos.jobs.findByJobNumber('EJE-1048'))!;
     job = await acceptJob(tech, job);
@@ -491,15 +496,17 @@ describe('TR-PARTS-2 — a Test & Repair job’s parts add and remove in complet
     job = await addPart(tech, job, { partNumber: 'B-1', description: 'before', quantity: 1, unitPrice: 10 });
     job = await saveCompletionReport(tech, job, { ...job.completionReport, workPerformed: 'Fixed.' });
     job = await startCompletion(tech, job);
-    await expect(addPart(tech, job, { partNumber: 'X', description: 'late', quantity: 1, unitPrice: 1 })).rejects.toMatchObject({ violations: [{ code: 'parts_locked_after_completion' }] });
+    job = await addPart(tech, job, { partNumber: 'X', description: 'in completion', quantity: 1, unitPrice: 1 });
+    expect((await harness.repos.jobs.findById(job.id))?.parts.map((part) => part.partNumber)).toEqual(['B-1', 'X']);
+    job = await startSignature(tech, job);
+    await expect(addPart(tech, job, { partNumber: 'Y', description: 'late', quantity: 1, unitPrice: 1 })).rejects.toMatchObject({ violations: [{ code: 'parts_locked_after_completion' }] });
   });
 
-  it('a breakdown is locked the same way now (the owner, 28 October 2026); labour is not part of the rule', async () => {
+  it('a breakdown in completion: parts open (BD-PARTS-1); labour is not part of the rule', async () => {
     let breakdown = await workshopJob({ jobType: 'breakdown' });
     breakdown = await startCompletion(harness.as(sipho), breakdown);
-    await expect(
-      addPart(harness.as(sipho), breakdown, { partNumber: 'B', description: 'late', quantity: 1, unitPrice: 100 }),
-    ).rejects.toMatchObject({ violations: [{ code: 'parts_locked_after_completion' }] });
+    breakdown = await addPart(harness.as(sipho), breakdown, { partNumber: 'B', description: 'in completion', quantity: 1, unitPrice: 100 });
+    expect(breakdown.parts.map((part) => part.partNumber)).toEqual(['PSU-77', 'B']);
     const withLabour = await addLabour(harness.as(sipho), breakdown, { date: day(0), rateType: 'normal', hours: 1, description: '' });
     expect(withLabour.labour).toHaveLength(2);
   });

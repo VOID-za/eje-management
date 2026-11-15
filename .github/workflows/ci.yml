@@ -381,6 +381,23 @@ jobs:
           EJE_FORMS_VIEWPORT: 390x844:touch
         run: npm run tester-fixes-check
 
+      # BD-PARTS-1 (the owner, 15 November 2026): a Breakdown’s parts add, change and remove in the Job Complete
+      # wizard without cancelling completion, survive a reload, and lock at the customer signature (server too).
+      - name: Breakdown parts in completion (BD-PARTS-1) — desktop
+        env:
+          EJE_FORMS_VIEWPORT: 1440x900
+        run: npm run breakdown-parts-check
+
+      - name: Breakdown parts in completion (BD-PARTS-1) — tablet portrait, by touch
+        env:
+          EJE_FORMS_VIEWPORT: 768x1024:touch
+        run: npm run breakdown-parts-check
+
+      - name: Breakdown parts in completion (BD-PARTS-1) — phone, by touch
+        env:
+          EJE_FORMS_VIEWPORT: 390x844:touch
+        run: npm run breakdown-parts-check
+
       - name: Next critical batch — desktop
         env:
           EJE_FORMS_VIEWPORT: 1440x900

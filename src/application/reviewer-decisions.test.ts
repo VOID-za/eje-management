@@ -152,10 +152,12 @@ describe('TR-01 extended — parts lock at completion on EVERY job type with an 
         // The office's administrative capture is held to it too.
         await expect(addPart(harness.as(master), current, { partNumber: 'X', description: 'late', quantity: 1, unitPrice: 1 })).rejects.toMatchObject(locked);
       };
-      if (jobType === 'test_and_repair') {
+      if (jobType === 'test_and_repair' || jobType === 'breakdown') {
         // TR-PARTS-2 (2 November 2026): a Test & Repair job's parts are listed IN
         // the completion wizard, so they add, change and remove there; they lock
-        // at the signature below.
+        // at the signature below. BD-PARTS-1 (the owner, 15 November 2026): a
+        // Breakdown's too, superseding the 28 October decision that it lock in
+        // completion. Service and Installation keep TR-01 (the else branch).
         job = await addPart(tech, job, { partNumber: 'IN-WIZ', description: 'added in completion', quantity: 1, unitPrice: 50 });
         job = await removeLineItem(tech, job, 'part', job.parts.find((part) => part.partNumber === 'IN-WIZ')!.id);
         expect(job.parts).toHaveLength(2);

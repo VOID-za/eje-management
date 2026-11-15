@@ -859,10 +859,20 @@ export const isFinalized = (job: Pick<Job, 'signature' | 'status'>): boolean =>
  * Locking them at `completion` made that card read-only. They lock at
  * `customer_signature` instead — before the customer is shown the job card —
  * and the signature freezes them for good, as for every job.
+ *
+ * AND A BREAKDOWN, THE SAME WAY. BD-PARTS-1 (the owner, 15 November 2026),
+ * superseding the owner's 28 October decision that a breakdown's parts lock in
+ * `completion`: a technician finishing a breakdown found they could not add the
+ * parts it took without cancelling completion. A breakdown's parts now add,
+ * change and remove in the completion wizard and lock at `customer_signature`,
+ * exactly as Test & Repair's do (TR-PARTS-2). Service and Installation keep
+ * TR-01.
  */
+const PARTS_OPEN_IN_COMPLETION: ReadonlySet<Job['jobType']> = new Set(['test_and_repair', 'breakdown']);
+
 export const partsLockedAfterCompletion = (job: Pick<Job, 'jobType' | 'status'>): boolean => {
   if (getJobTypeDefinition(job.jobType).officeProcessed) return false;
-  if (job.jobType === 'test_and_repair') return job.status === 'customer_signature';
+  if (PARTS_OPEN_IN_COMPLETION.has(job.jobType)) return job.status === 'customer_signature';
   return job.status === 'completion' || job.status === 'customer_signature';
 };
 
