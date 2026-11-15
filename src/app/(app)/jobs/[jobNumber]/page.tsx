@@ -300,6 +300,12 @@ const JobDetailPage = ({
           <div className="flex flex-wrap items-center gap-2">
             <JobStatusBadge status={job.status} jobType={job.jobType} />
             <JobTypeChip jobType={job.jobType} />
+            {/* MULTI-CO-1: the company the job is raised for. Guarded: a job held on a device from before companies has none. */}
+            {view.company !== undefined && (
+              <Badge tone="outline" size="sm" data-testid="job-company-badge">
+                {view.company.name}
+              </Badge>
+            )}
             <PriorityBadge priority={job.priority} />
             {job.scheduledDate !== null && (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-steel-500">

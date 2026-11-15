@@ -23,23 +23,13 @@ export const FinanceRecipientCard = ({ user, settings, onSaved }: { readonly use
   const save = async () => {
     setSaved(false);
     const ok = await operation.run(() =>
-      settingsApi.update({
-        companyName: settings.companyName,
-        companyRegistration: settings.companyRegistration,
-        companyVatNumber: settings.companyVatNumber,
-        companyPhone: settings.companyPhone,
-        companyEmail: settings.companyEmail,
-        companyAddress: settings.companyAddress,
-        jobNumberPrefix: settings.jobNumberPrefix,
-        quietHoursStart: settings.quietHoursStart,
-        quietHoursEnd: settings.quietHoursEnd,
-        labourRates: settings.labourRates,
-        calloutRate: settings.calloutRate,
-        testBenchFee: settings.testBenchFee,
-        kilometreRate: settings.kilometreRate,
-        vatPercentage: settings.vatPercentage,
-        financeEmail: value.trim(),
-      }),
+      /*
+       * THE FINANCE RECIPIENT AND NOTHING ELSE. MULTI-CO-1 (stage C): this used
+       * to send every company field and rate back as this screen last loaded
+       * them, which could write a stale copy over EJE's company record (saved
+       * under Company details). The server keeps what is left out.
+       */
+      settingsApi.update({ financeEmail: value.trim() }),
     );
     if (ok) {
       setSaved(true);

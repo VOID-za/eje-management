@@ -236,6 +236,15 @@ export const settingsSchema = z
     // PAY-05: the Finance recipient. Optional: a client from before keeps the stored one.
     financeEmail: z.string().max(320).optional(),
   })
+  /*
+   * MULTI-CO-1 (stage C): EVERY FIELD OPTIONAL, and what is left out keeps the
+   * stored value. The company details, the prefix and the rates are EJE's
+   * company record now (Administration saves them through `companies.update`,
+   * which mirrors EJE back into this row). A screen that only means to change
+   * the Finance recipient no longer sends them back — and so can no longer
+   * write a stale copy of them over what the office has just saved for EJE.
+   */
+  .partial()
   .strict();
 
 /**
@@ -253,6 +262,7 @@ export const runUpdateSettings = async (
 ) => {
   const stored = await context.repos.settings.get();
   return settings.updateSettings(context.operation, {
+    ...stored,
     ...input,
     testBenchFee: input.testBenchFee ?? stored.testBenchFee,
     financeEmail: input.financeEmail ?? stored.financeEmail ?? '',

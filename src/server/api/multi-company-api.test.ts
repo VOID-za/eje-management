@@ -216,4 +216,40 @@ describe('company administration over HTTP', () => {
       expect.arrayContaining(['company.wd-hearn-jhb.phone', 'company.wd-hearn-jhb.labourNormal', 'company.wd-hearn-jhb.jobNumberStart']),
     );
   });
+
+  /*
+   * STAGE C: the Finance recipient card sends only the Finance recipient, and
+   * the settings PATCH keeps everything left out — so it can no longer write a
+   * stale copy of EJE's details or rates over what Company details saved.
+   */
+  it('a settings save that names only the Finance recipient leaves EJE’s company details and rates as saved', async () => {
+    const master = await signedInAs(DEMO_USERS.master);
+    const saved = await master.send<CompanyRow & { phone: string; rates: { labourRates: { normal: number } } }>(
+      'PATCH',
+      '/api/admin/companies/eje',
+      {
+        body: {
+          details: { phone: '+27 11 555 0199' },
+          rates: {
+            labourRates: { normal: 123_400, overtime: 166_600, double: 222_200 },
+            calloutRate: 99_900,
+            testBenchFee: 0,
+            kilometreRate: 2_100,
+            vatPercentage: 15,
+          },
+        },
+      },
+    );
+    expect(saved.status, JSON.stringify(saved.error)).toBe(200);
+
+    const finance = await master.send('PATCH', '/api/settings', { body: { financeEmail: 'finance@example.co.za' } });
+    expect(finance.status, JSON.stringify(finance.error)).toBe(200);
+
+    const listed = await master.get<readonly (CompanyRow & { phone: string; rates: { labourRates: { normal: number } } })[]>(
+      '/api/admin/companies',
+    );
+    const eje = listed.data.find((company) => company.id === 'eje');
+    expect(eje?.phone).toBe('+27 11 555 0199');
+    expect(eje?.rates.labourRates.normal).toBe(123_400);
+  });
 });

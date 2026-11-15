@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { can } from '@/domain';
 import {
   Badge,
@@ -11,6 +11,7 @@ import {
   Icon,
   LoadingPanel,
   QueryFailure,
+  Tabs,
   type Column,
 } from '@/components/ui';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -18,6 +19,13 @@ import { NewCustomerDialog } from '@/components/customers/NewCustomerDialog';
 import { reads } from '@/api/endpoints';
 import { useQuery } from '@/hooks/useQuery';
 import { useCurrentUser } from '@/providers/AppProvider';
+import {
+  COMPANY_CHOICES,
+  companyLabel,
+  customersForCompany,
+  readRememberedCompanyTab,
+  rememberCompanyTab,
+} from '@/lib/companies';
 
 interface CustomerRow {
   readonly id: string;
@@ -28,7 +36,14 @@ interface CustomerRow {
   readonly machineCount: number;
   readonly openJobs: number;
   readonly active: boolean;
+  readonly companyIds: readonly string[];
 }
+
+/** The owner’s tab names (MULTI-CO-1): one tab per company, EJE first. */
+const TAB_LABELS: Readonly<Record<string, string>> = {
+  eje: 'EJE Customers',
+  'wd-hearn-jhb': 'WD Hearn Customers',
+};
 
 const CustomersPage = () => {
   const router = useRouter();
@@ -37,14 +52,37 @@ const CustomersPage = () => {
   const [adding, setAdding] = useState(false);
   /** SITE-2: the customers recorded with several sites before SITE-1. */
   const [legacyOnly, setLegacyOnly] = useState(false);
+  /*
+   * WHICH COMPANY’S CUSTOMERS. MULTI-CO-1: "EJE Customers" and "WD Hearn
+   * Customers"; a customer of both is listed on both. Remembered per person in
+   * this browser, as FILTER-MEM-1 remembers a date range — read after the first
+   * render, because the server has no browser storage to render it from.
+   */
+  const [company, setCompany] = useState<string>(COMPANY_CHOICES[0]!.id);
+  useEffect(() => {
+    const remembered = readRememberedCompanyTab(currentUser.id);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser storage is only readable after mount.
+    if (remembered !== null) setCompany(remembered);
+  }, [currentUser.id]);
+  const chooseCompany = (next: string) => {
+    setCompany(next);
+    rememberCompanyTab(currentUser.id, next);
+  };
   // The official customer record belongs to the office, so only a Master adds one.
   const canManage = can(currentUser.role, 'customers.manage');
 
   const query = useQuery('customers:list', () => reads.customers());
 
+  /*
+   * Filtered here, from the one list, rather than a request per tab: the
+   * search and the legacy-site filter already work on this list, and switching
+   * tabs should not wait for the network. The server’s `?company=` gives the
+   * same answer (`customersView`).
+   */
+  const companyRows = useMemo(() => customersForCompany(query.data ?? [], company), [query.data, company]);
   const rows = useMemo(() => {
     const needle = term.trim().toLowerCase();
-    return (query.data ?? []).filter(
+    return companyRows.filter(
       (row) =>
         (!legacyOnly || row.siteCount > 1) &&
         (needle.length === 0 ||
@@ -52,8 +90,8 @@ const CustomersPage = () => {
         row.accountNumber.toLowerCase().includes(needle) ||
         row.industry.toLowerCase().includes(needle)),
     );
-  }, [query.data, term, legacyOnly]);
-  const legacyCount = (query.data ?? []).filter((row) => row.siteCount > 1).length;
+  }, [companyRows, term, legacyOnly]);
+  const legacyCount = companyRows.filter((row) => row.siteCount > 1).length;
 
   const columns: Column<CustomerRow>[] = [
     {
@@ -126,7 +164,7 @@ const CustomersPage = () => {
       <PageHeader
         title="Customers"
         breadcrumbs={[{ label: 'Customers' }]}
-        description="Every EJE customer, their sites, machines and open work."
+        description="Every customer of EJE and of WD Hearn JHB, their sites, machines and open work."
         actions={
           canManage ? (
             <Button
@@ -137,6 +175,22 @@ const CustomersPage = () => {
             </Button>
           ) : undefined
         }
+      />
+
+      <Tabs
+        tabs={COMPANY_CHOICES.map((choice) => ({
+          id: choice.id,
+          label: TAB_LABELS[choice.id] ?? choice.label,
+          badge:
+            query.data === null || query.data === undefined ? undefined : (
+              <Badge tone="neutral" size="sm">
+                {customersForCompany(query.data, choice.id).length}
+              </Badge>
+            ),
+        }))}
+        activeId={company}
+        onChange={chooseCompany}
+        className="mb-5"
       />
 
       <Card className="mb-5">
@@ -181,7 +235,11 @@ const CustomersPage = () => {
           rowKey={(row) => row.id}
           onRowClick={(row) => router.push(`/customers/${row.id}`)}
           emptyTitle="No customers found"
-          emptyDescription="No customer matches that search."
+          emptyDescription={
+            companyRows.length === 0
+              ? `No customer is linked to ${companyLabel(company)} yet.`
+              : 'No customer matches that search.'
+          }
         />
       )}
 

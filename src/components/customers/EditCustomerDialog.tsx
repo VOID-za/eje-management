@@ -6,6 +6,8 @@ import { Button, Modal, SectionHeading, TextField } from '@/components/ui';
 import { RuleViolationNotice } from '@/components/jobs/RuleViolationNotice';
 import { customers } from '@/api/endpoints';
 import { useOperation } from '@/hooks/useOperation';
+import { CompanyCheckboxes } from '@/components/customers/CompanyCheckboxes';
+import { customerCompaniesProblem } from '@/lib/companies';
 
 interface Draft {
   readonly name: string;
@@ -17,9 +19,12 @@ interface Draft {
   readonly paymentTerms: string;
   readonly officeAddress: PostalAddress;
   readonly active: boolean;
+  /** MULTI-CO-1: the companies the customer is a customer of, as stored. */
+  readonly companyIds: readonly string[];
 }
 
 const draftFrom = (customer: Customer): Draft => ({
+  companyIds: customer.companyIds,
   name: customer.name,
   accountNumber: customer.accountNumber,
   registrationNumber: customer.registrationNumber,
@@ -72,14 +77,32 @@ export const EditCustomerDialog = ({
       officeAddress: { ...current.officeAddress, [key]: value },
     }));
 
+  const [companyError, setCompanyError] = useState<string | null>(null);
+
   const close = (): void => {
     operation.clearError();
+    setCompanyError(null);
     onClose();
   };
 
+  /*
+   * A COMPANY THE CUSTOMER HAS JOBS FOR STAYS. MULTI-CO-1: a job's company never
+   * changes, so the server refuses removing it (`customer_company_in_use`) and
+   * its sentence is shown beside the boxes, where the office is looking — as
+   * well as in the notice at the top.
+   */
+  const serverCompanyError =
+    operation.violations.find(
+      (violation) => violation.code === 'customer_company_in_use' || violation.code === 'customer_company_required',
+    )?.message ?? null;
+
   const submit = async (): Promise<void> => {
+    const companyProblem = customerCompaniesProblem(draft.companyIds);
+    setCompanyError(companyProblem);
+    if (companyProblem !== null) return;
     const ok = await operation.run(async () => {
       await customers.update(customer.id, {
+        companyIds: [...draft.companyIds],
         name: draft.name.trim(),
         accountNumber: draft.accountNumber.trim(),
         registrationNumber: draft.registrationNumber.trim(),
@@ -129,6 +152,17 @@ export const EditCustomerDialog = ({
 
         <div>
           <SectionHeading title="Company" />
+          <div className="mt-3">
+            <CompanyCheckboxes
+              value={draft.companyIds}
+              onChange={(next) => {
+                set('companyIds', next);
+                if (next.length > 0) setCompanyError(null);
+              }}
+              error={companyError ?? serverCompanyError}
+              hint="A company this customer has jobs for cannot be removed: a job’s company never changes."
+            />
+          </div>
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <TextField
               label="Registered name"

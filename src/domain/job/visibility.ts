@@ -249,6 +249,8 @@ export type JobSummary = Pick<
   | 'officeHandling'
   | 'invoice'
   | 'purchaseOrder'
+  /** MULTI-CO-1: the Jobs list shows which company each job is raised for. Not a price. */
+  | 'companyId'
   | 'customerId'
   | 'siteId'
   | 'machineId'
@@ -296,6 +298,7 @@ export const summariesVisibleTo = <T extends JobSummary>(
 export const toJobSummary = (job: JobSummary): JobSummary => ({
   id: job.id,
   jobNumber: job.jobNumber,
+  companyId: job.companyId,
   status: job.status,
   jobType: job.jobType,
   priority: job.priority,

@@ -24,6 +24,7 @@ import { useCurrentUser } from '@/providers/AppProvider';
 import { formatDate, isOverdue } from '@/lib/format';
 import { JobTypeChip } from './JobTypeChip';
 import { cn } from '@/lib/cn';
+import { companyLabel } from '@/lib/companies';
 
 export interface JobListTableProps {
   readonly rows: readonly JobListRow[];
@@ -81,6 +82,17 @@ export const JobListTable = ({
           <p className="truncate font-medium text-steel-900">{row.customerName}</p>
           <p className="truncate text-xs text-steel-500">{row.siteName}</p>
         </div>
+      ),
+    },
+    {
+      // MULTI-CO-1: which company the job is raised for. Secondary, so a phone row is not crowded.
+      key: 'company',
+      header: 'Company',
+      secondary: true,
+      render: (row) => (
+        <Badge tone="outline" size="sm">
+          {companyLabel(row.job.companyId)}
+        </Badge>
       ),
     },
     {

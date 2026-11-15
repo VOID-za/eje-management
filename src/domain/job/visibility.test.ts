@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_COMPANY_ID,
   asCustomerId,
   asJobId,
   asMachineId,
@@ -259,6 +260,7 @@ describe('the history a repository is asked to resolve', () => {
 const summary = (over: Partial<JobSummary> = {}): JobSummary => ({
   id: asJobId(`job-${Math.random().toString(36).slice(2)}`),
   jobNumber: 'EJE-1000',
+  companyId: DEFAULT_COMPANY_ID,
   status: 'in_progress',
   jobType: 'breakdown',
   priority: 'normal',

@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  asCompanyId,
   asCustomerId,
   asJobId,
   asMachineId,
@@ -267,6 +268,7 @@ export class PostgresJobRepository implements JobRepository {
         repairDescription: schema.jobs.repairDescription,
         repairQuantity: schema.jobs.repairQuantity,
         moreRepairItems: schema.jobs.moreRepairItems,
+        companyId: schema.jobs.companyId,
         customerId: schema.jobs.customerId,
         siteId: schema.jobs.siteId,
         machineId: schema.jobs.machineId,
@@ -346,6 +348,7 @@ export class PostgresJobRepository implements JobRepository {
         quantity: row.repairQuantity,
       },
       moreRepairItems: repairItemsFromColumn(row.moreRepairItems),
+      companyId: asCompanyId(row.companyId),
       customerId: asCustomerId(row.customerId),
       siteId: row.siteId === null ? null : asSiteId(row.siteId),
       machineId: row.machineId === null ? null : asMachineId(row.machineId),

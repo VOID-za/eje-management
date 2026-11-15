@@ -3,12 +3,11 @@
 import { useState } from 'react';
 import {
   can,
+  DEFAULT_COMPANY_ID,
   JOB_TYPE_CODES,
-  labourRateLabel,
   listJobTypeDefinitions,
   PRIORITY_ORDER,
   priorityLabel,
-  type LabourRateType,
   type SystemSettings,
 } from '@/domain';
 import {
@@ -22,8 +21,8 @@ import {
   LoadingPanel,
   QueryFailure,
   Tabs,
-  TextField,
 } from '@/components/ui';
+import { CompanyAdminPanel } from '@/components/admin/CompanyAdminPanel';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { AdminNotice } from '@/components/admin/AdminNotice';
 import { ChecklistAdminPanel } from '@/components/admin/ChecklistAdminPanel';
@@ -34,10 +33,9 @@ import { EmailTemplatesPanel } from '@/components/admin/EmailTemplatesPanel';
 import { IntegrationsPanel } from '@/components/admin/IntegrationsPanel';
 import { SIMULATED_CAPABILITIES } from '@/config/demo';
 import { useOperation } from '@/hooks/useOperation';
-import { demo, reads, settings as settingsApi } from '@/api/endpoints';
+import { demo, reads } from '@/api/endpoints';
 import { useQuery } from '@/hooks/useQuery';
 import { useCurrentUser } from '@/providers/AppProvider';
-import { formatCurrency } from '@/lib/format';
 
 type TabId =
   | 'users'
@@ -61,6 +59,11 @@ type TabId =
 const AdminPage = () => {
   const user = useCurrentUser();
   const [tab, setTab] = useState<TabId>('users');
+  /*
+   * MULTI-CO-1: which company Company details and Rates & VAT show — one
+   * choice for both, so "Edit rates" on a company's details opens ITS rates.
+   */
+  const [companyId, setCompanyId] = useState<string>(DEFAULT_COMPANY_ID);
 
   // Composed on the server, which also refuses a role without `admin.access` —
   // the check below is a courtesy, never the thing that protects the screen.
@@ -126,8 +129,9 @@ const AdminPage = () => {
         <>
           {tab === 'users' && <UsersPanel users={data.users} onChanged={query.refetch} />}
           {tab === 'jobTypes' && <JobTypesPanel />}
+          {/* MULTI-CO-1: each company's rates, saved to that company — the one rates editor. */}
           {tab === 'rates' && can(user.role, 'settings.rates') && (
-            <RatesPanel settings={data.settings} onSaved={query.refetch} />
+            <CompanyAdminPanel section="rates" companyId={companyId} onCompanyChange={setCompanyId} />
           )}
           {tab === 'checklists' && can(user.role, 'settings.checklists') && (
             <ChecklistAdminPanel
@@ -146,8 +150,21 @@ const AdminPage = () => {
               <FinanceRecipientCard user={user} settings={data.settings} onSaved={query.refetch} />
             </div>
           )}
+          {/* MULTI-CO-1: EJE and WD Hearn JHB, each configured on its own. The office's (`settings.rates`). */}
+          {tab === 'system' && can(user.role, 'settings.rates') && (
+            <div className="mb-5">
+              <h2 className="mb-3 text-lg font-semibold text-steel-900">Company details</h2>
+              <CompanyAdminPanel
+                section="details"
+                companyId={companyId}
+                onCompanyChange={setCompanyId}
+                onOpenRates={() => setTab('rates')}
+              />
+            </div>
+          )}
           {tab === 'system' && (
             <SystemPanel
+              companiesAdministered={can(user.role, 'settings.rates')}
               settings={data.settings}
               counts={{
                 customers: data.customers.length,
@@ -233,246 +250,65 @@ const JobTypesPanel = () => (
   </div>
 );
 
-const RatesPanel = ({
-  settings,
-  onSaved,
-}: {
-  readonly settings: SystemSettings;
-  readonly onSaved: () => void;
-}) => {
-  const operation = useOperation();
-  const [draft, setDraft] = useState(() => ({
-    normal: (settings.labourRates.normal / 100).toFixed(2),
-    overtime: (settings.labourRates.overtime / 100).toFixed(2),
-    double: (settings.labourRates.double / 100).toFixed(2),
-    callout: (settings.calloutRate / 100).toFixed(2),
-    testBench: (settings.testBenchFee / 100).toFixed(2),
-    kilometre: (settings.kilometreRate / 100).toFixed(2),
-    vat: String(settings.vatPercentage),
-  }));
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  const toCents = (value: string): number => Math.round(Number.parseFloat(value) * 100);
-  const valid =
-    ['normal', 'overtime', 'double', 'callout', 'testBench', 'kilometre'].every((key) => {
-      const value = Number.parseFloat(draft[key as keyof typeof draft]);
-      return Number.isFinite(value) && value >= 0;
-    }) && Number.isFinite(Number.parseFloat(draft.vat));
-
-  const save = async () => {
-    setSaving(true);
-    // Through the operation, which is where the office-only rule is enforced
-    // and where the change is recorded on the audit trail.
-    const ok = await operation.run(() =>
-      /*
-       * The editable fields, named one by one.
-       *
-       * Deliberately not a spread of the stored settings: `nextJobSequence` is
-       * the server's, and a client that sends it back is a client that can hand
-       * out a job number twice. The server refuses it, and this is what the
-       * server is asking for.
-       */
-      settingsApi.update({
-        companyName: settings.companyName,
-        companyRegistration: settings.companyRegistration,
-        companyVatNumber: settings.companyVatNumber,
-        companyPhone: settings.companyPhone,
-        companyEmail: settings.companyEmail,
-        companyAddress: settings.companyAddress,
-        jobNumberPrefix: settings.jobNumberPrefix,
-        quietHoursStart: settings.quietHoursStart,
-        quietHoursEnd: settings.quietHoursEnd,
-        labourRates: {
-          normal: toCents(draft.normal),
-          overtime: toCents(draft.overtime),
-          double: toCents(draft.double),
-        },
-        calloutRate: toCents(draft.callout),
-        testBenchFee: toCents(draft.testBench),
-        kilometreRate: toCents(draft.kilometre),
-        vatPercentage: Number.parseFloat(draft.vat),
-      }),
-    );
-    setSaving(false);
-    setConfirmOpen(false);
-    if (!ok) return;
-    setSaved(true);
-    onSaved();
-  };
-
-  return (
-    <div className="space-y-5">
-      {operation.error !== null && (
-        <p role="alert" className="text-sm font-medium text-signal-600">
-          {operation.error}
-        </p>
-      )}
-
-      <AdminNotice
-        title="Changing rates affects every open job"
-        body="A rate change re-prices open work immediately. It cannot reach a job the customer has already signed: every job freezes a full copy of the rates at signature and is priced from that copy for the rest of its life."
-      />
-
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Labour rates" description="Charged per hour, excluding VAT." />
-          <div className="mt-4 space-y-4">
-            {(['normal', 'overtime', 'double'] as const).map((key) => (
-              <TextField
-                key={key}
-                label={labourRateLabel(key as LabourRateType)}
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                value={draft[key]}
-                onChange={(event) => {
-                  setSaved(false);
-                  setDraft((current) => ({ ...current, [key]: event.target.value }));
-                }}
-                hint={`Currently ${formatCurrency(settings.labourRates[key])} per hour`}
-              />
-            ))}
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader title="Call-out, test bench, travel and VAT" />
-          <div className="mt-4 space-y-4">
-            <TextField
-              label="Call-out fee"
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              value={draft.callout}
-              onChange={(event) => {
-                setSaved(false);
-                setDraft((current) => ({ ...current, callout: event.target.value }));
-              }}
-              hint={`Currently ${formatCurrency(settings.calloutRate)}. Charged once, on jobs where the office applies it.`}
-            />
-            {/* BENCH-1: edited by a Master or a Coordinator, like every rate here. */}
-            <TextField
-              label="Test bench fee"
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              value={draft.testBench}
-              onChange={(event) => {
-                setSaved(false);
-                setDraft((current) => ({ ...current, testBench: event.target.value }));
-              }}
-              hint={`Currently ${formatCurrency(settings.testBenchFee)}. Charged once, on jobs where the test bench box is ticked. A signed job keeps the fee it was signed at.`}
-              data-testid="test-bench-fee"
-            />
-            <TextField
-              label="Kilometre rate"
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              value={draft.kilometre}
-              onChange={(event) => {
-                setSaved(false);
-                setDraft((current) => ({ ...current, kilometre: event.target.value }));
-              }}
-              hint={`Currently ${formatCurrency(settings.kilometreRate)} per km. Travel is charged on distance only.`}
-            />
-            <TextField
-              label="VAT percentage"
-              type="number"
-              min="0"
-              max="100"
-              step="0.5"
-              inputMode="decimal"
-              value={draft.vat}
-              onChange={(event) => {
-                setSaved(false);
-                setDraft((current) => ({ ...current, vat: event.target.value }));
-              }}
-              hint={`Currently ${settings.vatPercentage}%`}
-            />
-          </div>
-
-          <div className="mt-6 flex items-center justify-end gap-2 border-t border-steel-100 pt-4">
-            {saved && (
-              <Badge tone="green" size="sm">
-                Saved
-              </Badge>
-            )}
-            <Button onClick={() => setConfirmOpen(true)} disabled={!valid}>
-              Save rates
-            </Button>
-          </div>
-        </Card>
-      </div>
-
-      <ConfirmDialog
-        open={confirmOpen}
-        title="Update charge-out rates?"
-        message="Open jobs will be re-priced at the new rates. Jobs the customer has already signed keep the rates that were frozen onto them at signature, so signed job cards and their totals do not move."
-        confirmLabel="Update rates"
-        busy={saving}
-        onConfirm={save}
-        onCancel={() => setConfirmOpen(false)}
-      />
-    </div>
-  );
-};
-
 const SystemPanel = ({
   settings,
   counts,
+  companiesAdministered,
 }: {
   readonly settings: SystemSettings;
   readonly counts: { customers: number; machines: number; users: number };
+  /**
+   * MULTI-CO-1: the companies are edited above (Company details), each with its
+   * own numbering, so EJE's details and prefix are not repeated read-only here.
+   * A role that cannot administer them still sees EJE's, as before.
+   */
+  readonly companiesAdministered: boolean;
 }) => {
   const operation = useOperation();
   const [confirmReset, setConfirmReset] = useState(false);
 
+  const rows = (entries: readonly (readonly [string, string])[]) => (
+    <dl className="mt-4 space-y-2.5 text-sm">
+      {entries.map(([label, value]) => (
+        <div key={label} className="flex justify-between gap-4 border-b border-steel-100 pb-2">
+          <dt className="text-steel-500">{label}</dt>
+          <dd className="text-right font-medium break-words text-steel-800">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Company details" description="Printed on every job card." />
-          <dl className="mt-4 space-y-2.5 text-sm">
-            {[
+        {!companiesAdministered && (
+          <Card>
+            <CardHeader title="Company details" description="EJE, as printed on its job cards." />
+            {rows([
               ['Company name', settings.companyName],
               ['Registration number', settings.companyRegistration],
               ['VAT number', settings.companyVatNumber],
               ['Telephone', settings.companyPhone],
               ['Email', settings.companyEmail],
               ['Address', settings.companyAddress],
-            ].map(([label, value]) => (
-              <div key={label} className="flex justify-between gap-4 border-b border-steel-100 pb-2">
-                <dt className="text-steel-500">{label}</dt>
-                <dd className="text-right font-medium text-steel-800">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </Card>
+            ])}
+          </Card>
+        )}
 
         <Card>
-          <CardHeader title="Job numbering and notifications" />
-          <dl className="mt-4 space-y-2.5 text-sm">
-            {[
-              ['Job number prefix', settings.jobNumberPrefix],
-              ['Next job number', `${settings.jobNumberPrefix}${settings.nextJobSequence}`],
-              ['Quiet hours', `${settings.quietHoursStart} – ${settings.quietHoursEnd}`],
-              ['Customers on file', String(counts.customers)],
-              ['Machines on file', String(counts.machines)],
-              ['Users', String(counts.users)],
-            ].map(([label, value]) => (
-              <div key={label} className="flex justify-between gap-4 border-b border-steel-100 pb-2">
-                <dt className="text-steel-500">{label}</dt>
-                <dd className="text-right font-medium text-steel-800">{value}</dd>
-              </div>
-            ))}
-          </dl>
+          <CardHeader title={companiesAdministered ? 'Notifications and records' : 'Job numbering and notifications'} />
+          {rows([
+            ...(companiesAdministered
+              ? []
+              : ([
+                  ['Job number prefix', settings.jobNumberPrefix],
+                  ['Next job number', `${settings.jobNumberPrefix}${settings.nextJobSequence}`],
+                ] as const)),
+            ['Quiet hours', `${settings.quietHoursStart} – ${settings.quietHoursEnd}`],
+            ['Customers on file', String(counts.customers)],
+            ['Machines on file', String(counts.machines)],
+            ['Users', String(counts.users)],
+          ])}
         </Card>
       </div>
 

@@ -203,6 +203,7 @@ class DemoJobRepository implements JobRepository {
     return jobs.map((job) => ({
       id: job.id,
       jobNumber: job.jobNumber,
+      companyId: job.companyId,
       status: job.status,
       jobType: job.jobType,
       priority: job.priority,

@@ -36,6 +36,7 @@ import {
 } from '@/components/ui';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { jobs as api, reads } from '@/api/endpoints';
+import { customersForCompany, customerStaysForCompany } from '@/lib/companies';
 import { useQuery } from '@/hooks/useQuery';
 import { useCurrentUser } from '@/providers/AppProvider';
 import { RuleViolationNotice } from '@/components/jobs/RuleViolationNotice';
@@ -88,6 +89,14 @@ const NewJobPage = () => {
   const user = useCurrentUser();
   const operation = useOperation();
 
+  /*
+   * THE COMPANY THE JOB IS RAISED FOR. MULTI-CO-1 (the owner, 15 November 2026:
+   * "Job for Which Company?"). '' until somebody chooses — the default company
+   * (EJE) is shown selected and sent, so nobody has to pick EJE to raise the
+   * jobs they always have. Fixed once the job (or its draft) exists: its number,
+   * letterhead and rates follow from it, and no later save can change it.
+   */
+  const [companyChoice, setCompanyChoice] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [siteId, setSiteId] = useState('');
   const [contactId, setContactId] = useState('');
@@ -187,6 +196,32 @@ const NewJobPage = () => {
 
   const definition = getJobTypeDefinition(jobType);
 
+  // MULTI-CO-1: the chosen company, or the default one until somebody chooses.
+  const companies = data.companies ?? [];
+  const company =
+    companies.find((candidate) => candidate.id === companyChoice) ??
+    companies.find((candidate) => candidate.isDefault) ??
+    companies[0] ??
+    null;
+  const companyId = company?.id ?? '';
+  /** Only the chosen company's customers — the server refuses any other (`createJob`). */
+  const companyCustomers = company === null ? data.customers : customersForCompany(data.customers, companyId);
+
+  /*
+   * CHANGING THE COMPANY KEEPS A CUSTOMER OF BOTH, AND CLEARS ANY OTHER — with
+   * its site, contact and machine, which were chosen for that customer.
+   */
+  const chooseCompany = (nextId: string) => {
+    setCompanyChoice(nextId);
+    const chosen = data.customers.find((customer) => customer.id === customerId);
+    if (customerId.length > 0 && !customerStaysForCompany(chosen, nextId)) {
+      setCustomerId('');
+      setSiteId('');
+      setContactId('');
+      setMachineId('');
+    }
+  };
+
   /*
    * SAVING A DRAFT ASKS LESS, AND NOTHING ELSE IS RELAXED. DRAFT-1.
    *
@@ -271,6 +306,8 @@ const NewJobPage = () => {
     let created: Job | null = null;
     const ok = await operation.run(async () => {
       created = await api.create({
+        // MULTI-CO-1: always sent — a draft keeps its company too, and the server never guesses one.
+        ...(companyId.length > 0 ? { companyId } : {}),
         customerId,
         siteId: siteId.length === 0 ? null : siteId,
         contactId,
@@ -492,10 +529,18 @@ const NewJobPage = () => {
                   setContactId('');
                   setMachineId('');
                 }}
-                options={data.customers.map((customer) => ({
+                options={companyCustomers.map((customer) => ({
                   value: customer.id,
                   label: customer.name,
                 }))}
+                hint={
+                  company === null
+                    ? undefined
+                    : companyCustomers.length === 0
+                      ? `No customer is linked to ${company.name} yet. Link one on the customer first.`
+                      : `${company.name} customers only.`
+                }
+                data-testid="job-customer"
               />
               {definition.siteOptional ? (
                 <SelectField
@@ -604,6 +649,63 @@ const NewJobPage = () => {
               />
             </div>
           </Card>
+
+          {/*
+            JOB FOR WHICH COMPANY? MULTI-CO-1 (the owner, 15 November 2026),
+            between where the work is and what it is, as the owner placed it.
+            A radio group, because exactly one is always chosen: large tiles a
+            gloved finger can hit on a tablet, one per row on a phone.
+          */}
+          {companies.length > 0 && (
+            <Card data-testid="job-company-card">
+              <fieldset>
+                <legend className="text-base font-semibold text-steel-900">Job for Which Company?</legend>
+                <p className="mt-1 text-sm text-steel-500">
+                  The company the job card, its number and its rates belong to. Fixed once the job is raised.
+                </p>
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="job-company">
+                  {companies.map((option) => {
+                    const checked = option.id === companyId;
+                    return (
+                      <label
+                        key={option.id}
+                        className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-[var(--radius-control)] border px-4 py-3 text-sm transition-colors ${
+                          checked
+                            ? 'border-eje-500 bg-eje-50 ring-2 ring-eje-100'
+                            : 'border-steel-200 hover:border-steel-400'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="job-company"
+                          value={option.id}
+                          checked={checked}
+                          onChange={() => chooseCompany(option.id)}
+                          className="size-5 shrink-0"
+                          data-testid={`job-company-${option.id}`}
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-semibold text-steel-900">
+                            {option.isDefault ? option.code : option.name}
+                          </span>
+                          <span className="block text-xs text-steel-500">
+                            Job numbers {option.jobNumberPrefix}…
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {company !== null && (
+                  <p className="mt-3 text-sm text-steel-700" data-testid="job-company-prefix">
+                    This job will be numbered{' '}
+                    <span className="font-mono font-semibold text-steel-900">{company.jobNumberPrefix}</span>
+                    {' '}— the next {company.isDefault ? company.code : company.name} number.
+                  </p>
+                )}
+              </fieldset>
+            </Card>
+          )}
 
           <Card>
             <CardHeader title="What is the job?" />

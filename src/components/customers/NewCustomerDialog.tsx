@@ -7,6 +7,8 @@ import { Button, Modal, SectionHeading, SelectField, TextAreaField, TextField } 
 import { customers } from '@/api/endpoints';
 import { useOperation } from '@/hooks/useOperation';
 import { RuleViolationNotice } from '@/components/jobs/RuleViolationNotice';
+import { CompanyCheckboxes } from '@/components/customers/CompanyCheckboxes';
+import { NEW_CUSTOMER_COMPANY_IDS, customerCompaniesProblem } from '@/lib/companies';
 
 /**
  * Add Customer.
@@ -63,6 +65,14 @@ export const NewCustomerDialog = ({
    * twice. It is edited on the customer afterwards where it differs.
    */
   const [officeAtSite, setOfficeAtSite] = useState(true);
+  /*
+   * MULTI-CO-1. The owner: "WD Hearn assignment checkbox selected by default",
+   * "Allow EJE selection". Sent explicitly, always — the server reads an
+   * omitted list as EJE, which is what the release before companies means,
+   * not what this screen shows.
+   */
+  const [companyIds, setCompanyIds] = useState<readonly string[]>(NEW_CUSTOMER_COMPANY_IDS);
+  const [companyError, setCompanyError] = useState<string | null>(null);
 
   const set = <K extends keyof NewCustomerInput>(key: K, value: NewCustomerInput[K]): void =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -82,15 +92,21 @@ export const NewCustomerDialog = ({
   const close = (): void => {
     setDraft(EMPTY);
     setAddContact(true);
+    setCompanyIds(NEW_CUSTOMER_COMPANY_IDS);
+    setCompanyError(null);
     operation.clearError();
     onClose();
   };
 
   const submit = async (): Promise<void> => {
+    const companyProblem = customerCompaniesProblem(companyIds);
+    setCompanyError(companyProblem);
+    if (companyProblem !== null) return;
     let createdId: string | null = null;
     const ok = await operation.run(async () => {
       const result = await customers.create({
         ...draft,
+        companyIds: [...companyIds],
         officeAddress: officeAtSite
           ? {
               line1: draft.site.addressLine1,
@@ -107,6 +123,7 @@ export const NewCustomerDialog = ({
     if (ok && createdId !== null) {
       setDraft(EMPTY);
       setAddContact(true);
+      setCompanyIds(NEW_CUSTOMER_COMPANY_IDS);
       onCreated(createdId);
     }
   };
@@ -140,6 +157,16 @@ export const NewCustomerDialog = ({
 
         <div>
           <SectionHeading title="Company" />
+          <div className="mt-3">
+            <CompanyCheckboxes
+              value={companyIds}
+              onChange={(next) => {
+                setCompanyIds(next);
+                if (next.length > 0) setCompanyError(null);
+              }}
+              error={companyError}
+            />
+          </div>
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <TextField
               label="Company name"
