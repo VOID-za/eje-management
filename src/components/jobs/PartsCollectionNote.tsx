@@ -3,6 +3,7 @@ import { DEFAULT_COMPANY_ID } from '@/domain';
 import type { JobView } from '@/application/job-view';
 import { SignatureDisplay } from './SignaturePad';
 import { DocumentLetterhead } from '@/components/documents/EjeLetterhead';
+import { showsMasterLetterhead } from '@/lib/branding/eje-letterhead';
 
 /**
  * The EJE parts collection / delivery note.
@@ -51,12 +52,17 @@ export const PartsCollectionNote = ({ view }: { readonly view: JobView }) => {
         {/*
           LETTERHEAD-2: the document's letterhead, chosen as the PDF chooses it — EJE's
           master letterhead, another company's uploaded one, or this text header as before.
+          Chosen by the job's company, as the PDF is (`job.companyId`). An issued job shows the
+          header its stored PDF has: the master only when it was issued with it. On a phone the
+          master takes the document's whole width (into its padding), the title below it.
         */}
         <DocumentLetterhead
-          companyId={model.company.id}
+          companyId={view.job.companyId}
           companyName={model.company.name}
           letterhead={view.companyLetterhead}
+          master={showsMasterLetterhead(view.job.finalDocument)}
           className="min-w-0 flex-1 basis-[22rem]"
+          masterClassName="-mx-6 min-w-0 basis-[calc(100%+3rem)] sm:mx-0 sm:flex-1 sm:basis-[22rem]"
           fallback={
             <div>
               <div className="flex items-center gap-3">

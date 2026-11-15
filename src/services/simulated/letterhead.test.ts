@@ -15,7 +15,7 @@ import {
 import { EJE_MARK_POLYGONS } from '@/lib/branding/eje-letterhead-mark';
 import { renderJobCardPdf } from './job-card-pdf';
 import { renderCorrectionPdf } from './correction-pdf';
-import { renderDeliveryNotePdf } from './delivery-note-pdf';
+import { DELIVERY_NOTE_MASTER_EXTRA, renderDeliveryNotePdf } from './delivery-note-pdf';
 import { renderTimesheetPdf } from './timesheet-pdf';
 import { renderAttendancePdf } from './attendance-pdf';
 import { LETTERHEAD_TOP, drawLetterhead, fitLetterhead } from './pdf-sheet';
@@ -79,6 +79,8 @@ interface Generator {
    * MASTER_HEADER_EXTRA so its lines are readable). Everything below then moves down by exactly this much.
    */
   readonly masterBandDrop?: number;
+  /** A document that runs onto further pages: what no longer fits on page 1 flows onto the next. */
+  readonly multiPage?: boolean;
   /** What must still read in the header with a letterhead. */
   readonly header: readonly string[];
   readonly render: (letterhead: DocumentLetterhead | undefined, omit?: boolean) => Promise<Uint8Array>;
@@ -122,6 +124,8 @@ const GENERATORS: readonly Generator[] = [
   {
     name: 'timesheetMultiPage',
     band: { bottom: 789, left: 40, right: 555.28 },
+    masterBandDrop: 28,
+    multiPage: true,
     header: ['TIME SHEET'],
     render: async (letterhead, omit) =>
       renderTimesheetPdf(timesheet(400), omit === true ? { generatedAt: GENERATED_AT } : { generatedAt: GENERATED_AT, letterhead }).bytes,
@@ -253,6 +257,34 @@ describe('the delivery note with a job number too long to sit beside the letterh
 });
 
 /**
+ * LETTERHEAD-2: in the delivery note's second arrangement (a job number too long to sit beside the band) the EJE
+ * master letterhead takes a band DELIVERY_NOTE_MASTER_EXTRA taller, so its lines are readable; the title line and
+ * everything below move down by exactly that much. An uploaded image there is unchanged (tested above).
+ */
+describe('the delivery note with a long job number and the EJE master letterhead', () => {
+  it('draws the master at a readable size and moves the title line and the body down by exactly the extra', () => {
+    const model = { ...deliveryNoteModel, jobNumber: 'EJE-9001-'.padEnd(60, 'X') };
+    const withImage = renderDeliveryNotePdf(model, wide).bytes;
+    const withMaster = renderDeliveryNotePdf(model, EJE_MASTER_LETTERHEAD).bytes;
+    const runs = textRuns(withMaster);
+    expect(runs.find((run) => run.value === 'Bonfoi Office Park')!.size).toBeGreaterThanOrEqual(4.5);
+    const title = runs.find((run) => run.value === 'DELIVERY NOTE')!;
+    const imageTitle = textRuns(withImage).find((run) => run.value === 'DELIVERY NOTE')!;
+    expect(title.y).toBeCloseTo(imageTitle.y - DELIVERY_NOTE_MASTER_EXTRA, 3);
+    for (const line of MASTER_TEXT) expect(runs.find((run) => run.value === line)!.y, line).toBeGreaterThan(title.y + 12);
+    const below = (bytes: Uint8Array, y: number) => textRuns(bytes).filter((run) => run.page > 1 || (run.y < y && run.y >= 40));
+    const moved = below(withMaster, title.y - 4);
+    const before = below(withImage, imageTitle.y - 4);
+    expect(moved.map((run) => run.value)).toEqual(before.map((run) => run.value));
+    moved.forEach((run, index) => {
+      expect(run.x).toBeCloseTo(before[index]!.x, 3);
+      expect(run.y).toBeCloseTo(run.page > 1 ? before[index]!.y : before[index]!.y - DELIVERY_NOTE_MASTER_EXTRA, 3);
+    });
+    expect(inspectPdf(withMaster).pageCount).toBe(inspectPdf(withImage).pageCount);
+  });
+});
+
+/**
  * LETTERHEAD-2: the EJE MASTER LETTERHEAD on every generator — drawn as vector text and the
  * traced mark in exactly the header band an uploaded image would occupy, and nothing below
  * the band moved. And WD Hearn JHB (or any company that is not EJE) unchanged to the byte.
@@ -274,6 +306,9 @@ describe.each(GENERATORS)('$name with the EJE master letterhead', (generator) =>
       expect(run!.x, line).toBeGreaterThanOrEqual(generator.band.left - 0.01);
       expect(run!.x + run!.width / SUBSTITUTION_ALLOWANCE, line).toBeLessThanOrEqual(generator.band.right + 0.01);
     }
+    // Readable: the serif address and contact lines at about the job card's size (~5 pt), never the ~3 pt of a thin strip.
+    const serif = runs.find((candidate) => candidate.value === 'Bonfoi Office Park')!;
+    expect(serif.size).toBeGreaterThanOrEqual(4.5);
     // The faces of the paper: Helvetica-BoldOblique, Times-Bold and Times-BoldItalic, named and not embedded.
     const text = Buffer.from(bytes).toString('latin1');
     for (const font of ['Helvetica-BoldOblique', 'Times-Bold', 'Times-BoldItalic']) expect(text).toContain(`/BaseFont /${font} `);
@@ -309,6 +344,27 @@ describe.each(GENERATORS)('$name with the EJE master letterhead', (generator) =>
     expect(header).not.toContain(companyLine.value);
     if (drop === 0) {
       expect(runsBelow(withMaster, masterBottom - 8)).toEqual(runsBelow(without, masterBottom - 8));
+    } else if (generator.multiPage === true) {
+      // Page 1: every line it still holds is the same line, exactly `drop` lower (the footer stays at the foot).
+      const firstPage = (bytes: Uint8Array, y: number) => textRuns(bytes).filter((run) => run.page === 1 && run.y < y && run.y >= 40);
+      const moved = firstPage(withMaster, masterBottom - 8);
+      const before = firstPage(without, generator.band.bottom - 8);
+      expect(moved.length).toBeGreaterThan(before.length * 0.8);
+      moved.forEach((run, index) => {
+        expect(run.value).toBe(before[index]!.value);
+        expect(run.x).toBeCloseTo(before[index]!.x, 3);
+        expect(run.y).toBeCloseTo(before[index]!.y - drop, 3);
+        expect(run.size).toBeCloseTo(before[index]!.size, 3);
+      });
+      // What no longer fits flows on: every body line is still printed, in order, nothing dropped or doubled.
+      const repeated = new Set(['Time Sheet (continued)', 'Date', 'Customer', 'OT', 'D/T', 'Callout', 'Int Km', 'Cust Km']);
+      const content = (bytes: Uint8Array, y: number) =>
+        textRuns(bytes).filter((run) => (run.page > 1 || run.y < y) && run.y >= 40 && !repeated.has(run.value)).map((run) => run.value);
+      expect(content(withMaster, masterBottom - 8)).toEqual(content(without, generator.band.bottom - 8));
+      const pages = inspectPdf(withMaster).pageCount;
+      expect(pages - inspectPdf(without).pageCount).toBeGreaterThanOrEqual(0);
+      expect(pages - inspectPdf(without).pageCount).toBeLessThanOrEqual(1);
+      textRuns(withMaster).forEach((run) => expect(run.page).toBeLessThanOrEqual(pages));
     } else {
       const below = (bytes: Uint8Array, y: number) => textRuns(bytes).filter((run) => run.page > 1 || run.y < y);
       const moved = below(withMaster, masterBottom - 8);
@@ -322,7 +378,7 @@ describe.each(GENERATORS)('$name with the EJE master letterhead', (generator) =>
         expect(run.size).toBeCloseTo(before[index]!.size, 3);
       });
     }
-    expect(inspectPdf(withMaster).pageCount).toBe(inspectPdf(without).pageCount);
+    if (generator.multiPage !== true) expect(inspectPdf(withMaster).pageCount).toBe(inspectPdf(without).pageCount);
     // No new collision, overrun or off-page text. The edge is the letterhead's own limit
     // (LETTERHEAD_TOP, 14pt from the paper's top): the band reaches it, image or master.
     const read = { margin: generator.band.left, edge: A4_HEIGHT - LETTERHEAD_TOP };

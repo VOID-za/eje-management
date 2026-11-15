@@ -1,6 +1,7 @@
 import type { DeliveryNoteModel } from '@/lib/job-card/delivery-note';
 import type { LetterheadReference } from '@/domain';
 import { DocumentLetterhead } from '@/components/documents/EjeLetterhead';
+import { showsMasterLetterhead } from '@/lib/branding/eje-letterhead';
 import { SignatureDisplay } from './SignaturePad';
 
 /**
@@ -13,25 +14,33 @@ import { SignatureDisplay } from './SignaturePad';
  * LETTERHEAD-2: its header is the job company's letterhead, chosen as the PDF
  * chooses it — EJE's master letterhead, another company's uploaded image, or
  * the text header as before. The model names the company only in words, so
- * the caller passes the job's company and its letterhead reference.
+ * the caller passes the job's company (`job.companyId`, the field the PDF is chosen by —
+ * required, so a caller cannot silently fall back to the old header) and its letterhead
+ * reference. An issued job's note shows the header its stored PDF has: the master only when
+ * the job's document was issued with it (a courier's note is issued with its job card).
  */
 export const DeliveryNoteDocument = ({
   model,
   companyId,
   letterhead,
+  finalDocument,
 }: {
   readonly model: DeliveryNoteModel;
-  /** The job's company; absent, the text header. */
-  readonly companyId?: string;
+  /** The job's company (`job.companyId`). */
+  readonly companyId: string;
   readonly letterhead?: LetterheadReference | null;
+  /** The job's issued document, or null while nothing is issued. */
+  readonly finalDocument: { readonly renderer: number | null } | null;
 }) => (
   <article className="eje-document mx-auto max-w-[210mm] bg-white p-6 text-[12px] text-steel-900 shadow-sm" data-testid="delivery-note-document">
-    <header className="flex items-start justify-between gap-4">
+    <header className="flex flex-wrap items-start justify-between gap-4 sm:flex-nowrap">
       <DocumentLetterhead
-        companyId={companyId ?? ''}
+        companyId={companyId}
         companyName={model.company.name}
         letterhead={letterhead}
+        master={showsMasterLetterhead(finalDocument)}
         className="min-w-0 flex-1"
+        masterClassName="-mx-4 min-w-0 basis-[calc(100%+2rem)] sm:mx-0 sm:flex-1"
         fallback={
           <div>
             <p className="text-base font-bold">{model.company.name}</p>

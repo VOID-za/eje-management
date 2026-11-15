@@ -5,6 +5,7 @@ import { loadJobView } from './job-view';
 import { loadDocumentPhotos } from './document-photos';
 import { loadCompanyLetterhead } from './company-letterhead';
 import { StorageIntegrityFailed, type FinalDocumentSource, type StoredDocument } from '@/services/ports';
+import { MASTER_LETTERHEAD_RENDERER, isMasterLetterhead } from '@/lib/branding/eje-letterhead';
 
 /**
  * The final document on a closed job: retrieval, not generation.
@@ -112,12 +113,13 @@ export const storeFinalDocument = async (
   // Stamped with the descriptor's own timestamp, so the file and the record
   // recorded on the job agree to the millisecond. The photographs are read
   // from storage here, on the server, because the job holds only their keys.
+  // LETTERHEAD-1: a document issued NOW carries its company's letterhead, if one is uploaded.
+  const letterhead = await loadCompanyLetterhead(context, source.job.companyId);
   const rendered = await context.services.pdf.render(
     {
       ...source,
       photoImages: await loadDocumentPhotos(context.services.storage, source.job),
-      // LETTERHEAD-1: a document issued NOW carries its company's letterhead, if one is uploaded.
-      letterhead: await loadCompanyLetterhead(context, source.job.companyId),
+      letterhead,
     },
     'final',
     descriptor.generatedAt,
@@ -127,7 +129,12 @@ export const storeFinalDocument = async (
     fileName: descriptor.fileName,
     contentType: FINAL_DOCUMENT_CONTENT_TYPE,
     bytes: rendered.bytes,
-    renderer: RENDERER_VERSION,
+    /*
+     * LETTERHEAD-2: an issue drawn with the EJE master letterhead is marked as such, so the screen
+     * shows the header this file has (`showsMasterLetterhead`). Only issues are marked: a backfill
+     * below is still written and compared as RENDERER_VERSION, so none is ever re-rendered for it.
+     */
+    renderer: isMasterLetterhead(letterhead) ? MASTER_LETTERHEAD_RENDERER : RENDERER_VERSION,
     // Issued, not backfilled: these bytes are the historical document and are
     // never re-rendered, however the renderer changes later.
     backfilled: false,

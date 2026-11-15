@@ -1,13 +1,13 @@
 import { A4_HEIGHT, A4_WIDTH, PdfBuilder, textWidth, type PdfFont } from '@/lib/pdf/writer';
 import { displaySize, type PdfImage } from '@/lib/pdf/image';
-import { charWidth } from '@/lib/pdf/metrics';
 import {
   LETTERHEAD_INK,
+  LETTERHEAD_PDF_FONT,
   isMasterLetterhead,
   layoutLetterhead,
+  letterheadLineWidth,
   type DocumentLetterhead,
   type LetterheadArea,
-  type LetterheadFontRole,
 } from '@/lib/branding/eje-letterhead';
 
 /**
@@ -204,19 +204,6 @@ export const fitLetterhead = (image: PdfImage, box: LetterheadBox): LetterheadBo
   return { x: box.x, y: box.y + (box.height - height) / 2, width, height };
 };
 
-const PDF_FONT: Record<LetterheadFontRole, PdfFont> = {
-  sansBoldItalic: 'boldItalic',
-  serifBold: 'serifBold',
-  serifBoldItalic: 'serifBoldItalic',
-};
-
-/** A run's width as the font's metrics give it — what the viewer advances — for centring. */
-const naturalWidth = (text: string, size: number, font: PdfFont): number => {
-  let thousandths = 0;
-  for (const character of text) thousandths += charWidth(character, font);
-  return (thousandths / 1000) * size;
-};
-
 /** The box in the y-DOWN space the master layout is described in (the page measured from its top). */
 const areaOf = (box: LetterheadBox): LetterheadArea => ({
   left: box.x,
@@ -245,9 +232,9 @@ export const drawEjeLetterhead = (pdf: PdfBuilder, box: LetterheadBox): void => 
     LETTERHEAD_INK,
   );
   for (const line of placed.lines) {
-    const font = PDF_FONT[line.role];
-    const width = line.runs.reduce((sum, part) => sum + naturalWidth(part.text, part.size, font), 0);
-    const x = line.x - width / 2;
+    const font = LETTERHEAD_PDF_FONT[line.role];
+    // Centred by its metric width — the same width the screen sets the line to (`letterheadLineWidth`).
+    const x = line.x - letterheadLineWidth(line) / 2;
     const y = A4_HEIGHT - line.baseline;
     const [only] = line.runs;
     if (line.runs.length === 1 && only !== undefined) {

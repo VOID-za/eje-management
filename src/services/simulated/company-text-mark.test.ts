@@ -102,16 +102,27 @@ describe('the EJE tile is EJE’s alone', () => {
 
   it('is not on WD Hearn JHB’s on-screen job card and collection note; EJE’s carry the master letterhead instead', () => {
     // LETTERHEAD-2: on screen, as in the PDF, EJE's header is the master letterhead — the
-    // text header (and its tile) is what a company WITHOUT a letterhead keeps.
+    // text header (and its tile) is what a company WITHOUT a letterhead keeps. A job not yet issued
+    // previews the master; the seeded jobs, issued before it, show the text header their PDFs have.
+    const preview = (view: JobView): JobView => ({ ...view, job: { ...view.job, finalDocument: null } });
+    // A WD Hearn JHB job: its company on the job (what the PDF is chosen by) and in the view.
+    const wdJob = (view: JobView): JobView => ({ ...preview(view), company: WDJ, job: { ...preview(view).job, companyId: WD_HEARN_JHB_COMPANY_ID } });
     for (const markup of [
-      renderToStaticMarkup(createElement(JobCardDocument, { view: ejeView })),
-      renderToStaticMarkup(createElement(PartsCollectionNote, { view: ejePartsView })),
+      renderToStaticMarkup(createElement(JobCardDocument, { view: preview(ejeView) })),
+      renderToStaticMarkup(createElement(PartsCollectionNote, { view: preview(ejePartsView) })),
     ]) {
       expect(markup).toContain('data-letterhead="eje-master"');
       expect(markup).not.toMatch(tileMarkup);
     }
-    const wdCard = renderToStaticMarkup(createElement(JobCardDocument, { view: { ...ejeView, company: WDJ } }));
-    const wdNote = renderToStaticMarkup(createElement(PartsCollectionNote, { view: { ...ejePartsView, company: WDJ } }));
+    for (const markup of [
+      renderToStaticMarkup(createElement(JobCardDocument, { view: ejeView })),
+      renderToStaticMarkup(createElement(PartsCollectionNote, { view: ejePartsView })),
+    ]) {
+      expect(markup).not.toContain('data-letterhead');
+      expect(markup).toMatch(tileMarkup);
+    }
+    const wdCard = renderToStaticMarkup(createElement(JobCardDocument, { view: wdJob(ejeView) }));
+    const wdNote = renderToStaticMarkup(createElement(PartsCollectionNote, { view: wdJob(ejePartsView) }));
     for (const markup of [wdCard, wdNote]) {
       expect(markup).not.toMatch(tileMarkup);
       expect(markup).not.toMatch(/>EJE</u);
@@ -122,8 +133,8 @@ describe('the EJE tile is EJE’s alone', () => {
     // With an uploaded letterhead, WD Hearn JHB's on-screen documents show that image instead.
     const letterhead = { companyId: WD_HEARN_JHB_COMPANY_ID, sha256: 'wd-image' };
     for (const markup of [
-      renderToStaticMarkup(createElement(JobCardDocument, { view: { ...ejeView, company: WDJ, companyLetterhead: letterhead } })),
-      renderToStaticMarkup(createElement(PartsCollectionNote, { view: { ...ejePartsView, company: WDJ, companyLetterhead: letterhead } })),
+      renderToStaticMarkup(createElement(JobCardDocument, { view: { ...wdJob(ejeView), companyLetterhead: letterhead } })),
+      renderToStaticMarkup(createElement(PartsCollectionNote, { view: { ...wdJob(ejePartsView), companyLetterhead: letterhead } })),
     ]) {
       expect(markup).toContain('data-letterhead="uploaded"');
       expect(markup).toContain('alt="WD Hearn JHB letterhead"');
@@ -152,8 +163,8 @@ describe('the Delivery Note is released by the job’s company', () => {
     expect(wdText).toContain('Released by (WDJ)');
     expect(wdText).not.toContain('Released by (EJE)');
 
-    const markup = renderToStaticMarkup(createElement(DeliveryNoteDocument, { model: wdBuilt }));
+    const markup = renderToStaticMarkup(createElement(DeliveryNoteDocument, { model: wdBuilt, companyId: WD_HEARN_JHB_COMPANY_ID, finalDocument: null }));
     expect(markup).toContain('Released by (WDJ)');
-    expect(renderToStaticMarkup(createElement(DeliveryNoteDocument, { model: deliveryNoteModel }))).toContain('Released by (EJE)');
+    expect(renderToStaticMarkup(createElement(DeliveryNoteDocument, { model: deliveryNoteModel, companyId: DEFAULT_COMPANY_ID, finalDocument: null }))).toContain('Released by (EJE)');
   });
 });

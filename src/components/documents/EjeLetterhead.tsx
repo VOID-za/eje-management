@@ -6,6 +6,7 @@ import {
   carriesMasterLetterhead,
   layoutLetterhead,
   letterheadLineText,
+  letterheadLineWidth,
   markPathData,
   type LetterheadFontRole,
 } from '@/lib/branding/eje-letterhead';
@@ -21,6 +22,11 @@ import {
  * The faces are the PDF's: Helvetica bold italic for the name block, Times bold and bold
  * italic for the columns — with the usual stand-ins where a device lacks them. Spaces are
  * kept as written (the paper's double spaces), as the PDF keeps them.
+ *
+ * EVERY LINE IS ITS PDF LENGTH (LETTERHEAD-2 review): a stand-in face can be ~15 % wider (an
+ * Android tablet's Roboto and Noto Serif), which made the address and contact columns touch.
+ * So each line is set to exactly the width the PDF's metrics give it (`textLength`, glyphs and
+ * spacing adjusted together) and centred on the same x — the same length on every device.
  */
 const FACE: Record<LetterheadFontRole, { readonly fontFamily: string; readonly fontStyle: 'italic' | 'normal' }> = {
   sansBoldItalic: { fontFamily: 'Helvetica, Arial, sans-serif', fontStyle: 'italic' },
@@ -54,6 +60,8 @@ export const EjeLetterhead = ({ className }: { readonly className?: string }) =>
           fontFamily={FACE[line.role].fontFamily}
           fontStyle={FACE[line.role].fontStyle}
           fontWeight="bold"
+          textLength={Number(letterheadLineWidth(line).toFixed(2))}
+          lengthAdjust="spacingAndGlyphs"
           xmlSpace="preserve"
           style={{ whiteSpace: 'pre' }}
         >
@@ -74,6 +82,9 @@ export const EjeLetterhead = ({ className }: { readonly className?: string }) =>
  *   - EJE: the master letterhead above;
  *   - another company with an uploaded letterhead: that image, as the office supplied it;
  *   - otherwise: the document's own text header (`fallback`), exactly as it was.
+ *
+ * An EJE document ISSUED before the master letterhead (`master={false}`, from
+ * `showsMasterLetterhead`) shows its text header — the header its stored PDF has.
  */
 export const DocumentLetterhead = ({
   companyId,
@@ -81,6 +92,8 @@ export const DocumentLetterhead = ({
   letterhead,
   fallback,
   className,
+  masterClassName,
+  master = true,
 }: {
   readonly companyId: string;
   readonly companyName: string;
@@ -88,10 +101,15 @@ export const DocumentLetterhead = ({
   readonly fallback: ReactNode;
   /** The box the letterhead takes in the document's header (the fallback brings its own). */
   readonly className?: string;
+  /** The master letterhead's own box, when it differs (on a phone it takes the document's full width). */
+  readonly masterClassName?: string;
+  /** False for an EJE document issued before the master letterhead: its text header, as its PDF has. */
+  readonly master?: boolean;
 }) => {
   if (carriesMasterLetterhead(companyId)) {
+    if (!master) return <>{fallback}</>;
     return (
-      <div className={className}>
+      <div className={masterClassName ?? className}>
         <EjeLetterhead />
       </div>
     );

@@ -9,6 +9,7 @@ import { MIN_BODY_PT, OnePageOverflow, renderOnePageForm } from './one-page-form
 import { buildTimesheetDocumentRows } from '@/application/timesheets';
 import { formatDayAndDate } from '@/lib/timesheet-dates';
 import type { TimesheetEntry } from '@/domain';
+import { EJE_MASTER_LETTERHEAD } from '@/lib/branding/eje-letterhead';
 
 /**
  * PAY-04: EVERY TIMESHEET AND ATTENDANCE PDF IS EXACTLY ONE PAGE — proved on
@@ -68,11 +69,20 @@ describe('PAY-04 / TS-PAPER-6 — the timesheet PDF: one readable page when it f
     ['a very busy month: five lines every day (155 rows)', days('2026-10', 31).flatMap((date, i) => Array.from({ length: 5 }, (_, k) => row(date, i + k, `Kruger Engineering ${k}`))), 'Five jobs a day.', 0],
     ['a 92-day period, two lines a day (184 rows)', [...days('2026-08', 31), ...days('2026-09', 30), ...days('2026-10', 31)].flatMap((date, i) => [row(date, i, 'Kruger Engineering Midrand'), row(date, i + 1, 'Workshop')]), 'Quarter.', 0],
   ];
-  for (const [name, rows, comment, absences] of cases) {
-    it(name, () => {
-      const rendered = renderTimesheetPdf(timesheet(rows, comment, absences), { generatedAt: '2026-10-31T16:00:00.000Z' });
+  /*
+   * LETTERHEAD-2: every case again WITH the EJE master letterhead, whose taller band takes room from the table —
+   * the month must land exactly as it does without it (one readable page, or the multi-page layout), never worse.
+   */
+  for (const [name, rows, comment, absences] of cases) for (const letterhead of [undefined, EJE_MASTER_LETTERHEAD]) {
+    it(letterhead === undefined ? name : `${name} — with the EJE master letterhead`, () => {
+      const rendered = renderTimesheetPdf(timesheet(rows, comment, absences), { generatedAt: '2026-10-31T16:00:00.000Z', letterhead });
       const read = pages(rendered.bytes);
       expect(read).toHaveLength(rendered.pageCount);
+      if (letterhead !== undefined) {
+        const plain = renderTimesheetPdf(timesheet(rows, comment, absences), { generatedAt: '2026-10-31T16:00:00.000Z' });
+        expect(rendered.layout === null).toBe(plain.layout === null);
+        expect(rendered.layout?.panels).toBe(plain.layout?.panels);
+      }
       if (rendered.layout !== null) {
         // One page — only at a readable size.
         expect(rendered.pageCount).toBe(1);
@@ -155,10 +165,11 @@ describe('PAY-04 — the attendance PDF is exactly one page', () => {
     ['a realistic month', 'On site'],
     ['a heavy month: a 250-character note on every one of 31 days', `Clinic visit ${'with a very long explanation '.repeat(10)}`.slice(0, 250)],
     ['a very heavy month: a 350-character note on every one of 31 days', `Clinic visit ${'with a very long explanation '.repeat(14)}`.slice(0, 350)],
-  ] as const) {
-    it(name, () => {
+  ] as const) for (const letterhead of [undefined, EJE_MASTER_LETTERHEAD]) {
+    // LETTERHEAD-2: and again with the EJE master letterhead's taller band — still one page, still legible.
+    it(letterhead === undefined ? name : `${name} — with the EJE master letterhead`, () => {
       const doc = attendance(note);
-      const rendered = renderAttendancePdf(doc, { generatedAt: '2026-10-31T16:00:00.000Z' });
+      const rendered = renderAttendancePdf(doc, { generatedAt: '2026-10-31T16:00:00.000Z', letterhead });
       const read = pages(rendered.bytes);
       expect(rendered.pageCount).toBe(1);
       expect(read).toHaveLength(1);

@@ -654,8 +654,12 @@ await step('TABLET: an Installation previews as its price-less Delivery Note —
   if (!squashed.includes('DELIVERYNOTE') || !squashed.includes('INSTALLATION')) throw new Error(`the document is not titled a Delivery Note — Installation: ${text.slice(0, 200)}`);
   if (squashed.includes('JOBCARD')) throw new Error(`the Installation still presents as a job card: ${text.slice(0, 200)}`);
   if (!text.includes('EJE-1050') || !text.includes('PO-44920')) throw new Error('the job number or order number is missing');
+  // LETTERHEAD-2: the EJE master letterhead carries the company's VAT REGISTRATION ("VAT NO: 4950134991"),
+  // which is not a price. Exactly that line is set aside (and must be there); any other VAT still fails.
+  const priced = text.replace(/VAT\s*NO:\s*4950134991/gu, '');
+  if (priced === text) throw new Error('the Installation Delivery Note does not carry the EJE master letterhead (no VAT NO line)');
   for (const leak of [/R[\s ]?\d[\d\s ]*,\d{2}/u, /\bVAT\b/u, /\bSubtotal\b/iu, /\bTotal\b/iu, /\bRate\b/iu, /\bAmount\b/iu]) {
-    if (leak.test(text)) throw new Error(`the Installation Delivery Note shows a price (${leak})`);
+    if (leak.test(priced)) throw new Error(`the Installation Delivery Note shows a price (${leak})`);
   }
   if (writes.length !== 0) throw new Error(`previewing sent ${writes.join(', ')}`);
   await previewPage.getByTestId('preview-close').click();

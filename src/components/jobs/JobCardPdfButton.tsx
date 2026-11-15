@@ -72,7 +72,7 @@ export const JobCardPdfButton = ({
         }}
         renderHtml={() =>
           !getJobTypeDefinition(view.job.jobType).priced ? (
-            <DeliveryNoteDocument model={buildDeliveryNoteModel(view, clock.now())} companyId={view.job.companyId} letterhead={view.companyLetterhead} />
+            <DeliveryNoteDocument model={buildDeliveryNoteModel(view, clock.now())} companyId={view.job.companyId} letterhead={view.companyLetterhead} finalDocument={view.job.finalDocument} />
           ) : view.job.jobType === 'parts' ? (
             <PartsCollectionNote view={view} />
           ) : (

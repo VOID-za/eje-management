@@ -23,10 +23,10 @@ import {
 } from './job-operations';
 import { createJob } from './job-creation';
 import { loadCorrectionDocument, raiseJobCorrection } from './job-corrections';
-import { loadFinalDocumentFile, storeFinalDocument } from './final-document';
+import { RENDERER_VERSION, loadFinalDocumentFile, storeFinalDocument } from './final-document';
 import { generateDeliveryNote } from './delivery-note';
 import { loadJobView } from './job-view';
-import { EJE_MASTER_LETTERHEAD } from '@/lib/branding/eje-letterhead';
+import { EJE_MASTER_LETTERHEAD, MASTER_LETTERHEAD_RENDERER, showsMasterLetterhead } from '@/lib/branding/eje-letterhead';
 import {
   defaultCompanyLetterhead,
   downloadCompanyLetterheadFile,
@@ -141,6 +141,13 @@ describe('each job document on its own company’s letterhead', () => {
     expect(embedsImageData(card.bytes, eje)).toBe(false);
     expect(embedsImageData(card.bytes, wd)).toBe(false);
     expect(pdfPlainText(card.bytes)).toContain(issued.jobNumber);
+    // LETTERHEAD-2: the issue is MARKED as drawn with the master (file and record), so the screen shows the master too.
+    expect(card.renderer).toBe(MASTER_LETTERHEAD_RENDERER);
+    expect(card.backfilled).toBe(false);
+    expect(issued.finalDocument?.renderer).toBe(MASTER_LETTERHEAD_RENDERER);
+    expect(showsMasterLetterhead(issued.finalDocument)).toBe(true);
+    // An issued file is never re-rendered: read again, the same bytes.
+    expect((await loadFinalDocumentFile(harness.as(master), issued.jobNumber)).bytes).toEqual(card.bytes);
 
     const correction = await raiseJobCorrection(harness.as(master), issued, {
       reason: 'The labour hours were captured against the wrong rate.',
@@ -178,6 +185,8 @@ describe('each job document on its own company’s letterhead', () => {
     expect(embedsImageData(stored.bytes, wd)).toBe(true);
     expect(embedsImageData(stored.bytes, eje)).toBe(false);
     expect(imageObjectCount(stored.bytes)).toBe(1);
+    // Not the master: the renderer recorded exactly as before LETTERHEAD-2.
+    expect(stored.renderer).toBe(RENDERER_VERSION);
   });
 
   it('history rendered for a job issued before letterheads keeps its text header', async () => {
@@ -185,6 +194,15 @@ describe('each job document on its own company’s letterhead', () => {
     const card = await loadFinalDocumentFile(harness.as(master), 'EJE-1044');
     expect(imageObjectCount(card.bytes)).toBe(0);
     expect(pdfPlainText(card.bytes)).toContain('EJE Industrial Electronics');
+    // LETTERHEAD-2: the backfill is still RENDERER_VERSION (never re-rendered for the master), and carries no master...
+    expect(card.backfilled).toBe(true);
+    expect(card.renderer).toBe(RENDERER_VERSION);
+    expect(pdfPlainText(card.bytes)).not.toContain('VAT NO: 4950134991');
+    expect((await loadFinalDocumentFile(harness.as(master), 'EJE-1044')).bytes).toEqual(card.bytes);
+    // ...so the screen beside it shows the text header its file has, not the master.
+    const view = (await loadJobView(harness.repos, 'EJE-1044'))!;
+    expect(view.job.finalDocument).not.toBeNull();
+    expect(showsMasterLetterhead(view.job.finalDocument)).toBe(false);
   });
 
   it('a technician cannot upload or remove one', async () => {

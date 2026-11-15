@@ -1,6 +1,6 @@
 import { A4_HEIGHT, A4_WIDTH, PdfBuilder, textWidth } from '@/lib/pdf/writer';
 import { BAND, BODY, INK, LETTERHEAD_TOP, MUTED, RULE, RULE_SOFT, TRACK_TITLE, drawLetterhead } from './pdf-sheet';
-import { EJE_MASTER_LETTERHEAD, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+import { isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 
 /**
  * LETTERHEAD-2 (the owner, 15 November 2026): the EJE master letterhead needs a readable band. In the room the
@@ -10,7 +10,7 @@ import { EJE_MASTER_LETTERHEAD, type DocumentLetterhead } from '@/lib/branding/e
  * — an uploaded image or the text heading — is laid out exactly as before.
  */
 const MASTER_HEADER_EXTRA = 32;
-const headerExtra = (spec: Pick<FormSpec, 'letterhead'>): number => (spec.letterhead === EJE_MASTER_LETTERHEAD ? MASTER_HEADER_EXTRA : 0);
+const headerExtra = (spec: Pick<FormSpec, 'letterhead'>): number => (isMasterLetterhead(spec.letterhead) ? MASTER_HEADER_EXTRA : 0);
 
 /**
  * ONE PAGE, ALWAYS. PAY-04 (29 October 2026): every timesheet and attendance

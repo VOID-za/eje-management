@@ -1,6 +1,6 @@
 import type { DeliveryNoteModel } from '@/lib/job-card/delivery-note';
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
-import type { DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+import { isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 import { fitSignatureBox, signatureFacsimile, SIGNATURE_INK } from '@/lib/signature';
 import {
   BAND,
@@ -28,7 +28,13 @@ import {
  * hold a readable letterhead, they go on one line just above the body and the
  * image takes the band's whole width. Either way the cursor ends where the
  * text header leaves it, so "Deliver to" and everything below do not move.
+ *
+ * LETTERHEAD-2: in that second arrangement the band is only ~44 pt tall, which drew the EJE master letterhead's
+ * serif lines at ~3.3 pt. So for the master alone the band reaches DELIVERY_NOTE_MASTER_EXTRA lower (~61 pt, the
+ * lines ~4.6 pt, as beside the title), and the title line and everything below move down by exactly that much.
+ * The usual arrangement, and any uploaded image, are unchanged.
  */
+export const DELIVERY_NOTE_MASTER_EXTRA = 17;
 const letterheadHeader = (sheet: Sheet, model: DeliveryNoteModel, letterhead: DocumentLetterhead): void => {
   const top = sheet.cursor;
   const title = 'DELIVERY NOTE';
@@ -39,19 +45,21 @@ const letterheadHeader = (sheet: Sheet, model: DeliveryNoteModel, letterhead: Do
   // The body's first line ("Deliver to", 7.5pt capitals) reaches about 763.
   const bandBottom = top - 34;
   const beside = CONTENT_WIDTH - Math.max(titleWidth, numberWidth) - 12;
+  const besideTitle = beside >= CONTENT_WIDTH / 2;
+  const extra = !besideTitle && isMasterLetterhead(letterhead) ? DELIVERY_NOTE_MASTER_EXTRA : 0;
 
-  if (beside >= CONTENT_WIDTH / 2) {
+  if (besideTitle) {
     sheet.pdf.text(RIGHT - titleWidth, top, title, titleStyle);
     sheet.pdf.text(RIGHT - numberWidth, top - GAP.line, model.jobNumber, numberStyle);
     drawLetterhead(sheet.pdf, letterhead, { x: MARGIN, y: bandBottom, width: beside, height: LETTERHEAD_TOP - bandBottom });
   } else {
-    const baseline = bandBottom;
+    const baseline = bandBottom - extra;
     sheet.pdf.text(RIGHT - numberWidth, baseline, model.jobNumber, numberStyle);
     sheet.pdf.text(RIGHT - numberWidth - 8 - titleWidth, baseline, title, titleStyle);
     const bottom = baseline + SIZE.jobNumber * 0.72 + 4;
     drawLetterhead(sheet.pdf, letterhead, { x: MARGIN, y: bottom, width: CONTENT_WIDTH, height: LETTERHEAD_TOP - bottom });
   }
-  sheet.setCursor(top - GAP.line - GAP.tight - GAP.sectionLarge);
+  sheet.setCursor(top - GAP.line - GAP.tight - GAP.sectionLarge - extra);
 };
 
 /**

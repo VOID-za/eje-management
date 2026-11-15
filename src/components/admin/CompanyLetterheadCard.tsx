@@ -7,6 +7,8 @@ import { RuleViolationNotice } from '@/components/jobs/RuleViolationNotice';
 import { companies as companiesApi } from '@/api/endpoints';
 import { useOperation } from '@/hooks/useOperation';
 import { formatDateTime } from '@/lib/format';
+import { carriesMasterLetterhead } from '@/lib/branding/eje-letterhead';
+import { EjeLetterhead } from '@/components/documents/EjeLetterhead';
 
 /**
  * A COMPANY'S OFFICIAL LETTERHEAD, IN ADMINISTRATION. LETTERHEAD-1.
@@ -20,6 +22,11 @@ import { formatDateTime } from '@/lib/format';
  * The server decides what the file is (`uploadCompanyLetterhead`): a PNG or a
  * JPEG the documents can embed, at most 2 MB. `accept` only narrows the
  * picker; it is not the rule.
+ *
+ * EJE IS DIFFERENT (LETTERHEAD-2): its documents carry the official master letterhead, drawn by
+ * the system — an image uploaded here is kept but NOT printed. The card says so plainly and shows
+ * the master, so nobody uploads EJE's letterhead expecting to see it on paper. Every other
+ * company's card is exactly as before.
  */
 export const CompanyLetterheadCard = ({
   company,
@@ -32,6 +39,7 @@ export const CompanyLetterheadCard = ({
   const input = useRef<HTMLInputElement>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const letterhead = company.letterhead;
+  const master = carriesMasterLetterhead(company.id);
 
   const upload = async (file: File) => {
     if (await operation.run(() => companiesApi.uploadLetterhead(company.id, file))) onChanged();
@@ -41,8 +49,23 @@ export const CompanyLetterheadCard = ({
     <Card data-testid="company-letterhead-card">
       <CardHeader
         title="Letterhead"
-        description="PNG or JPEG, the full letterhead as supplied; it is printed across the top of new documents only."
+        description={
+          master
+            ? 'EJE documents use the official EJE master letterhead, shown below. An uploaded image is not printed on them.'
+            : 'PNG or JPEG, the full letterhead as supplied; it is printed across the top of new documents only.'
+        }
       />
+      {master && (
+        <div className="mt-3 space-y-2" data-testid="company-letterhead-master">
+          <div className="rounded-[var(--radius-control)] border border-steel-200 bg-white p-2">
+            <EjeLetterhead />
+          </div>
+          <p className="text-sm text-steel-700">
+            Every EJE document — job cards, delivery notes, corrections, timesheets and attendance forms — carries this
+            letterhead, on screen, in the PDF and in print. {letterhead === null ? 'Nothing needs to be uploaded.' : 'The image on file below is kept, but it is not printed on any EJE document.'}
+          </p>
+        </div>
+      )}
       {operation.error !== null && (
         <div className="mt-3">
           <RuleViolationNotice
@@ -53,9 +76,12 @@ export const CompanyLetterheadCard = ({
         </div>
       )}
       {letterhead === null ? (
-        <p className="mt-3 text-sm text-steel-500" data-testid="company-letterhead">
-          No letterhead uploaded. {company.name}’s documents carry the text header with the company details above.
-        </p>
+        // EJE: the master is shown above, and nothing needs uploading — so no "none uploaded" here.
+        master ? null : (
+          <p className="mt-3 text-sm text-steel-500" data-testid="company-letterhead">
+            No letterhead uploaded. {company.name}’s documents carry the text header with the company details above.
+          </p>
+        )
       ) : (
         <div className="mt-3 space-y-2" data-testid="company-letterhead">
           {/* The stored image itself, through the authorised route — what new documents will carry. */}
@@ -103,7 +129,11 @@ export const CompanyLetterheadCard = ({
       <ConfirmDialog
         open={confirmRemove}
         title={`Remove ${company.name}’s letterhead?`}
-        message={`New documents of ${company.name} will carry the text header instead. Documents already issued keep the letterhead they were printed with.`}
+        message={
+          master
+            ? `The image is removed from file. EJE documents are unchanged: they carry the EJE master letterhead either way.`
+            : `New documents of ${company.name} will carry the text header instead. Documents already issued keep the letterhead they were printed with.`
+        }
         confirmLabel="Remove letterhead"
         confirmVariant="danger"
         busy={operation.running}

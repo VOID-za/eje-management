@@ -1,5 +1,7 @@
 import { DEFAULT_COMPANY_ID } from '@/domain/types/company';
 import type { PdfImage } from '@/lib/pdf/image';
+import type { PdfFont } from '@/lib/pdf/writer';
+import { charWidth } from '@/lib/pdf/metrics';
 import { EJE_MARK_ASPECT, EJE_MARK_POLYGONS } from './eje-letterhead-mark';
 
 /**
@@ -96,6 +98,28 @@ export const LETTERHEAD_LINES: readonly LetterheadLine[] = [
 
 /** The full text of a line, as a reader reads it. */
 export const letterheadLineText = (value: LetterheadLine): string => value.runs.map((part) => part.text).join('');
+
+/** The PDF's face for each of the paper's (base-14: Helvetica-BoldOblique, Times-Bold, Times-BoldItalic). */
+export const LETTERHEAD_PDF_FONT: Record<LetterheadFontRole, PdfFont> = {
+  sansBoldItalic: 'boldItalic',
+  serifBold: 'serifBold',
+  serifBoldItalic: 'serifBoldItalic',
+};
+
+/**
+ * A line's width as the PDF's font metrics give it, in the line's own units — what a PDF viewer
+ * advances, WITHOUT the substitution allowance `textWidth` adds for layout. LETTERHEAD-2: the PDF
+ * centres each line by it, and the screen sets each line to exactly it (`textLength`), so a line
+ * is the same length on every device whatever fonts that device has.
+ */
+export const letterheadLineWidth = (value: LetterheadLine): number => {
+  const font = LETTERHEAD_PDF_FONT[value.role];
+  return value.runs.reduce((sum, part) => {
+    let thousandths = 0;
+    for (const character of part.text) thousandths += charWidth(character, font);
+    return sum + (thousandths / 1000) * part.size;
+  }, 0);
+};
 
 /** A box in a y-DOWN space (the screen's, or a PDF page measured from its top). */
 export interface LetterheadArea {
@@ -195,3 +219,25 @@ export const isMasterLetterhead = (value: DocumentLetterhead | undefined): value
 /** EJE — the default company — is the company whose documents carry the master header. */
 export const carriesMasterLetterhead = (companyId: string | null | undefined): boolean =>
   companyId === DEFAULT_COMPANY_ID;
+
+/**
+ * WHICH ISSUED DOCUMENTS CARRY THE MASTER HEADER. LETTERHEAD-2.
+ *
+ * An issued document is never re-rendered, so an EJE job issued before the master letterhead
+ * (or backfilled, which is drawn with no letterhead at all) keeps the text header in its stored
+ * PDF — and the screen beside it must show that same header, not the master.
+ *
+ * So an issue drawn with the master letterhead records this renderer number on its stored file
+ * and on the job's record. It is a marker, not a new renderer: nothing is re-rendered for it,
+ * RENDERER_VERSION (the backfill's comparison) is unchanged, and no stored row is migrated. 5 is
+ * above every number recorded before it (job card 1–4, delivery note 1), so no earlier issue
+ * can carry it.
+ */
+export const MASTER_LETTERHEAD_RENDERER = 5;
+
+/**
+ * Whether a job's document on screen shows the master header: while nothing is issued (it is a
+ * preview of what will be), or when what was issued was drawn with it.
+ */
+export const showsMasterLetterhead = (finalDocument: { readonly renderer: number | null } | null): boolean =>
+  finalDocument === null || finalDocument.renderer === MASTER_LETTERHEAD_RENDERER;

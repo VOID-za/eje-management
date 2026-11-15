@@ -37,7 +37,7 @@ export const DeliveryNoteButton = ({ view }: { readonly view: JobView }) => {
         title={`${view.job.jobNumber} — Delivery Note`}
         description="For the courier: the goods and quantities, no prices. The priced job card is separate."
         loadPdf={() => jobs.deliveryNote(view.job.id)}
-        renderHtml={() => <DeliveryNoteDocument model={buildDeliveryNoteModel(view, new Date().toISOString())} companyId={view.job.companyId} letterhead={view.companyLetterhead} />}
+        renderHtml={() => <DeliveryNoteDocument model={buildDeliveryNoteModel(view, new Date().toISOString())} companyId={view.job.companyId} letterhead={view.companyLetterhead} finalDocument={view.job.finalDocument} />}
         onClose={() => setOpen(false)}
       />
     </>

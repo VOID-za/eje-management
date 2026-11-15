@@ -4,7 +4,15 @@ import { formatDayAndDate } from '@/lib/timesheet-dates';
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
 import { OnePageOverflow, renderOnePageForm, type FormLayout, type FormRow } from './one-page-form';
 import { BAND, BODY, CONTENT_WIDTH, GAP, INK, LETTERHEAD_TOP, MARGIN, MUTED, RIGHT, RULE, RULE_SOFT, Sheet, SIZE, TRACK_TITLE, drawLetterhead } from './pdf-sheet';
-import type { DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+import { isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+
+/**
+ * LETTERHEAD-2: how much taller the multi-page timesheet's header band is for the EJE master letterhead. In the
+ * strip the company's name had (~38 pt) its serif lines came out ~2.9 pt; this makes the band ~66 pt and the lines
+ * ~5 pt, as on the job card. The title and everything below it on the FIRST page move down by exactly this much;
+ * the following pages are untouched, and any other company's timesheet is laid out exactly as before.
+ */
+export const MULTI_PAGE_MASTER_EXTRA = 28;
 
 /**
  * THE TIMESHEET PDF LAYOUT. PDF-01 … PDF-04 (the real-world reviewer, and the
@@ -202,8 +210,11 @@ const renderMultiPageTimesheet = (
   /*
    * LETTERHEAD-1: the default company's uploaded letterhead in place of its
    * name, in the space left of the title and above the first field (whose
-   * 9pt capitals reach about 786). The title stays exactly where it is.
+   * 9pt capitals reach about 786). The title stays exactly where it is —
+   * except under the EJE master letterhead (LETTERHEAD-2), whose taller band
+   * moves the title and the whole first page down by MULTI_PAGE_MASTER_EXTRA.
    */
+  if (isMasterLetterhead(letterhead)) sheet.move(MULTI_PAGE_MASTER_EXTRA);
   const bandBottom = sheet.cursor - 12;
   if (!drawLetterhead(sheet.pdf, letterhead, { x: MARGIN, y: bandBottom, width: CONTENT_WIDTH - titleWidth - 12, height: LETTERHEAD_TOP - bandBottom })) {
     sheet.text(MARGIN, doc.companyName, { font: 'bold', size: SIZE.companyName, colour: INK });

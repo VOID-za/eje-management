@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { asCompanyId, DEFAULT_COMPANY_ID, WD_HEARN_JHB_COMPANY_ID } from '@/domain';
 import { companies } from '@/api/endpoints';
 import { A4_HEIGHT, PdfBuilder } from '@/lib/pdf/writer';
@@ -9,7 +9,15 @@ import { inspectPdf } from '@/lib/pdf/inspect';
 import { drawEjeLetterhead, drawLetterhead } from '@/services/simulated/pdf-sheet';
 import { DocumentLetterhead, EjeLetterhead } from '@/components/documents/EjeLetterhead';
 import { DeliveryNoteDocument } from '@/components/jobs/DeliveryNoteDocument';
-import { deliveryNoteModel } from '@/test/letterhead-documents';
+import { JobCardDocument } from '@/components/jobs/JobCardDocument';
+import { PartsCollectionNote } from '@/components/jobs/PartsCollectionNote';
+import { TimesheetDocumentView } from '@/components/timesheets/TimesheetDocumentView';
+import { AttendanceDocumentView } from '@/components/payroll/AttendanceDocumentView';
+import { loadJobView } from '@/application/job-view';
+import { buildHarness } from '@/application/test-harness';
+import { adminViewOf } from '@/application/company-operations';
+import { CompanyLetterheadCard } from '@/components/admin/CompanyLetterheadCard';
+import { attendance, deliveryNoteModel, timesheet } from '@/test/letterhead-documents';
 import { filledPaths } from '@/test/letterhead-fixture';
 import { EJE_MARK_ASPECT, EJE_MARK_POLYGONS } from './eje-letterhead-mark';
 import {
@@ -18,11 +26,17 @@ import {
   LETTERHEAD_MARK_BOX,
   LETTERHEAD_REFERENCE,
   carriesMasterLetterhead,
+  MASTER_LETTERHEAD_RENDERER,
   isMasterLetterhead,
   layoutLetterhead,
   letterheadLineText,
+  letterheadLineWidth,
+  showsMasterLetterhead,
   type LetterheadFontRole,
 } from './eje-letterhead';
+
+// The Administration card's operation hook needs the app's provider; its render here needs none of it.
+vi.mock('@/hooks/useOperation', () => ({ useOperation: () => ({ run: async () => false, running: false, error: null, violations: [] }) }));
 
 /**
  * LETTERHEAD-2: the EJE master letterhead — one description, drawn by the PDF and by the
@@ -166,6 +180,37 @@ describe('the PDF and the screen draw the same layout', () => {
     expect(markup).not.toContain('<img');
     expect(markup).not.toContain('<image');
   });
+
+  it('every SVG line is set to exactly its PDF width, so a wider device font cannot make columns touch', () => {
+    const markup = renderToStaticMarkup(createElement(EjeLetterhead));
+    const texts = [...markup.matchAll(/<text [^>]*>/gu)].map((match) => match[0]);
+    expect(texts).toHaveLength(LETTERHEAD_LINES.length);
+    texts.forEach((tag, index) => {
+      const line = LETTERHEAD_LINES[index]!;
+      const length = Number(/textLength="([\d.]+)"/u.exec(tag)?.[1]);
+      // The metric width, computed independently here, without the substitution allowance, in reference units.
+      expect(length, letterheadLineText(line)).toBeCloseTo(naturalWidth(line, 1), 1);
+      expect(length).toBeCloseTo(letterheadLineWidth(line), 1);
+      expect(tag).toContain('lengthAdjust="spacingAndGlyphs"');
+      expect(tag).toContain('text-anchor="middle"');
+    });
+    // The PDF centres each line by that same width: at a tenth of the reference size, its left edge is (x − width / 2) / 10.
+    const pdf = new PdfBuilder();
+    pdf.addPage();
+    const tenth = { width: LETTERHEAD_REFERENCE.width / 10, height: LETTERHEAD_REFERENCE.height / 10 };
+    drawEjeLetterhead(pdf, { x: 0, y: A4_HEIGHT - tenth.height, ...tenth });
+    inspectPdf(pdf.toBytes()).runs.forEach((run, index) => {
+      const line = LETTERHEAD_LINES[index]!;
+      expect(run.x).toBeCloseTo((line.x - letterheadLineWidth(line) / 2) / 10, 2);
+    });
+    // No two lines on one baseline overlap at their PDF widths (the address and contact columns).
+    const rows = new Map<number, (typeof LETTERHEAD_LINES)[number][]>();
+    for (const line of LETTERHEAD_LINES) rows.set(line.baseline, [...(rows.get(line.baseline) ?? []), line]);
+    for (const lines of rows.values()) {
+      const spans = lines.map((line) => [line.x - letterheadLineWidth(line) / 2, line.x + letterheadLineWidth(line) / 2] as const).sort((a, b) => a[0] - b[0]);
+      for (let index = 1; index < spans.length; index += 1) expect(spans[index]![0]).toBeGreaterThan(spans[index - 1]![1]);
+    }
+  });
 });
 
 describe('which header a document carries', () => {
@@ -203,16 +248,96 @@ describe('which header a document carries', () => {
     }
   });
 
-  it('the on-screen Delivery Note follows its job’s company, and without one is as before', () => {
-    const before = renderToStaticMarkup(createElement(DeliveryNoteDocument, { model: deliveryNoteModel }));
-    expect(before).not.toContain('data-letterhead');
-    expect(before).toContain(deliveryNoteModel.company.name);
-    expect(renderToStaticMarkup(createElement(DeliveryNoteDocument, { model: deliveryNoteModel, companyId: DEFAULT_COMPANY_ID }))).toContain(
-      'data-letterhead="eje-master"',
-    );
-    const wd = renderToStaticMarkup(createElement(DeliveryNoteDocument, { model: deliveryNoteModel, companyId: WD_HEARN_JHB_COMPANY_ID, letterhead: wdReference }));
-    expect(wd).toContain('data-letterhead="uploaded"');
-    expect(renderToStaticMarkup(createElement(DeliveryNoteDocument, { model: deliveryNoteModel, companyId: WD_HEARN_JHB_COMPANY_ID }))).toBe(before);
+  it('the on-screen Delivery Note follows its job’s company: the master for EJE, the image or text header for another', () => {
+    const note = (companyId: string, extra: Partial<Parameters<typeof DeliveryNoteDocument>[0]> = {}) =>
+      renderToStaticMarkup(createElement(DeliveryNoteDocument, { model: deliveryNoteModel, companyId, finalDocument: null, ...extra }));
+    const wdText = note(WD_HEARN_JHB_COMPANY_ID);
+    expect(wdText).not.toContain('data-letterhead');
+    expect(wdText).toContain(deliveryNoteModel.company.name);
+    expect(note(DEFAULT_COMPANY_ID)).toContain('data-letterhead="eje-master"');
+    expect(note(WD_HEARN_JHB_COMPANY_ID, { letterhead: wdReference })).toContain('data-letterhead="uploaded"');
+    // Issued: the master only when the job's document was issued with it; otherwise the text header its PDF has.
+    expect(note(DEFAULT_COMPANY_ID, { finalDocument: { renderer: MASTER_LETTERHEAD_RENDERER } })).toContain('data-letterhead="eje-master"');
+    for (const renderer of [null, 1, 4]) {
+      const issued = note(DEFAULT_COMPANY_ID, { finalDocument: { renderer } });
+      expect(issued).not.toContain('data-letterhead');
+      expect(issued).toContain(deliveryNoteModel.company.address);
+    }
+    // Another company is untouched by whether or how it was issued.
+    expect(note(WD_HEARN_JHB_COMPANY_ID, { finalDocument: { renderer: 4 } })).toBe(wdText);
+  });
+
+  it('an issued EJE document shows the master only when it was issued with it — never beside an older PDF', () => {
+    expect(showsMasterLetterhead(null)).toBe(true);
+    expect(showsMasterLetterhead({ renderer: MASTER_LETTERHEAD_RENDERER })).toBe(true);
+    for (const renderer of [null, 1, 2, 3, 4]) expect(showsMasterLetterhead({ renderer })).toBe(false);
+    const historical = createElement(DocumentLetterhead, {
+      companyId: DEFAULT_COMPANY_ID,
+      companyName: 'EJE',
+      fallback,
+      master: false,
+      letterhead: { companyId: DEFAULT_COMPANY_ID, sha256: 'eje-image' },
+    });
+    expect(renderToStaticMarkup(historical)).toBe(renderToStaticMarkup(fallback));
+  });
+
+  it('the job card and the Parts Collection Note on screen: by the job’s company, and by how the job was issued', async () => {
+    const harness = buildHarness();
+    for (const [jobNumber, Document] of [['EJE-1044', JobCardDocument], ['EJE-1062', PartsCollectionNote]] as const) {
+      const view = (await loadJobView(harness.repos, jobNumber))!;
+      expect(view.job.companyId).toBe(DEFAULT_COMPANY_ID);
+      // Issued before LETTERHEAD-2 (its file backfilled with no letterhead): the text header, as its stored PDF.
+      expect(view.job.finalDocument).not.toBeNull();
+      const historical = renderToStaticMarkup(createElement(Document, { view }));
+      expect(historical, jobNumber).not.toContain('data-letterhead');
+      expect(historical).toContain(view.company.name);
+      // Issued with the master, or not issued yet: the master.
+      const withMaster = { ...view, job: { ...view.job, finalDocument: { ...view.job.finalDocument!, renderer: MASTER_LETTERHEAD_RENDERER } } };
+      expect(renderToStaticMarkup(createElement(Document, { view: withMaster })), jobNumber).toContain('data-letterhead="eje-master"');
+      const preview = { ...view, job: { ...view.job, finalDocument: null } };
+      const markup = renderToStaticMarkup(createElement(Document, { view: preview }));
+      expect(markup, jobNumber).toContain('data-letterhead="eje-master"');
+      // On a phone the master takes the document's whole width (the title below it); from sm up, as before.
+      expect(markup).toContain('-mx-6 min-w-0 basis-[calc(100%+3rem)] sm:mx-0 sm:flex-1 sm:basis-[22rem]');
+      // Chosen by the job's company, as the PDF is: a WD Hearn job is not on the master, whatever view.company says.
+      const wd = { ...preview, job: { ...preview.job, companyId: WD_HEARN_JHB_COMPANY_ID }, companyLetterhead: null };
+      expect(renderToStaticMarkup(createElement(Document, { view: wd }))).not.toContain('data-letterhead');
+    }
+  });
+
+  it('Administration says plainly that EJE documents use the master and an uploaded EJE image is not printed', async () => {
+    const harness = buildHarness();
+    const card = async (id: typeof DEFAULT_COMPANY_ID, letterhead: boolean) => {
+      const company = adminViewOf((await harness.repos.companies.findById(id))!);
+      const given = letterhead ? { ...company, letterhead: { sha256: 'abc', contentType: 'image/png', fileName: 'l.png', sizeBytes: 1, uploadedAt: '2026-11-15T08:00:00.000Z', uploadedBy: 'u' } } : { ...company, letterhead: null };
+      return renderToStaticMarkup(createElement(CompanyLetterheadCard, { company: given as typeof company, onChanged: () => undefined }));
+    };
+    for (const withImage of [false, true]) {
+      const eje = await card(DEFAULT_COMPANY_ID, withImage);
+      expect(eje).toContain('EJE documents use the official EJE master letterhead');
+      expect(eje).toContain('An uploaded image is not printed on them.');
+      expect(eje).toContain('data-letterhead="eje-master"');
+      expect(eje).toContain('data-testid="company-letterhead-upload"');
+      expect(eje).not.toContain('No letterhead uploaded');
+      const wd = await card(WD_HEARN_JHB_COMPANY_ID, withImage);
+      expect(wd).not.toContain('master letterhead');
+      expect(wd).not.toContain('data-letterhead');
+      expect(wd).toContain('PNG or JPEG, the full letterhead as supplied');
+      expect(wd).toContain('data-testid="company-letterhead-upload"');
+      if (!withImage) expect(wd).toContain('No letterhead uploaded. WD Hearn JHB');
+      else expect(wd).toContain('data-testid="company-letterhead-preview"');
+    }
+  });
+
+  it('the timesheet and the attendance form on screen carry the master letterhead, as their PDFs do', () => {
+    for (const markup of [
+      renderToStaticMarkup(createElement(TimesheetDocumentView, { document: timesheet(3) })),
+      renderToStaticMarkup(createElement(AttendanceDocumentView, { document: attendance() })),
+    ]) {
+      expect(markup).toContain('data-letterhead="eje-master"');
+      expect(markup).not.toContain('<img');
+      expect(markup).toContain('basis-[calc(100%+2rem)]');
+    }
   });
 
   it('the PDF makes the same choice: the master for EJE only', () => {

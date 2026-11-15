@@ -18,6 +18,14 @@ import { audit } from './audit';
 import { WorkflowError } from './errors';
 import { loadJobView } from './job-view';
 import { loadCompanyLetterhead } from './company-letterhead';
+import { MASTER_LETTERHEAD_RENDERER, isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+
+/**
+ * LETTERHEAD-2: the renderer number a Delivery Note's stored file records — 1 as always, or
+ * MASTER_LETTERHEAD_RENDERER when it was drawn with the EJE master letterhead, so the screen shows
+ * the header the issued file has. Nothing is ever re-rendered by it.
+ */
+const rendererFor = (letterhead: DocumentLetterhead | undefined): number => (isMasterLetterhead(letterhead) ? MASTER_LETTERHEAD_RENDERER : 1);
 
 /**
  * THE COURIER'S DELIVERY NOTE. PARTS-03, PARTS-04, PARTS-05, and the owner's
@@ -58,7 +66,8 @@ export const issueDeliveryNote = async (
   if (existing !== null) return existing;
 
   // LETTERHEAD-1: issued now, so on its company's letterhead when one is uploaded.
-  const rendered = renderDeliveryNotePdf(buildDeliveryNoteModel(input, generatedAt), await loadCompanyLetterhead(context, job.companyId));
+  const letterhead = await loadCompanyLetterhead(context, job.companyId);
+  const rendered = renderDeliveryNotePdf(buildDeliveryNoteModel(input, generatedAt), letterhead);
   const storageKey = deliveryNoteStorageKey(jobCardStorageKey);
   const fileName = deliveryNoteFileName(job);
   await context.services.storage.putDocument({
@@ -66,7 +75,7 @@ export const issueDeliveryNote = async (
     fileName,
     contentType: CONTENT_TYPE,
     bytes: rendered.bytes,
-    renderer: 1,
+    renderer: rendererFor(letterhead),
     backfilled: false,
   });
   const stored = await context.services.storage.getDocument(storageKey);
@@ -201,16 +210,17 @@ export const issuesDeliveryNote = (job: Job): boolean => requiresDeliveryNote(jo
 export const issueSignedDeliveryNote = async (context: OperationContext, job: Job, now: IsoDateTime): Promise<Job> => {
   const view = await loadJobView(context.repos, job.jobNumber);
   if (view === null) throw new WorkflowError(`${job.jobNumber} could not be read for issue.`, []);
+  const letterhead = await loadCompanyLetterhead(context, job.companyId);
   const rendered = renderDeliveryNotePdf(
     buildDeliveryNoteModel(
       { job, customer: view.customer, site: view.site, contact: view.contact, settings: view.settings, company: view.company, users: view.users },
       now,
     ),
-    await loadCompanyLetterhead(context, job.companyId),
+    letterhead,
   );
   const fileName = deliveryNoteFileName(job);
   const storageKey = `jobcards/final/${job.jobNumber}-Delivery-Note.pdf`;
-  await context.services.storage.putDocument({ storageKey, fileName, contentType: CONTENT_TYPE, bytes: rendered.bytes, renderer: 1, backfilled: false });
+  await context.services.storage.putDocument({ storageKey, fileName, contentType: CONTENT_TYPE, bytes: rendered.bytes, renderer: rendererFor(letterhead), backfilled: false });
   const stored = await context.services.storage.getDocument(storageKey);
   if (stored === null || stored.bytes.byteLength === 0) {
     throw new WorkflowError(`${job.jobNumber} could not be issued.`, [
