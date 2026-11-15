@@ -75,6 +75,9 @@ await resetDemonstration(page, BASE);
 await check('a breakdown enters the Job Complete wizard with its parts card OPEN (no "cancel completion" notice)', async () => {
   await signInAs(page, 'Sipho Mahlangu', { base: BASE });
   await go(`/jobs/${JOB}`);
+  // The rule under test is the BREAKDOWN one: a changed seed must fail here, not pass as another job type.
+  const type = (await server())?.jobType;
+  if (type !== 'breakdown') fail(`${JOB} is a ${type}, not a breakdown`);
   await press(page.getByRole('button', { name: 'Accept job' }));
   await press(page.getByRole('button', { name: 'Accept and start' }));
   await page.getByRole('button', { name: 'No, Thanks' }).click({ timeout: 15000 }).catch(() => undefined);

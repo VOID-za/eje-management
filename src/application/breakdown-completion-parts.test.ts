@@ -170,7 +170,8 @@ describe('BD-PARTS-1 — a Breakdown in completion', () => {
       () => removeLineItem(tech, job, 'part', job.parts[0]!.id),
       () => addPart(harness.as(master), job, { partNumber: 'LATE', description: 'late', quantity: 1, unitPrice: 1 }),
     ]) {
-      await expect(attempt()).rejects.toMatchObject({ violations: [expect.objectContaining({ code: expect.stringMatching(/job_finalized|parts_locked_after_completion|job_locked/u) })] });
+      // The signed-record rule answers first, for everybody: the job card is final.
+      await expect(attempt()).rejects.toMatchObject({ violations: [{ code: 'job_finalized' }] });
     }
     expect(partList(await reread(job))).toEqual([['BRG-6205', 1, 9_500]]);
   });
@@ -179,20 +180,18 @@ describe('BD-PARTS-1 — a Breakdown in completion', () => {
     const tech = harness.as(sipho);
     let job = await breakdownInCompletion();
     job = await addPart(tech, job, { partNumber: 'FUSE-10A', description: 'Fuse 10A', quantity: 2, unitPrice: 1_200 });
-    const staleCopy = job;
     const fuse = job.parts.find((part) => part.partNumber === 'FUSE-10A')!;
     job = await removeLineItem(tech, job, 'part', fuse.id);
     // The routes re-read the job before every change; the operation is given what the server now holds.
     const current = await reread(job);
-    await expect(updatePart(tech, current, fuse.id, { partNumber: 'FUSE-10A', description: 'Fuse 10A', quantity: 9, unitPrice: 1_200 })).rejects.toThrow();
+    await expect(updatePart(tech, current, fuse.id, { partNumber: 'FUSE-10A', description: 'Fuse 10A', quantity: 9, unitPrice: 1_200 }))
+      .rejects.toThrow('That part line no longer exists on this job.');
     expect(partList(await reread(job))).toEqual([['BRG-6205', 1, 9_500]]);
-    expect(staleCopy.parts).toHaveLength(2);
   });
 });
 
-describe('BD-PARTS-1 — the other job types are unchanged', () => {
-  it('a Breakdown that has gone back to In Progress still edits parts as always', async () => {
-    const job = await breakdownInCompletion();
-    expect(partsLockedAfterCompletion({ ...job, status: 'in_progress' })).toBe(false);
-  });
-});
+/*
+ * Service and Installation keep TR-01 through the REAL operations in `reviewer-decisions.test.ts`
+ * ("TR-01 extended", its else branch: add, change, remove and the office all refused in completion and at the
+ * signature); the pure rule for every type is asserted at the top of this file.
+ */

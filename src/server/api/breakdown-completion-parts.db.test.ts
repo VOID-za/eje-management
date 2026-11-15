@@ -6,7 +6,7 @@ import type { Job } from '@/domain';
 import { IDS, seedBaseline } from '@/data/postgres/test-fixtures';
 import { openTestDatabase, testDatabaseUrl, truncateAll } from '@/data/postgres/test-database';
 import { hashPassword } from '@/server/auth/passwords';
-import { ApiTestClient, startPostgresTestServer } from '@/test/api-harness';
+import { ApiTestClient, startPostgresTestServer, type ApiResponse } from '@/test/api-harness';
 
 /**
  * BD-PARTS-1 on PostgreSQL (the owner, 15 November 2026): a Breakdown's parts added, changed and removed in
@@ -103,10 +103,11 @@ describeDb('BD-PARTS-1 — a Breakdown’s parts in completion, on PostgreSQL', 
     expect((await tech.post(`/api/jobs/${id}/start_signature`)).status).toBe(200);
     const before = await rows(id);
     const [lineId] = (await db.select({ id: schema.jobParts.id }).from(schema.jobParts).where(eq(schema.jobParts.jobId, id))).map((row) => row.id);
+    const lockedCode = (answer: ApiResponse<unknown>) => [answer.status, (answer.error?.violations ?? []).map((violation) => violation.code)];
     for (const client of [tech, master]) {
-      expect((await client.post(`/api/jobs/${id}/add_part`, part('LATE', 1, 1))).status).toBe(422);
-      expect((await client.post(`/api/jobs/${id}/update_part`, { lineId, ...part('BRG-6205', 9, 1) })).status).toBe(422);
-      expect((await client.post(`/api/jobs/${id}/remove_line`, { kind: 'part', lineId })).status).toBe(422);
+      expect(lockedCode(await client.post(`/api/jobs/${id}/add_part`, part('LATE', 1, 1)))).toEqual([422, ['parts_locked_after_completion']]);
+      expect(lockedCode(await client.post(`/api/jobs/${id}/update_part`, { lineId, ...part('BRG-6205', 9, 1) }))).toEqual([422, ['parts_locked_after_completion']]);
+      expect(lockedCode(await client.post(`/api/jobs/${id}/remove_line`, { kind: 'part', lineId }))).toEqual([422, ['parts_locked_after_completion']]);
     }
     expect(await rows(id)).toEqual(before);
   });
