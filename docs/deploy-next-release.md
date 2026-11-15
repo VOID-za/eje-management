@@ -32,6 +32,16 @@ release is bigger than its commits say, `stage-release.ps1 -Bump minor` (or
 `major`) raises the step. The commit remains what identifies a deployment;
 `/api/health` reports both.
 
+## CONFIGURED — the EJE letterhead activated on v1.12.0 (`f287078`), LETTERHEAD-1, 15 November 2026 15:46 UTC
+
+A configuration change, not a release: no code, migration, job, customer or document changed.
+
+- **Source:** the owner supplied a PHOTOGRAPH of the printed EJE letterhead (`ChatGPT Image Nov 15, 2026, 05_26_36 PM.jpg`, 3497 × 860 JPEG, 771 927 bytes, iPhone 17 Pro, with GPS data in its EXIF). Rendered on a job card it printed as a grey photographed rectangle; the owner chose: "REDESIGN IT AND MAKE IT LOOK LIKE THE IMG".
+- **The digital letterhead** (`EJE Letterhead - digital v3.png`, 3300 × 660 PNG, 179 335 bytes, sha256 `0becc57d926574faa7a6365c43a0abf18bb31520a9f0ccb04897f9a4c8d5b822`): the photo’s layout and wording character for character (Reg CK1987/020035/23; EJE Industrial Electronics cc; VAT NO 4950134991; the Bonaero Park address; Peet Buitendag and Dawie Malan cells; Tel; Fax; sales@ / peetb@ejeie.co.za; P.O. Box 16282 Atlasville 1465), typeset dark grey on white; the EJE mark taken FROM THE PHOTO and cleaned to ink (lighting flattened, not redrawn). No location or camera data. Kept, with the original photo and a metadata-free copy (pixels identical), in `C:UsersjcmosDocumentsEJE Systemletterhead` — not in the repository, not public.
+- **Uploaded** through Administration (`POST /api/admin/companies/eje/letterhead`) as the demonstration Senior Tech: 200; audited "EJE Industrial Electronics letterhead uploaded"; EJE company version 1 → 2. WD Hearn JHB untouched (version 1, no letterhead; its GET answers 404).
+- **Verified on production (11/11):** EJE references the image (sha256 above) and the PDF process reads it back byte-identical; a NEW attendance PDF (rendered on request, nothing stored) embeds it once, and every line below the header is where it was; the five issued documents (EJE-2019, -2119, -2017, -2021, -2016) are the same sizes with no image; printing: a letterheaded one-page form 1 sheet and a two-page job card 2 sheets in Chrome and Edge. 0 service errors. Jobs 125, customers 11, final documents 68, unchanged.
+- **Not verified live:** a new JOB CARD with the letterhead, which needs a job issued — checked locally on the same renderer instead (the letterhead in the header band, title and number above the rule, the body unmoved).
+
 ## RELEASED — `f287078` = v1.12.0, Breakdown parts in completion, printing without blank sheets, EJE and WD Hearn JHB as companies, per-company letterheads (BD-PARTS-1, PRINT-BLANK-1, MULTI-CO-1, LETTERHEAD-1, 15 November 2026)
 
 Asked for by the owner on 15 November 2026, on v1.11.0 (`8eb6aa4`). **One migration: `0058_multi_company`.** Deployed — **not approved**. Branch `claude/bd-parts-1`.
