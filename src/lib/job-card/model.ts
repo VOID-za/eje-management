@@ -26,6 +26,7 @@ import {
   type ChecklistSignatureRole,
   type ChecklistTemplate,
   type CompanyDetails,
+  type CompanyId,
   type Contact,
   type Customer,
   type IsoDateTime,
@@ -91,6 +92,13 @@ export interface JobCardModel {
   /** "Job Card", "Parts Collection Note", "Delivery Note". */
   readonly documentTitle: string;
   readonly company: {
+    /**
+     * MULTI-CO-1: which company this is. It decides only whether the text
+     * header carries the dark "EJE" tile, which is EJE's own mark and no other
+     * company's. It is left out of the document's identity (the name already
+     * says whose document it is), so no EJE identity hash moves.
+     */
+    readonly id: CompanyId;
     readonly name: string;
     readonly address: string;
     readonly contactLine: string;
@@ -539,6 +547,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
     // document is the priced one either way.
     documentTitle: job.jobType === 'parts' ? 'Parts Collection Note' : 'Job Card',
     company: {
+      id: companyDetails.id,
       name: letterhead.name,
       address: letterhead.address,
       contactLine: letterhead.contactLine,

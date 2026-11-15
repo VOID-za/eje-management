@@ -3624,11 +3624,20 @@ await step('a Master can add a customer, with its first site', async () => {
     .waitFor({ timeout: 10000 });
 });
 
-await step('the new customer is selectable when raising a job', async () => {
+await step('the new customer is selectable when raising a job — for its company (MULTI-CO-1)', async () => {
+  /*
+   * MULTI-CO-1 (the owner, 15 November 2026): a new customer is WD Hearn JHB's by default, and New Job offers
+   * only the chosen company's customers, EJE first. So the new customer is NOT offered under EJE, and IS once
+   * WD Hearn JHB is chosen.
+   */
   await page.goto(`${BASE}/jobs/new`, { waitUntil: 'networkidle' });
-  const options = await page.locator('select').first().locator('option').allTextContents();
-  if (!options.some((option) => option.includes('Zenith Precision Works'))) {
-    throw new Error('a newly created customer was not offered on the new job screen');
+  const offered = async () => page.locator('select').first().locator('option').allTextContents();
+  if ((await offered()).some((option) => option.includes('Zenith Precision Works'))) {
+    throw new Error('a WD Hearn JHB customer was offered for an EJE job');
+  }
+  await page.getByTestId('job-company-wd-hearn-jhb').check();
+  if (!(await offered()).some((option) => option.includes('Zenith Precision Works'))) {
+    throw new Error('a newly created customer was not offered on the new job screen for its company');
   }
 });
 

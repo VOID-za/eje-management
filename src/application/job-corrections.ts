@@ -199,11 +199,14 @@ export const raiseJobCorrection = async (
     context.repos.settings.get(),
   ]);
   // MULTI-CO-1: on the paper of the company the job was raised for, from the one letterhead builder.
-  const letterhead = companyBlockFrom(company ?? companyDetailsFromSettings(settings));
+  const companyDetails = company ?? companyDetailsFromSettings(settings);
+  const letterhead = companyBlockFrom(companyDetails);
 
   const rendered = await context.services.pdf.renderCorrection(
     {
       company: {
+        // Only decides whether EJE's own tile is drawn in the text header.
+        id: companyDetails.id,
         name: letterhead.name,
         address: letterhead.address,
         contactLine: letterhead.contactLine,

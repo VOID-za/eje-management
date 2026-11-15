@@ -1,6 +1,7 @@
 import { textWidth } from '@/lib/pdf/writer';
 import {
   CORRECTED_AREA_LABEL,
+  DEFAULT_COMPANY_ID,
   SIMULATED_NOTICE_PRINT,
   correctionTitle,
   type CorrectedArea,
@@ -70,8 +71,14 @@ const heading = (sheet: Sheet, source: CorrectionDocumentSource): void => {
     return;
   }
 
-  sheet.pdf.rect(MARGIN, top - 24, 31, 31, INK);
-  sheet.pdf.text(MARGIN + 6, top - 14, 'EJE', { font: 'bold', size: 9, colour: '#ffffff' });
+  /*
+   * MULTI-CO-1: the dark tile is EJE's own text mark, drawn only on EJE's
+   * addendum; another company's has no tile and its name stays where it is.
+   */
+  if ((source.company.id ?? DEFAULT_COMPANY_ID) === DEFAULT_COMPANY_ID) {
+    sheet.pdf.rect(MARGIN, top - 24, 31, 31, INK);
+    sheet.pdf.text(MARGIN + 6, top - 14, 'EJE', { font: 'bold', size: 9, colour: '#ffffff' });
+  }
 
   sheet.pdf.text(MARGIN + 39, top - 6, source.company.name, {
     font: 'bold',

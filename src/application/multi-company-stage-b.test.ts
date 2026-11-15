@@ -196,6 +196,7 @@ describe('the letterhead is the job’s company’s', () => {
     const view = (await loadJobView(harness.repos, job.jobNumber))!;
     const model = buildJobCardModel({ ...view, generatedAt: clock.now() });
     expect(model.company).toEqual({
+      id: DEFAULT_COMPANY_ID,
       name: settings.companyName,
       address: settings.companyAddress,
       contactLine: `Tel ${settings.companyPhone} · ${settings.companyEmail}`,
@@ -234,7 +235,7 @@ describe('the letterhead is the job’s company’s', () => {
     const job = await createJob(harness.as(master), input(WD_HEARN_JHB_COMPANY_ID));
     const view = (await loadJobView(harness.repos, job.jobNumber))!;
     const model = buildJobCardModel({ ...view, generatedAt: clock.now() });
-    expect(model.company).toEqual({ name: 'WD Hearn JHB', address: '', contactLine: '', registrationLine: '' });
+    expect(model.company).toEqual({ id: WD_HEARN_JHB_COMPANY_ID, name: 'WD Hearn JHB', address: '', contactLine: '', registrationLine: '' });
   });
 });
 

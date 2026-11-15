@@ -9,6 +9,7 @@ import {
   asCustomerId,
   CompanyRuleError,
   DEFAULT_COMPANY_ID,
+  type CompanyId,
   WD_HEARN_JHB_COMPANY_ID,
 } from '@/domain';
 import { PostgresCompanyRepository } from './company-repository';
@@ -17,6 +18,7 @@ import { PostgresJobRepository } from './job-repository';
 import { openTestDatabase, testDatabaseUrl, truncateAll } from './test-database';
 import { IDS, jobFixture, seedBaseline } from './test-fixtures';
 import { withTransaction } from './transaction';
+import { companyRefusalOf } from './company-refusals';
 
 /**
  * TWO COMPANIES ON POSTGRESQL. MULTI-CO-1, migration 0058.
@@ -74,6 +76,19 @@ const insertWithoutCompany = (db: Database, id: string, jobNumber: string, seq: 
     insert into jobs (id, job_number, job_number_seq, customer_id, site_id, contact_id, machine_id, job_type_code, priority, status)
     values (${id}, ${jobNumber}, ${seq}, ${IDS.customer}, ${IDS.site}, ${IDS.contact}, ${IDS.machine}, 'breakdown', 'urgent', 'open')
   `);
+
+const linkToWdHearn = (db: Database, customerId: string) =>
+  db.execute(sql`insert into customer_companies (customer_id, company_id) values (${customerId}, 'wd-hearn-jhb') on conflict do nothing`);
+
+/** The error the driver raised, wherever in the chain it sits (the query builder wraps it). */
+const errorOf = async (work: Promise<unknown>): Promise<unknown> => {
+  try {
+    await work;
+  } catch (error) {
+    return error;
+  }
+  throw new Error('that statement was expected to be refused, and was not');
+};
 
 describeDb('migration 0058 over a database already holding EJE’s jobs and customers', () => {
   let db: Database;
@@ -206,6 +221,11 @@ describeDb('two companies on PostgreSQL', () => {
   });
 
   describe('a job’s company', () => {
+    // The baseline customer is EJE's; these tests raise WD Hearn jobs for it, so it is WD Hearn's too.
+    beforeEach(async () => {
+      await linkToWdHearn(db, IDS.customer);
+    });
+
     it('is EJE when the inserting code names none (the release before companies)', async () => {
       await insertWithoutCompany(db, '00000000-0000-4000-8000-000000058002', 'EJE-1068', 1068);
       const [row] = await db.execute<{ company_id: string }>(sql`select company_id from jobs`);
@@ -328,6 +348,106 @@ describeDb('two companies on PostgreSQL', () => {
       expect(fresh.companyIds).toEqual([WD_HEARN_JHB_COMPANY_ID]);
 
       await expect(customers.save({ ...abc, companyIds: [] })).rejects.toThrow('at least one company');
+    });
+  });
+
+  /*
+   * THE DATABASE TIES A JOB'S COMPANY TO ITS CUSTOMER'S (0058: `jobs_customer_has_company`,
+   * `customer_companies_in_use`). The application checks first; these are what stand when two people race
+   * past that check, or when the live release (on a rollback) raises a job with the column default 'eje'.
+   * Drafts are exempt in both, as in `refuseRemovingCompanyInUse` and `releaseDraft`.
+   */
+  describe('the database ties a job’s company to its customer’s companies', () => {
+    const customerLike = async (id: string, name: string, accountNumber: string, companyIds: readonly CompanyId[]) => {
+      const customers = new PostgresCustomerRepository(db);
+      const abc = (await customers.findById(asCustomerId(IDS.customer)))!;
+      return customers.save({ ...abc, id: asCustomerId(id), name, accountNumber, notes: [], companyIds });
+    };
+
+    it('refuses a job for a company its customer is not a customer of — as the application’s own refusal', async () => {
+      const jobs = new PostgresJobRepository(db);
+      const allocated = await new PostgresCompanyRepository(db).allocateJobNumber(WD_HEARN_JHB_COMPANY_ID);
+      const refused = await errorOf(jobs.save(jobFixture(allocated.jobNumber, { companyId: WD_HEARN_JHB_COMPANY_ID })));
+      expect(companyRefusalOf(refused)?.violation.code).toBe('customer_not_of_company');
+      expect(await refusalOf(Promise.reject(refused))).toContain('is not one of its customer');
+      expect(await db.execute(sql`select 1 from jobs where job_number = ${allocated.jobNumber}`)).toHaveLength(0);
+
+      // Once the customer is WD Hearn's too, the same job is accepted.
+      await linkToWdHearn(db, IDS.customer);
+      const saved = await jobs.save(jobFixture(allocated.jobNumber, { companyId: WD_HEARN_JHB_COMPANY_ID }));
+      expect(saved.companyId).toBe(WD_HEARN_JHB_COMPANY_ID);
+    });
+
+    it('refuses the live release’s insert (no company named: EJE) for a customer of WD Hearn JHB only', async () => {
+      const wdOnly = await customerLike('00000000-0000-4000-8000-000000058020', 'WD Hearn only (0058 trigger)', 'WDH-TRG', [
+        WD_HEARN_JHB_COMPANY_ID,
+      ]);
+      const refused = await errorOf(
+        db.execute(sql`
+          insert into jobs (id, job_number, job_number_seq, customer_id, site_id, contact_id, machine_id, job_type_code, priority, status)
+          values ('00000000-0000-4000-8000-000000058021', 'EJE-3001', 3001, ${wdOnly.id}, ${IDS.site}, ${IDS.contact}, ${IDS.machine}, 'breakdown', 'urgent', 'open')
+        `),
+      );
+      expect(companyRefusalOf(refused)?.violation.code).toBe('customer_not_of_company');
+      // For an EJE customer the same insert still works, exactly as before.
+      await insertWithoutCompany(db, '00000000-0000-4000-8000-000000058022', 'EJE-3002', 3002);
+      const [row] = await db.execute<{ company_id: string }>(sql`select company_id from jobs where job_number = 'EJE-3002'`);
+      expect(row?.company_id).toBe('eje');
+    });
+
+    it('lets a draft through, and asks again when it leaves draft or changes customer', async () => {
+      const jobs = new PostgresJobRepository(db);
+      const allocated = await new PostgresCompanyRepository(db).allocateJobNumber(WD_HEARN_JHB_COMPANY_ID);
+      const draft = await jobs.save(jobFixture(allocated.jobNumber, { companyId: WD_HEARN_JHB_COMPANY_ID, status: 'draft' }));
+      expect(draft.status).toBe('draft');
+      // Saving the draft again is fine; releasing it is not, while the customer is not WD Hearn's.
+      const edited = await jobs.save({ ...draft, faultDescription: 'Still a draft.' });
+      const released = await errorOf(jobs.save({ ...edited, status: 'open' }));
+      expect(companyRefusalOf(released)?.violation.code).toBe('customer_not_of_company');
+
+      await linkToWdHearn(db, IDS.customer);
+      const open = await jobs.save({ ...(await jobs.findById(draft.id))!, status: 'open' });
+      expect(open.status).toBe('open');
+      // Its later saves do not ask again: nothing they change is the company, the customer or the draft.
+      expect((await jobs.save({ ...open, faultDescription: 'Spindle drive alarm 751.' })).faultDescription).toBe(
+        'Spindle drive alarm 751.',
+      );
+
+      // Moving it to a customer of EJE only is refused.
+      const ejeOnly = await customerLike('00000000-0000-4000-8000-000000058023', 'EJE only (0058 trigger)', 'EJE-TRG', [
+        DEFAULT_COMPANY_ID,
+      ]);
+      const moved = await errorOf(db.execute(sql`update jobs set customer_id = ${ejeOnly.id} where id = ${draft.id}`));
+      expect(companyRefusalOf(moved)?.violation.code).toBe('customer_not_of_company');
+    });
+
+    it('refuses taking a company off a customer with a job for it, and allows it with only a draft', async () => {
+      await linkToWdHearn(db, IDS.customer);
+      const jobs = new PostgresJobRepository(db);
+      const customers = new PostgresCustomerRepository(db);
+      const first = await new PostgresCompanyRepository(db).allocateJobNumber(WD_HEARN_JHB_COMPANY_ID);
+      const draft = await jobs.save(jobFixture(first.jobNumber, { companyId: WD_HEARN_JHB_COMPANY_ID, status: 'draft' }));
+
+      // Only a draft: WD Hearn may come off (the draft is re-asked when released), and go back on.
+      const abc = (await customers.findById(asCustomerId(IDS.customer)))!;
+      expect((await customers.save({ ...abc, companyIds: [DEFAULT_COMPANY_ID] })).companyIds).toEqual([DEFAULT_COMPANY_ID]);
+      await linkToWdHearn(db, IDS.customer);
+
+      const second = await new PostgresCompanyRepository(db).allocateJobNumber(WD_HEARN_JHB_COMPANY_ID);
+      await jobs.save(jobFixture(second.jobNumber, { companyId: WD_HEARN_JHB_COMPANY_ID }));
+      const refused = await errorOf(
+        customers.save({ ...(await customers.findById(asCustomerId(IDS.customer)))!, companyIds: [DEFAULT_COMPANY_ID] }),
+      );
+      expect(companyRefusalOf(refused)?.violation.code).toBe('customer_company_in_use');
+      const deleted = await errorOf(
+        db.execute(sql`delete from customer_companies where customer_id = ${IDS.customer} and company_id = 'wd-hearn-jhb'`),
+      );
+      expect(companyRefusalOf(deleted)?.violation.code).toBe('customer_company_in_use');
+      const links = await db.execute<{ company_id: string }>(
+        sql`select company_id from customer_companies where customer_id = ${IDS.customer} order by company_id`,
+      );
+      expect(links.map((link) => link.company_id)).toEqual(['eje', 'wd-hearn-jhb']);
+      expect((await jobs.findById(draft.id))?.status).toBe('draft');
     });
   });
 });

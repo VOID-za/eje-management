@@ -11,6 +11,7 @@ import type {
   Site,
   SystemSettings,
   CompanyDetails,
+  CompanyId,
   User,
 } from '@/domain';
 export type { DeliveryFailureKind, DeliveryState } from '@/domain';
@@ -346,6 +347,12 @@ export interface PdfService {
  */
 export interface CorrectionDocumentSource {
   readonly company: {
+    /**
+     * MULTI-CO-1: which company, deciding only whether the text header carries
+     * EJE's own "EJE" tile. Absent means EJE, the default company, as every
+     * addendum was before companies existed.
+     */
+    readonly id?: CompanyId;
     readonly name: string;
     readonly address: string;
     readonly contactLine: string;

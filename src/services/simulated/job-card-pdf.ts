@@ -2,7 +2,7 @@ import { fitSignatureBox, signatureFacsimile, SIGNATURE_INK } from '@/lib/signat
 import { buildJobCardModel, type ChargeRow, type JobCardModel, type LabelValue } from '@/lib/job-card/model';
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
 import { displaySize, type PreparedPhoto } from '@/lib/pdf/image';
-import { SIMULATED_NOTICE_PRINT } from '@/domain';
+import { DEFAULT_COMPANY_ID, SIMULATED_NOTICE_PRINT } from '@/domain';
 import type { FinalDocumentSource, RenderedPdf } from '../ports';
 
 /**
@@ -99,9 +99,18 @@ const header = (sheet: Sheet, model: JobCardModel, letterhead: PdfImage | undefi
     return;
   }
 
-  // The dark EJE tile, at the screen's size-11 (44px -> 31pt).
-  sheet.pdf.rect(MARGIN, top - 24, 31, 31, INK);
-  sheet.pdf.text(MARGIN + 6, top - 14, 'EJE', { font: 'bold', size: 9, colour: '#ffffff' });
+  /*
+   * The dark EJE tile, at the screen's size-11 (44px -> 31pt).
+   *
+   * MULTI-CO-1: the tile is EJE's own text mark, so it is drawn only on EJE's
+   * documents. Another company's text header has no tile — never "EJE"
+   * beside "WD Hearn JHB" — and its name stays where it always is, so the
+   * layout is the same for both.
+   */
+  if (model.company.id === DEFAULT_COMPANY_ID) {
+    sheet.pdf.rect(MARGIN, top - 24, 31, 31, INK);
+    sheet.pdf.text(MARGIN + 6, top - 14, 'EJE', { font: 'bold', size: 9, colour: '#ffffff' });
+  }
 
   sheet.pdf.text(MARGIN + 39, top - 6, model.company.name, {
     font: 'bold',

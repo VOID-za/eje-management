@@ -772,6 +772,11 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
    * raises itself are EJE's (the column's default) and numbered from EJE's own sequence by allocate_job_number(); the
    * customers it creates are linked to EJE (customers_link_default_company) and the ones it saves keep their links;
    * and what it saves into the settings row reaches the EJE company (system_settings_mirror_to_eje).
+   *
+   * What it can NOT do: raise a job for a customer of WD Hearn JHB only. It names no company, so the job would be
+   * EJE's for a customer EJE does not serve; `jobs_customer_has_company` refuses that insert in the database
+   * (restrict_violation) rather than let it write a job whose company is not its customer's. Raising a job for a
+   * customer linked to EJE — every customer it knows — still works, as above.
    */
   it('meets the 0058 rows: keeps a WD Hearn JHB job WD Hearn’s; its own jobs and customers are EJE’s; its settings reach EJE', async () => {
     const B = BATCH_0058;
@@ -790,6 +795,20 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
     await jobs.save(jobFixture(allocated.jobNumber));
     const [own] = await db.execute<{ company_id: string }>(sql`select company_id from jobs where job_number = ${allocated.jobNumber}`);
     expect(own?.company_id).toBe('eje');
+
+    // For phase 1's customer of WD Hearn JHB only, the database refuses the EJE job it would raise.
+    const refusedNumber = (await jobs.allocateJobNumber()).jobNumber;
+    let refusal = '';
+    try {
+      await jobs.save(jobFixture(refusedNumber, { customerId: asCustomerId(B.wdHearnCustomer) }));
+    } catch (error) {
+      for (let current: unknown = error, depth = 0; depth < 5 && current instanceof Error; depth += 1) {
+        refusal += `${current.message} | `;
+        current = (current as { cause?: unknown }).cause;
+      }
+    }
+    expect(refusal).toContain('is not one of its customer');
+    expect(await db.execute(sql`select 1 from jobs where job_number = ${refusedNumber}`)).toHaveLength(0);
 
     const customers = new PostgresCustomerRepository(db);
     const linksOf = async (customerId: string) =>

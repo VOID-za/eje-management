@@ -1,4 +1,5 @@
 import { buildJobCardModel } from '@/lib/job-card/model';
+import { DEFAULT_COMPANY_ID } from '@/domain';
 import type { JobView } from '@/application/job-view';
 import { SignatureDisplay } from './SignaturePad';
 
@@ -48,9 +49,18 @@ export const PartsCollectionNote = ({ view }: { readonly view: JobView }) => {
       <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-steel-900 pb-5">
         <div>
           <div className="flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-[0.55rem] bg-steel-900 text-[13px] font-black tracking-tighter text-white">
-              EJE
-            </span>
+            {/*
+              MULTI-CO-1: the dark tile is EJE's own text mark, shown only on
+              EJE's documents. Another company's keeps an empty space of the
+              same size, so its name sits exactly where it does on the PDF.
+            */}
+            {model.company.id === DEFAULT_COMPANY_ID ? (
+              <span className="flex size-11 items-center justify-center rounded-[0.55rem] bg-steel-900 text-[13px] font-black tracking-tighter text-white">
+                EJE
+              </span>
+            ) : (
+              <span aria-hidden="true" className="size-11 shrink-0" data-testid="no-company-tile" />
+            )}
             <div>
               <p className="text-lg leading-tight font-bold text-steel-900">
                 {model.company.name}

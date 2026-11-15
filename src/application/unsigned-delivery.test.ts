@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { Job } from '@/domain';
+import { asContactId, asCustomerId, asMachineId, asSiteId, WD_HEARN_JHB_COMPANY_ID, type Job } from '@/domain';
+import { createJob } from './job-creation';
 import {
   acceptJob,
   addLabour,
@@ -43,10 +44,10 @@ const technician = seedUser('user-tech-sipho');
 
 const REASON = 'The customer asked for a copy for their insurer.';
 
-const workToSignature = async (harness: Harness): Promise<Job> => {
+const workToSignature = async (harness: Harness, raised?: Job): Promise<Job> => {
   const view = await loadJobView(harness.repos, 'EJE-1048');
   const tech = harness.as(technician);
-  let job = await acceptJob(tech, view!.job);
+  let job = await acceptJob(tech, raised ?? view!.job);
   job = await addLabour(tech, job, {
     date: '2026-09-17',
     rateType: 'normal',
@@ -62,10 +63,10 @@ const workToSignature = async (harness: Harness): Promise<Job> => {
 };
 
 /** The refusal outcome: closed, unsigned, with the document on file. */
-const closedUnsigned = async (harness: Harness): Promise<Job> => {
+const closedUnsigned = async (harness: Harness, raised?: Job): Promise<Job> => {
   const refused = await recordSignatureRefusal(
     harness.as(technician),
-    await workToSignature(harness),
+    await workToSignature(harness, raised),
     { reason: 'The customer would not sign.' },
   );
   return resolveSignatureRefusal(harness.as(master), refused, 'Issued without a signature.');
@@ -173,6 +174,39 @@ describe('a Master authorising the send', () => {
     const sent = (await harness.outbox.list())[0];
     expect(JSON.stringify(sent)).not.toMatch(/signed job card/iu);
     expect(JSON.stringify(sent)).toMatch(/without a customer signature/iu);
+  });
+
+  /** MULTI-CO-1: signed by the job's company — EJE's exactly as always. */
+  it('is signed by EJE Industrial Electronics on an EJE job, and by WD Hearn JHB on a WD Hearn JHB job', async () => {
+    await authoriseUnsignedDelivery(harness.as(master), closed, { reason: REASON });
+    const ejeMail = JSON.stringify((await harness.outbox.list())[0]);
+    expect(ejeMail).toContain('Kind regards\\nEJE Industrial Electronics');
+
+    const other = buildHarness();
+    // A WD Hearn JHB job, raised for Midrand (a customer of both companies) and worked to the same refusal.
+    const raised = await createJob(other.as(master), {
+      customerId: asCustomerId('cust-midrand'),
+      siteId: asSiteId('site-midrand-main'),
+      contactId: asContactId('contact-midrand-main'),
+      machineId: asMachineId('machine-midrand-press'),
+      companyId: WD_HEARN_JHB_COMPANY_ID,
+      jobType: 'breakdown',
+      priority: 'normal',
+      scheduledDate: null,
+      scheduledEndDate: null,
+      orderNumber: '',
+      referenceNumber: '',
+      faultDescription: 'Spindle will not start.',
+      primaryTechnicianId: technician.id,
+      additionalTechnicianIds: [],
+      courierCollection: false,
+      deliveryNote: '',
+    });
+    const wdJob = await closedUnsigned(other, raised);
+    await authoriseUnsignedDelivery(other.as(master), wdJob, { reason: REASON });
+    const wdMail = JSON.stringify((await other.outbox.list())[0]);
+    expect(wdMail).toContain('Kind regards\\nWD Hearn JHB');
+    expect(wdMail).not.toContain('EJE Industrial Electronics');
   });
 
   /** Sending is not office handling: the job stays exactly where it was. */

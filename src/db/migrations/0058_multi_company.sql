@@ -8,7 +8,7 @@
 -- sequence, and has its own details, letterhead, notification sender and rates.
 --
 -- ADDITIVE. Two new tables, one new column with a default, one index swapped,
--- three triggers, one function. No existing row is rewritten except to record
+-- six triggers, one function. No existing row is rewritten except to record
 -- what is already true: every existing job and every existing customer is
 -- EJE's. No column is dropped: `system_settings` keeps its company and rate
 -- columns, because the live release reads them (see ROLLBACK).
@@ -37,7 +37,14 @@
 --
 -- ROLLBACK. The live release (8eb6aa4, v1.11.0) has never heard of companies:
 --   - it inserts jobs without `company_id`; the DEFAULT 'eje' makes every such
---     job EJE's, which is the only company it knows;
+--     job EJE's, which is the only company it knows. For a customer of EJE —
+--     every customer it can create, and every customer that existed before
+--     this release — that is right, and works as it always has. For a customer
+--     of WD Hearn JHB ONLY it would be an EJE job for a customer EJE does not
+--     serve, so `jobs_customer_has_company` REFUSES that insert: the live
+--     release reports an error for that one job rather than writing a job
+--     whose company is not its customer's. That is the deliberate cost, and it
+--     falls only on customers this release created for WD Hearn alone;
 --   - it inserts customers without a company link; `customers_link_default_
 --     company` links every new customer to EJE, so none is ever left with no
 --     company;
@@ -108,7 +115,9 @@ CREATE TABLE IF NOT EXISTS "companies" (
 	-- A letterhead is a stored file or nothing: never a key without its type and checksum.
 	CONSTRAINT "companies_letterhead_complete" CHECK (
 		("letterhead_storage_key" IS NULL AND "letterhead_content_type" IS NULL AND "letterhead_sha256" IS NULL AND "letterhead_uploaded_at" IS NULL)
-		OR ("letterhead_storage_key" IS NOT NULL AND "letterhead_content_type" IS NOT NULL AND "letterhead_sha256" ~ '^[0-9a-f]{64}$' AND "letterhead_uploaded_at" IS NOT NULL)
+		-- "IS NOT NULL" stated for the checksum too: NULL ~ '…' is NULL, and a CHECK that comes out NULL
+		-- PASSES — so without it a letterhead with no checksum was accepted (company-letterhead.db.test.ts).
+		OR ("letterhead_storage_key" IS NOT NULL AND "letterhead_content_type" IS NOT NULL AND "letterhead_sha256" IS NOT NULL AND "letterhead_sha256" ~ '^[0-9a-f]{64}$' AND "letterhead_uploaded_at" IS NOT NULL)
 	),
 	CONSTRAINT "companies_rates_non_negative" CHECK ("labour_normal_cents" >= 0 AND "labour_overtime_cents" >= 0 AND "labour_double_cents" >= 0 AND "callout_rate_cents" >= 0 AND "test_bench_fee_cents" >= 0 AND "kilometre_rate_cents" >= 0 AND "vat_percent_basis_points" BETWEEN 0 AND 10000)
 );
@@ -231,6 +240,78 @@ DROP TRIGGER IF EXISTS "jobs_company_immutable" ON "jobs";--> statement-breakpoi
 CREATE TRIGGER "jobs_company_immutable"
   BEFORE UPDATE OF "company_id" ON "jobs"
   FOR EACH ROW EXECUTE FUNCTION "jobs_company_immutable"();
+--> statement-breakpoint
+
+-- A JOB'S COMPANY IS ONE OF ITS CUSTOMER'S COMPANIES. The application checks
+-- this before it writes (raising a job, releasing a draft, moving a machine),
+-- but a check followed by a write can race a second person taking the company
+-- off the customer, and the live release (on a rollback) never checks at all:
+-- it inserts every job with the column default 'eje'. So the database refuses
+-- it too.
+--
+-- A DRAFT IS NOT HELD TO IT, exactly as the application does not hold it: the
+-- office may take a company off a customer while a draft for it exists, and
+-- the draft is re-asked when it is released. So the rule applies when a job is
+-- inserted as anything but a draft, when it leaves draft, and when its
+-- customer changes — not on every save of a job that has not moved, so a save
+-- never fails over something it did not change. A NULL customer (none today:
+-- the column is NOT NULL) has nothing to check.
+--
+-- FOR KEY SHARE on the link is what closes the race: a concurrent removal of
+-- that link waits for this job's transaction, and then sees the job (and is
+-- refused by `customer_companies_in_use` below); a removal that got there
+-- first makes this lookup wait for it, find nothing, and refuse the job.
+-- `restrict_violation` with a named constraint, so the API can answer a 422
+-- with a stable code rather than a 500.
+CREATE OR REPLACE FUNCTION "jobs_customer_has_company"() RETURNS trigger AS $$
+BEGIN
+  IF NEW."customer_id" IS NULL OR NEW."status"::text = 'draft' THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE'
+     AND NEW."customer_id" IS NOT DISTINCT FROM OLD."customer_id"
+     AND OLD."status"::text <> 'draft' THEN
+    RETURN NEW;
+  END IF;
+  PERFORM 1 FROM "customer_companies" cc
+   WHERE cc."customer_id" = NEW."customer_id" AND cc."company_id" = NEW."company_id"
+   FOR KEY SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'job % is for company %, which is not one of its customer''s companies', NEW."job_number", NEW."company_id"
+      USING ERRCODE = 'restrict_violation', CONSTRAINT = 'jobs_customer_has_company';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "jobs_customer_has_company" ON "jobs";--> statement-breakpoint
+CREATE TRIGGER "jobs_customer_has_company"
+  BEFORE INSERT OR UPDATE OF "customer_id", "status" ON "jobs"
+  FOR EACH ROW EXECUTE FUNCTION "jobs_customer_has_company"();
+--> statement-breakpoint
+
+-- A COMPANY STAYS ON A CUSTOMER WHILE THE CUSTOMER HAS WORK FOR IT: the same
+-- rule as the application's `refuseRemovingCompanyInUse`, drafts excepted in
+-- both. Taking it off would leave a job whose company is not its customer's.
+CREATE OR REPLACE FUNCTION "customer_companies_in_use"() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM "jobs" j
+    WHERE j."customer_id" = OLD."customer_id"
+      AND j."company_id" = OLD."company_id"
+      AND j."status"::text <> 'draft'
+  ) THEN
+    RAISE EXCEPTION 'company % cannot be taken off customer %: the customer has jobs for it', OLD."company_id", OLD."customer_id"
+      USING ERRCODE = 'restrict_violation', CONSTRAINT = 'customer_companies_in_use';
+  END IF;
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "customer_companies_in_use" ON "customer_companies";--> statement-breakpoint
+CREATE TRIGGER "customer_companies_in_use"
+  BEFORE DELETE ON "customer_companies"
+  FOR EACH ROW EXECUTE FUNCTION "customer_companies_in_use"();
 --> statement-breakpoint
 
 -- NO TWO COMPANIES' NUMBERS CAN EVER LOOK ALIKE. A prefix equal to another

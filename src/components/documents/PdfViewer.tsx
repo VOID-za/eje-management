@@ -456,11 +456,20 @@ export const printPdf = async (bytes: Uint8Array, onProgress?: (done: number, to
    * Fix: the paper is stated (A4, no margin), each page image is sized by HEIGHT a millimetre under the sheet
    * (296 mm — 0.3 % smaller, centred, nothing clipped), and the app's page-height rules (`min-h-dvh` on the
    * body) are switched off while printing so they cannot add a sheet either.
+   *
+   * KEEPING EACH PAGE'S PROPORTIONS. Sizing by `height: 296mm` with `width: auto; max-width: 100%` stretched any
+   * page that is not portrait A4: a landscape page wanted to be 419 mm wide at 296 mm tall, max-width clamped
+   * the width to 210 mm and left the height, so it printed squashed. Now every image is a FIXED BOX the full
+   * sheet wide and 296 mm tall — still a millimetre under the sheet, so the blank-sheet overflow cannot come
+   * back whatever the canvas's floored pixel size — and `object-fit: contain` draws the page inside that box
+   * as large as it fits WITHOUT changing its aspect ratio, centred. A portrait A4 page (1653 × 2338) is limited
+   * by the height: 296 mm tall, 209.3 mm wide, exactly as before. A landscape or wider page is limited by the
+   * width: 210 mm wide, its own height, centred on the sheet. Nothing is clipped or stretched.
    */
   style.textContent =
     '@media print { @page { size: A4 portrait; margin: 0; } ' +
     'html.eje-print-isolate, html.eje-print-isolate body { min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 0 !important; } ' +
-    '.eje-print-root img { display: block; width: auto; height: 296mm; max-width: 100%; margin: 0 auto; break-after: page; page-break-after: always; } ' +
+    '.eje-print-root img { display: block; width: 100%; height: 296mm; object-fit: contain; object-position: center; margin: 0 auto; break-after: page; page-break-after: always; } ' +
     '.eje-print-root img:last-child { break-after: auto; page-break-after: auto; } }';
   try {
     for (let number = 1; number <= pdf.numPages; number += 1) {

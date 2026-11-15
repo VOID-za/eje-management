@@ -186,7 +186,8 @@ const TemplateEditor = ({
   const [name, setName] = useState(template?.name ?? '');
   const [description, setDescription] = useState(template?.description ?? '');
   const [subject, setSubject] = useState(template?.current.subject ?? '{{job_number}} — {{document_title}}');
-  const [body, setBody] = useState(template?.current.body ?? 'Good day {{customer_name}},\n\n\n\nKind regards\nEJE Industrial Electronics');
+  // MULTI-CO-1: a new template starts signed by the job's company, as the shipped ones are.
+  const [body, setBody] = useState(template?.current.body ?? 'Good day {{customer_name}},\n\n\n\nKind regards\n{{our_company}}');
   const [changeNote, setChangeNote] = useState('');
   const [rendered, setRendered] = useState<{ subject: string; body: string; problems: readonly { message: string }[] } | null>(null);
   // Where the cursor was last, in which field: placeholders go there.

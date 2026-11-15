@@ -215,7 +215,9 @@ await check('Company details: WD Hearn JHB’s details, prefix and start saved; 
   await page.getByTestId('company-admin-details').waitFor({ timeout: 20000 });
   await press(page.getByRole('tab', { name: 'WD Hearn JHB', exact: true }));
   await page.getByTestId('company-next-number').filter({ hasText: 'WDJ-' }).waitFor({ timeout: 10000 });
-  if ((await page.getByTestId('company-letterhead').innerText()).trim() !== 'No letterhead uploaded.') fail('no letterhead placeholder');
+  // LETTERHEAD-1: none uploaded yet — said, and an upload offered (nothing is invented in its place).
+  if (!(await page.getByTestId('company-letterhead').innerText()).trim().startsWith('No letterhead uploaded.')) fail('the letterhead card does not say none is uploaded');
+  if ((await page.getByTestId('company-letterhead-upload').count()) === 0) fail('no letterhead upload is offered');
 
   // The overlap: refused in the form, beside the field…
   await page.getByTestId('company-jobNumberPrefix').fill('EJE-');

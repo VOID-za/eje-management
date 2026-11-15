@@ -170,6 +170,34 @@ export const readCompanyLetterheadFile = async (
 };
 
 /**
+ * The letterhead file for the download route (`GET /api/companies/:id/letterhead`).
+ *
+ * A DAMAGED FILE IS NOT A MISSING ONE, and it is not served: when the stored
+ * bytes no longer match their checksum the store raises, and this answers the
+ * way every other stored document does — `document_damaged`, a 422 — rather
+ * than a 500. The browser's preview treats any refusal as "no letterhead" and
+ * draws the text header, as the server's own render does (`loadCompanyLetterhead`).
+ */
+export const downloadCompanyLetterheadFile = async (
+  context: Pick<OperationContext, 'repos' | 'services'>,
+  companyId: CompanyId,
+): Promise<Awaited<ReturnType<typeof readCompanyLetterheadFile>>> => {
+  try {
+    return await readCompanyLetterheadFile(context, companyId);
+  } catch (cause) {
+    if (!(cause instanceof StorageIntegrityFailed)) throw cause;
+    throw new WorkflowError('The letterhead is damaged.', [
+      {
+        code: 'document_damaged',
+        message:
+          'The stored letterhead is not the file that was uploaded, so it has not been served. ' +
+          'Documents carry the text header until it is restored from a backup or uploaded again.',
+      },
+    ]);
+  }
+};
+
+/**
  * The company's letterhead, prepared for a document — or undefined, and the
  * document carries its text header exactly as before.
  *

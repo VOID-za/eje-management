@@ -34,6 +34,15 @@ import { formatDate, formatDateTime } from '@/lib/format';
 export interface DeliveryNoteModel {
   readonly title: 'Delivery Note';
   readonly company: {
+    /**
+     * MULTI-CO-1: the company's short code ("EJE", "WDJ"), printed under the
+     * release signature line — "Released by (EJE)" — so a WD Hearn note does
+     * not say it was released by EJE. Left out of the note's identity: it is
+     * fixed per company and the name already says whose note it is, so no
+     * recorded EJE identity changes. Absent (a model drawn by hand, as a test
+     * does) means EJE.
+     */
+    readonly code?: string;
     readonly name: string;
     readonly address: string;
     readonly contactLine: string;
@@ -84,9 +93,13 @@ export const courierSignatureReference = (job: Pick<Job, 'jobNumber' | 'signatur
  */
 export const identifiedDeliveryNoteContent = (
   model: DeliveryNoteModel,
-): Omit<DeliveryNoteModel, 'signature' | 'footer'> => {
-  const { signature: _signature, footer: _footer, ...rest } = model;
-  return rest;
+): Omit<DeliveryNoteModel, 'signature' | 'footer' | 'company'> & {
+  readonly company: Omit<DeliveryNoteModel['company'], 'code'>;
+} => {
+  const { signature: _signature, footer: _footer, company, ...rest } = model;
+  // MULTI-CO-1: the hashed shape is what it was before the code was on the model.
+  const { code: _code, ...companyText } = company;
+  return { ...rest, company: companyText };
 };
 
 export interface DeliveryNoteInput {
@@ -104,7 +117,8 @@ export const deliveryNoteFileName = (job: Pick<Job, 'jobNumber'>): string => `${
 
 export const buildDeliveryNoteModel = (input: DeliveryNoteInput, generatedAt: string): DeliveryNoteModel => {
   const { job, customer, site, contact, settings } = input;
-  const letterhead = companyBlockFrom(input.company ?? companyDetailsFromSettings(settings));
+  const companyDetails = input.company ?? companyDetailsFromSettings(settings);
+  const letterhead = companyBlockFrom(companyDetails);
   const definition = getJobTypeDefinition(job.jobType);
   // TR-PARTS-1: EVERY part booked in, each with its own quantity, on this one note.
   const repairItem = definition.capturesRepairItem
@@ -133,6 +147,7 @@ export const buildDeliveryNoteModel = (input: DeliveryNoteInput, generatedAt: st
   return {
     title: 'Delivery Note',
     company: {
+      code: companyDetails.code,
       name: letterhead.name,
       address: letterhead.address,
       contactLine: letterhead.contactLine,

@@ -64,7 +64,8 @@ export const DOCUMENT_IDENTITY_PATTERN = /^(jcm1|dln1):[0-9a-f]{64}$/;
 
 export const isDocumentIdentity = (value: string): boolean => DOCUMENT_IDENTITY_PATTERN.test(value);
 
-type IdentifiedModel = Omit<JobCardModel, 'footerLines' | 'acceptance' | 'refusal' | 'photos'> & {
+type IdentifiedModel = Omit<JobCardModel, 'footerLines' | 'acceptance' | 'refusal' | 'photos' | 'company'> & {
+  readonly company: Omit<JobCardModel['company'], 'id'>;
   readonly photos: readonly {
     readonly id: string;
     readonly caption: string;
@@ -76,12 +77,19 @@ type IdentifiedModel = Omit<JobCardModel, 'footerLines' | 'acceptance' | 'refusa
 /** The part of the model that is the document, with the photographs' measurements. */
 export const identifiedContent = (model: JobCardModel, job: Pick<Job, 'photos'>): IdentifiedModel => {
   // Destructured out, not set to null, so the hashed shape has no key for them.
-  const { footerLines: _footer, acceptance: _acceptance, refusal: _refusal, photos, ...rest } = model;
+  const { footerLines: _footer, acceptance: _acceptance, refusal: _refusal, photos, company, ...rest } = model;
+  /*
+   * MULTI-CO-1: the company's id is left out — it only decides whether the
+   * EJE tile is drawn — so the hashed shape is exactly what it was before the
+   * id was on the model and no identity already recorded changes.
+   */
+  const { id: _companyId, ...companyText } = company;
   const measured = new Map<string, string | null>(
     job.photos.map((photo) => [photo.id, photo.checksumSha256]),
   );
   return {
     ...rest,
+    company: companyText,
     photos: photos.map((photo) => ({
       id: photo.id,
       caption: photo.caption,

@@ -26,7 +26,14 @@ import { loadCorrectionDocument, raiseJobCorrection } from './job-corrections';
 import { loadFinalDocumentFile, storeFinalDocument } from './final-document';
 import { generateDeliveryNote } from './delivery-note';
 import { loadJobView } from './job-view';
-import { loadCompanyLetterhead, removeCompanyLetterhead, uploadCompanyLetterhead } from './company-letterhead';
+import {
+  downloadCompanyLetterheadFile,
+  loadCompanyLetterhead,
+  removeCompanyLetterhead,
+  uploadCompanyLetterhead,
+} from './company-letterhead';
+import { WorkflowError } from './errors';
+import { StorageIntegrityFailed } from '@/services/ports';
 import { buildHarness, seedUser, type Harness } from './test-harness';
 import { drawnImages, embedsImageData, imageObjectCount, letterheadPng, preparedLetterhead } from '@/test/letterhead-fixture';
 
@@ -92,6 +99,26 @@ describe('each job document on its own company’s letterhead', () => {
     expect((await loadCompanyLetterhead(harness.as(master), WD_HEARN_JHB_COMPANY_ID))?.data).toEqual(wd.data);
     await removeCompanyLetterhead(harness.as(master), WD_HEARN_JHB_COMPANY_ID);
     expect(await loadCompanyLetterhead(harness.as(master), WD_HEARN_JHB_COMPANY_ID)).toBeUndefined();
+  });
+
+  it('with damaged stored bytes: the download is refused as document_damaged, and documents fall back to the text header', async () => {
+    const company = (await harness.repos.companies.findById(WD_HEARN_JHB_COMPANY_ID))!;
+    const storageKey = company.letterhead!.storageKey;
+    const original = harness.services.storage.getDocument.bind(harness.services.storage);
+    harness.services.storage.getDocument = async (key: string) => {
+      if (key === storageKey) throw new StorageIntegrityFailed(key, 'The stored file is 10 bytes and its record says 4096.');
+      return original(key);
+    };
+
+    const refusal = await downloadCompanyLetterheadFile(harness.as(master), WD_HEARN_JHB_COMPANY_ID).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(WorkflowError);
+    expect((refusal as WorkflowError).violations.map((violation) => violation.code)).toEqual(['document_damaged']);
+    // EJE's, undamaged, is still served.
+    expect((await downloadCompanyLetterheadFile(harness.as(master), DEFAULT_COMPANY_ID))?.bytes).toEqual(EJE_PNG);
+
+    // A document is never withheld for want of its letterhead: no image, the text header.
+    expect(await loadCompanyLetterhead(harness.as(master), WD_HEARN_JHB_COMPANY_ID)).toBeUndefined();
+    expect((await loadCompanyLetterhead(harness.as(master), DEFAULT_COMPANY_ID))?.data).toEqual(eje.data);
   });
 
   it('an EJE job card issued now carries EJE’s letterhead, and its correction addendum too', async () => {

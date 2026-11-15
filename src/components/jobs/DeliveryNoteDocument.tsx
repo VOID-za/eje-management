@@ -83,7 +83,8 @@ export const DeliveryNoteDocument = ({ model }: { readonly model: DeliveryNoteMo
     ) : (
       <div className="mt-10 grid grid-cols-2 gap-8 text-xs text-steel-500">
         <p className="border-t border-steel-300 pt-1">Collected by (courier) — name, signature, date</p>
-        <p className="border-t border-steel-300 pt-1">Released by (EJE) — name, signature, date</p>
+        {/* MULTI-CO-1: released by the job's company, by its short code. */}
+        <p className="border-t border-steel-300 pt-1">Released by ({model.company.code ?? 'EJE'}) — name, signature, date</p>
       </div>
     )}
   </article>

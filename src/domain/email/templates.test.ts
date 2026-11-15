@@ -130,6 +130,18 @@ describe('the templates EJE ships', () => {
     expect(body).not.toMatch(/Order number:|Reference:|Machine:/u);
     expect(body).toContain('EJE-2078');
   });
+
+  it('are signed by the job’s company: EJE’s as always, WD Hearn JHB’s by WD Hearn JHB (MULTI-CO-1)', () => {
+    for (const template of SYSTEM_EMAIL_TEMPLATES) {
+      expect(template.body, template.systemKey).not.toContain('EJE Industrial Electronics');
+      expect(template.body.endsWith('Kind regards\n{{our_company}}'), template.systemKey).toBe(true);
+      const eje = renderEmailBody(template.body, values({ our_company: 'EJE Industrial Electronics' }));
+      expect(eje.endsWith('Kind regards\nEJE Industrial Electronics'), template.systemKey).toBe(true);
+      const wd = renderEmailBody(template.body, values({ our_company: 'WD Hearn JHB' }));
+      expect(wd.endsWith('Kind regards\nWD Hearn JHB'), template.systemKey).toBe(true);
+      expect(wd).not.toContain('EJE Industrial Electronics');
+    }
+  });
 });
 
 describe('the outbox rules', () => {

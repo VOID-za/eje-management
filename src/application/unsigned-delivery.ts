@@ -1,4 +1,5 @@
 import {
+  DEFAULT_COMPANY_ID,
   can,
   deliveryStateLabel,
   deliveryRetryAdvice,
@@ -73,7 +74,7 @@ const SENDING_STALE_AFTER_MS = 10 * 60 * 1000;
 
 /** The subject and body of an UNSIGNED copy. One place, so retries match. */
 /** INSTALL-DN-1: an Installation's copy is its Delivery Note, and says so. */
-const unsignedDocumentMail = (job: Job, documents: readonly string[]) => ({
+const unsignedDocumentMail = (job: Job, documents: readonly string[], signedBy: string) => ({
   subject: `${job.jobNumber} — ${presentsAsInstallationDeliveryNote(job) ? INSTALLATION_DELIVERY_NOTE_TITLE : 'Job Card'} (issued without signature)`,
   body:
     `Good day,\n\n` +
@@ -81,8 +82,20 @@ const unsignedDocumentMail = (job: Job, documents: readonly string[]) => ({
     (documents.length === 0 ? '.\n\n' : `, with: ${documents.join(', ')}.\n\n`) +
     'This copy was issued WITHOUT a customer signature. The document itself records that, ' +
     'and why. If anything on it is not as you understood it, please reply to this message.\n\n' +
-    `Kind regards\nEJE Industrial Electronics`,
+    `Kind regards\n${signedBy}`,
 });
+
+/**
+ * MULTI-CO-1: who signs the unsigned copy's email — the company the job was
+ * raised for. An EJE job is signed exactly as it always was, "EJE Industrial
+ * Electronics", whatever the EJE company's name field says; another company's
+ * job by that company's name, never by EJE.
+ */
+const unsignedMailSignedBy = async (context: OperationContext, job: Job): Promise<string> => {
+  if (job.companyId === DEFAULT_COMPANY_ID) return 'EJE Industrial Electronics';
+  const company = await context.repos.companies.findById(job.companyId);
+  return company?.name.trim() || 'EJE Industrial Electronics';
+};
 
 /**
  * Is this a job the owner's rule is about: issued unsigned, with a document?
@@ -383,7 +396,7 @@ const send = async (
   const attempts = (job.delivery?.attempts ?? 0) + 1;
   // The documents chosen for the customer travel WITH the job card (UNSIGNED-ATT-1).
   const extras = selectedCustomerDocuments(job);
-  const mail = unsignedDocumentMail(job, extras.map((extra) => extra.fileName));
+  const mail = unsignedDocumentMail(job, extras.map((extra) => extra.fileName), await unsignedMailSignedBy(context, job));
 
   const sending = await context.repos.jobs.save({
     ...job,

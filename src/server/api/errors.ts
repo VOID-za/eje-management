@@ -4,6 +4,7 @@ import { StorageWriteFailed } from '@/services/production/file-storage';
 import type { RuleViolation } from '@/domain';
 import { WorkflowError } from '@/application/errors';
 import { ConcurrencyError } from '@/data/postgres/transaction';
+import { companyRefusalOf } from '@/data/postgres/company-refusals';
 
 /**
  * What the API says when something goes wrong.
@@ -187,6 +188,16 @@ export const toApiError = (cause: unknown): ApiError => {
    * and the business did not refuse anything: the server could not do its job.
    * A client that retries on 5xx and gives up on 4xx should retry this.
    */
+  /*
+   * MULTI-CO-1: the database refusing a job for a company its customer is not
+   * a customer of, or a company taken off a customer with work for it — the
+   * application's own refusals, reached by a race past its check. A 422 with
+   * the application's stable code, never the driver's text.
+   */
+  const companyRefusal = companyRefusalOf(cause);
+  if (companyRefusal !== null) {
+    return new ApiError('workflow_refused', companyRefusal.message, [companyRefusal.violation]);
+  }
   if (cause instanceof StorageWriteFailed) {
     return new ApiError(
       'internal_error',

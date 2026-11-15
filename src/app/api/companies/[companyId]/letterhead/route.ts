@@ -1,5 +1,5 @@
 import { asCompanyId } from '@/domain';
-import { readCompanyLetterheadFile } from '@/application/company-letterhead';
+import { downloadCompanyLetterheadFile } from '@/application/company-letterhead';
 import { downloadRoute } from '@/server/api/handler';
 import { notFound } from '@/server/api/errors';
 
@@ -12,11 +12,13 @@ import { notFound } from '@/server/api/errors';
  * by the company's id and never by a storage key. Anyone signed in may read
  * it — a technician previews the job cards they work on, and a letterhead is
  * printed on every document a customer is handed. 404 when the company has
- * none. Never cached by an intermediary; the screen asks for it by checksum
- * (`?v=`), so a replaced letterhead is never served from a stale copy.
+ * none; 422 `document_damaged` (as every other stored document) when its
+ * stored bytes are damaged. Never cached by an intermediary; the screen asks
+ * for it by checksum (`?v=`), so a replaced letterhead is never served from a
+ * stale copy.
  */
 export const GET = downloadRoute('companies.letterhead', async (context) => {
-  const file = await readCompanyLetterheadFile(context, asCompanyId(context.params.companyId ?? ''));
+  const file = await downloadCompanyLetterheadFile(context, asCompanyId(context.params.companyId ?? ''));
   if (file === null) throw notFound('That company has no letterhead.');
   return {
     fileName: file.contentType === 'image/png' ? 'letterhead.png' : 'letterhead.jpg',

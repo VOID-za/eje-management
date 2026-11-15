@@ -219,7 +219,8 @@ export const renderDeliveryNotePdf = (
     sheet.pdf.line(MARGIN + half + 30, sheet.cursor, RIGHT, sheet.cursor, 0.6, RULE);
     sheet.move(GAP.line);
     sheet.text(MARGIN, 'Collected by (courier) — name, signature, date', { size: SIZE.small, colour: MUTED });
-    sheet.text(MARGIN + half + 30, 'Released by (EJE) — name, signature, date', { size: SIZE.small, colour: MUTED });
+    // MULTI-CO-1: released by the job's company, by its short code — "(EJE)" on an EJE note, as always.
+    sheet.text(MARGIN + half + 30, `Released by (${model.company.code ?? 'EJE'}) — name, signature, date`, { size: SIZE.small, colour: MUTED });
   }
 
   const pages = sheet.pdf.pageCount;

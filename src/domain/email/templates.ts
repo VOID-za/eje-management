@@ -308,13 +308,20 @@ const signedBody = (kind: string): string =>
     'If anything on the job card is not as you expected, please reply to this email.',
     '',
     'Kind regards',
-    'EJE Industrial Electronics',
+    '{{our_company}}',
   ].join('\n');
 
 /**
  * The templates EJE ships: one per job type for the signed job card. They are
  * created automatically the first time templates are needed, and "Restore
  * system defaults" saves these words again as a new version.
+ *
+ * MULTI-CO-1: signed "{{our_company}}" — the company the job was raised for —
+ * not a fixed "EJE Industrial Electronics", so a WD Hearn JHB job is signed by
+ * WD Hearn JHB. An EJE job reads exactly as before, because EJE's company name
+ * is that name. A template already stored in the database is the office's own
+ * text and is deliberately NOT rewritten: it keeps whatever sign-off it has
+ * until the office edits it or restores the system default.
  */
 export const SYSTEM_EMAIL_TEMPLATES: readonly SystemTemplate[] = [
   {
@@ -365,7 +372,7 @@ export const SYSTEM_EMAIL_TEMPLATES: readonly SystemTemplate[] = [
       'Reference: {{reference}}',
       '',
       'Kind regards',
-      'EJE Industrial Electronics',
+      '{{our_company}}',
     ].join('\n'),
   },
 ];
