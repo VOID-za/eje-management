@@ -143,15 +143,35 @@ export const jobView = async ({ repos, actor }: ViewContext, jobNumber: string) 
 
 export const jobFormView = async ({ repos, actor }: ViewContext) => {
   requireOffice(actor, 'jobs.create', 'Raising a job');
-  const [customers, sites, contacts, machines, users, settings] = await Promise.all([
+  const [customers, sites, contacts, machines, users, settings, companies] = await Promise.all([
     repos.customers.list(),
     repos.customers.listSites(),
     repos.customers.listContacts(),
     repos.machines.list(),
     repos.users.list(),
     repos.settings.get(),
+    repos.companies.list(),
   ]);
-  return { customers, sites, contacts, machines, users, settings };
+  /*
+   * MULTI-CO-1: the companies a job can be raised for — what the form needs to
+   * offer them and filter the customers by (each customer carries its
+   * `companyIds`), and nothing more: not the rates, not the letterhead.
+   */
+  return {
+    customers,
+    sites,
+    contacts,
+    machines,
+    users,
+    settings,
+    companies: companies.map((company) => ({
+      id: company.id,
+      code: company.code,
+      name: company.name,
+      jobNumberPrefix: company.jobNumberPrefix,
+      isDefault: company.isDefault,
+    })),
+  };
 };
 
 export const closedJobsView = (
@@ -216,7 +236,7 @@ export const masterDashboardView = async ({ repos, actor }: ViewContext) => {
  * anybody asked for: it left the navigation offering technicians a screen the
  * read then refused.
  */
-export const customersView = async ({ repos, actor }: ViewContext) => {
+export const customersView = async ({ repos, actor }: ViewContext, company?: string | null) => {
   requireCapability(actor, 'customers.view', 'The customer register is not available to your role.');
   const [customers, sites, machines, allJobs] = await Promise.all([
     repos.customers.list(),
@@ -237,7 +257,16 @@ export const customersView = async ({ repos, actor }: ViewContext) => {
    */
   const jobs = await loadVisibleSummaries(repos, allJobs, actor);
 
-  return customers.map((customer) => ({
+  /*
+   * MULTI-CO-1: `?company=` lists that company's customers only. An id no
+   * customer carries lists nobody, which is the true answer for it.
+   */
+  const listed =
+    company === undefined || company === null || company === ''
+      ? customers
+      : customers.filter((customer) => customer.companyIds.some((companyId) => companyId === company));
+
+  return listed.map((customer) => ({
     id: customer.id,
     name: customer.name,
     accountNumber: customer.accountNumber,
@@ -247,6 +276,7 @@ export const customersView = async ({ repos, actor }: ViewContext) => {
     openJobs: jobs.filter((job) => job.customerId === customer.id && isJobOpenWork(job.status))
       .length,
     active: customer.active,
+    companyIds: customer.companyIds,
   }));
 };
 

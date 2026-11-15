@@ -3,6 +3,7 @@ import { requeueSiteGeocode, verifySiteLocation, type PinChoice } from '@/applic
 import 'server-only';
 import { z } from 'zod';
 import {
+  asCompanyId,
   asContactId,
   asCustomerId,
   asMachineId,
@@ -67,6 +68,15 @@ const customerFields = z
     paymentTerms: text(120),
     /** Withdrawing a customer from the register, which the edit dialog offers. */
     active: z.boolean().optional(),
+    /**
+     * MULTI-CO-1: the companies the customer is a customer of — 'eje',
+     * 'wd-hearn-jhb' or both. At least one and only known ones, which the
+     * operation decides (`customer_company_required`, `unknown_company`).
+     * OMITTED: on an update the stored links stay; on a create the customer is
+     * EJE's, as every caller from before companies means. The New Customer
+     * screen sends WD Hearn JHB preselected (the owner's default) explicitly.
+     */
+    companyIds: z.array(z.string().min(1).max(60)).max(10).optional(),
   })
   .strict();
 
@@ -191,6 +201,7 @@ export const CUSTOMER_COMMANDS: CommandRegistry = {
       return customers.updateCustomer(context.operation, {
         ...stored,
         ...input,
+        companyIds: input.companyIds === undefined ? stored.companyIds : input.companyIds.map(asCompanyId),
         email: input.email ?? stored.email,
         officeAddress: input.officeAddress ?? stored.officeAddress,
         active: input.active ?? stored.active,
@@ -425,9 +436,10 @@ export const runCreateCustomer = (
   context: CommandContext,
   input: z.infer<typeof createCustomerSchema>,
 ) => {
-  const { active: _raisedActive, email, officeAddress, ...rest } = input;
+  const { active: _raisedActive, email, officeAddress, companyIds, ...rest } = input;
   return customers.createCustomer(context.operation, {
     ...rest,
+    ...(companyIds === undefined ? {} : { companyIds: companyIds.map(asCompanyId) }),
     email: email ?? '',
     officeAddress: officeAddress ?? {
       line1: '',

@@ -3,6 +3,7 @@ import { asUserId, type User } from '@/domain';
 import type { OperationContext } from '@/application/context';
 import {
   attemptCustomerEmail,
+  companySenderFor,
   expireStuckCustomerEmails,
   recordCustomerEmailOutcome,
 } from '@/application/customer-email';
@@ -72,7 +73,10 @@ export const dispatchCustomerEmails = async (runtime: ServerRuntime): Promise<Di
   const claimed = await runtime.write((unit) => unit.repos.customerEmails.claimDue(unit.services.clock.now(), EMAIL_BATCH));
   let sent = 0;
   for (const email of claimed) {
-    const outcome = await runtime.read((unit) => attemptCustomerEmail(unit.services, email));
+    // MULTI-CO-1: the job's company's sender name and reply-to, read with the attempt.
+    const outcome = await runtime.read(async (unit) =>
+      attemptCustomerEmail(unit.services, email, await companySenderFor(unit.repos, email)),
+    );
     const recorded = await runtime.write((unit) => recordCustomerEmailOutcome(asSystem(unit), email, outcome));
     if (recorded.state === 'sent') sent += 1;
   }

@@ -1,4 +1,6 @@
 import {
+  companyBlockFrom,
+  companyDetailsFromSettings,
   CORRECTED_AREA_LABEL,
   acknowledgementRequiredFor,
   asCorrectedArea,
@@ -189,19 +191,22 @@ export const raiseJobCorrection = async (
   const id = context.services.ids.next('job-correction');
   const fileName = correctionFileName({ sequence }, job.jobNumber);
 
-  const [customer, machine, settings] = await Promise.all([
+  const [customer, machine, company, settings] = await Promise.all([
     context.repos.customers.findById(job.customerId),
     job.machineId === null ? Promise.resolve(null) : context.repos.machines.findById(job.machineId),
+    context.repos.companies.findById(job.companyId),
     context.repos.settings.get(),
   ]);
+  // MULTI-CO-1: on the paper of the company the job was raised for, from the one letterhead builder.
+  const letterhead = companyBlockFrom(company ?? companyDetailsFromSettings(settings));
 
   const rendered = await context.services.pdf.renderCorrection(
     {
       company: {
-        name: settings.companyName,
-        address: settings.companyAddress,
-        contactLine: `Tel ${settings.companyPhone} · ${settings.companyEmail}`,
-        registrationLine: `Reg. ${settings.companyRegistration} · VAT ${settings.companyVatNumber}`,
+        name: letterhead.name,
+        address: letterhead.address,
+        contactLine: letterhead.contactLine,
+        registrationLine: letterhead.registrationLine,
       },
       jobNumber: job.jobNumber,
       customerName: customer?.name ?? 'Customer no longer on the register',

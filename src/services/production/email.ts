@@ -736,9 +736,17 @@ export class GraphEmailService implements EmailService {
       ccRecipients: (message.cc ?? [])
         .filter((address) => address.includes('@'))
         .map((address) => ({ emailAddress: { address } })),
-      ...(this.config.replyTo.length === 0
+      /*
+       * MULTI-CO-1: the job's company's reply-to, where Administration set
+       * one; otherwise EMAIL_REPLY_TO. And its sender NAME on the same
+       * mailbox — never another address, which Mail.Send is not granted for.
+       */
+      ...((message.replyTo ?? this.config.replyTo).length === 0
         ? {}
-        : { replyTo: [{ emailAddress: { address: this.config.replyTo } }] }),
+        : { replyTo: [{ emailAddress: { address: message.replyTo ?? this.config.replyTo } }] }),
+      ...(message.senderName === undefined || message.senderName.length === 0
+        ? {}
+        : { from: { emailAddress: { name: message.senderName, address: this.config.sender } } }),
       attachments: await this.attachmentsFor(message),
     };
 

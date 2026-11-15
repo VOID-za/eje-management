@@ -5,6 +5,7 @@ import { z } from 'zod';
 import {
   REPAIR_ITEMS_MAX,
   asContactId,
+  asCompanyId,
   asCustomerId,
   asJobId,
   asMachineId,
@@ -1149,6 +1150,13 @@ export const JOB_COMMANDS: CommandRegistry = {
  */
 export const createJobSchema = z
   .object({
+    /**
+     * MULTI-CO-1: the company the job is raised for — 'eje' when omitted, as
+     * every caller from before companies means. Set HERE ONLY: no other route
+     * accepts it, and the database refuses a change (`jobs_company_immutable`).
+     * An unknown id is refused by `createJob`, never read as EJE.
+     */
+    companyId: z.string().min(1).max(60).optional(),
     customerId: z.string().min(1).max(100),
     // DN-SITE-OPT-1: null only for a Delivery Note; the rule is `createJob`'s.
     siteId: z.string().min(1).max(100).nullable(),
@@ -1251,6 +1259,7 @@ export const runCreateJob = async (
     repairQuantity,
     repairItems,
     quoteNumber,
+    companyId,
     ...job
   } = input;
   const created = await createJob(
@@ -1273,6 +1282,7 @@ export const runCreateJob = async (
       },
       ...(repairItems === undefined ? {} : { repairItems }),
       quoteNumber: quoteNumber ?? '',
+      ...(companyId === undefined ? {} : { companyId: asCompanyId(companyId) }),
       customerId: asCustomerId(input.customerId),
       siteId: input.siteId === null ? null : asSiteId(input.siteId),
       contactId: asContactId(input.contactId),

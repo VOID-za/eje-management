@@ -10,6 +10,7 @@ import type {
   Machine,
   Site,
   SystemSettings,
+  CompanyDetails,
   User,
 } from '@/domain';
 export type { DeliveryFailureKind, DeliveryState } from '@/domain';
@@ -106,6 +107,13 @@ export interface EmailMessage {
   readonly attachments?: readonly { readonly fileName: string; readonly storageKey: string }[];
   /** EJE's own reference for the message (the outbox id), sent as a header. */
   readonly reference?: string;
+  /**
+   * MULTI-CO-1: the display name the job's company sends as. Optional: absent,
+   * the mailbox's own name. Never a different mailbox address.
+   */
+  readonly senderName?: string;
+  /** MULTI-CO-1: where a reply goes, for the job's company. Absent, the adapter's configured reply-to. */
+  readonly replyTo?: string;
 }
 
 /**
@@ -252,6 +260,11 @@ export interface FinalDocumentSource {
   readonly contact: Contact | null;
   readonly machine: Machine | null;
   readonly settings: SystemSettings;
+  /**
+   * The company the job was raised for (MULTI-CO-1), whose letterhead the
+   * document carries. Absent, the settings' EJE details.
+   */
+  readonly company?: CompanyDetails;
   readonly checklistTemplate: ChecklistTemplate | null;
   /** Everyone who could be named on the document, for resolving note authors. */
   readonly users: readonly User[];

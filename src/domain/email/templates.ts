@@ -67,6 +67,8 @@ export const emailEventDefinition = (event: EmailEvent): EmailEventDefinition =>
 export type PlaceholderKey =
   | 'customer_name'
   | 'company_name'
+  /** MULTI-CO-1: the company the job was raised for (EJE, WD Hearn JHB) — ours, not the customer's. */
+  | 'our_company'
   | 'customer_email'
   | 'job_number'
   | 'job_type'
@@ -94,6 +96,7 @@ export interface PlaceholderDefinition {
 export const EMAIL_PLACEHOLDERS: readonly PlaceholderDefinition[] = [
   { key: 'customer_name', label: 'Customer name', source: 'The contact on the job (first and last name); the company name when the job has no contact.', example: 'Thandi Mokoena' },
   { key: 'company_name', label: 'Company name', source: 'The customer (company) the job is for.', example: 'Wadeville Steel (Pty) Ltd' },
+  { key: 'our_company', label: 'Our company', source: 'The company the job was raised for — EJE or WD Hearn JHB — as Administration names it. Not the customer: that is Company name.', example: 'WD Hearn JHB' },
   { key: 'customer_email', label: 'Customer email', source: 'The address the email is sent to: the email of the contact on the job.', example: 'thandi@example.co.za' },
   { key: 'job_number', label: 'Job number', source: 'The job number.', example: 'EJE-2078' },
   { key: 'job_type', label: 'Job type', source: 'Breakdown, Installation, Service, Test & Repair or Parts.', example: 'Breakdown' },

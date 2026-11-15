@@ -459,6 +459,38 @@ export const approveMachine = async (
  *
  * Both are ignored unless the site or the customer actually changed. MACH-HIST.
  */
+/**
+ * A MACHINE GOES ONLY WHERE ITS WORK CAN FOLLOW. MULTI-CO-1 (stage B).
+ *
+ * A machine's jobs stay its jobs when it moves to another customer (MACH-HIST),
+ * and each of those jobs belongs, for ever, to the company that raised it. So a
+ * machine with WD Hearn JHB work may move only to a customer that is WD Hearn
+ * JHB's too: otherwise the register would show that company's job on a
+ * machine belonging to somebody who is not its customer. Moving between a
+ * customer's own sites, or to a customer with the same companies, is not
+ * affected.
+ */
+const assertTargetCustomerHasJobCompanies = async (
+  context: OperationContext,
+  machine: Pick<Machine, 'id' | 'customerId'>,
+): Promise<void> => {
+  const target = await context.repos.customers.findById(machine.customerId);
+  if (target === null) return; // `assertSiteBelongsToCustomer` has already said so.
+  const jobs = await context.repos.jobs.list({ machineId: machine.id });
+  const missing = [...new Set(jobs.map((job) => job.companyId))].filter(
+    (companyId) => !target.companyIds.includes(companyId),
+  );
+  if (missing.length === 0) return;
+  const companies = await context.repos.companies.list();
+  const names = missing.map((companyId) => companies.find((company) => company.id === companyId)?.name ?? companyId);
+  throw new WorkflowError(`The machine cannot move to ${target.name}.`, [
+    {
+      code: 'machine_company_mismatch',
+      message: `This machine has jobs raised for ${names.join(' and ')}, and ${target.name} is not a customer of ${names.length === 1 ? 'that company' : 'those companies'}. Add the company to ${target.name} first.`,
+    },
+  ]);
+};
+
 export const updateMachine = async (
   context: OperationContext,
   machine: Machine,
@@ -481,6 +513,9 @@ export const updateMachine = async (
     // uneditable, which is the opposite of what withdrawing a site is for.
     unchangedSite: previous !== null && previous.siteId === machine.siteId,
   });
+  if (previous !== null && previous.customerId !== machine.customerId) {
+    await assertTargetCustomerHasJobCompanies(context, machine);
+  }
   const saved = await context.repos.machines.save(machine);
 
   /*

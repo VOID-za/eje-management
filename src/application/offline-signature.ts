@@ -174,6 +174,7 @@ const obstacle = async (
     contact: view.contact,
     machine: view.machine,
     settings: view.settings,
+    company: view.company,
     checklistTemplate: view.checklistTemplate,
     users: view.users,
   });

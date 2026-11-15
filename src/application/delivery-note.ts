@@ -201,7 +201,7 @@ export const issueSignedDeliveryNote = async (context: OperationContext, job: Jo
   if (view === null) throw new WorkflowError(`${job.jobNumber} could not be read for issue.`, []);
   const rendered = renderDeliveryNotePdf(
     buildDeliveryNoteModel(
-      { job, customer: view.customer, site: view.site, contact: view.contact, settings: view.settings, users: view.users },
+      { job, customer: view.customer, site: view.site, contact: view.contact, settings: view.settings, company: view.company, users: view.users },
       now,
     ),
   );

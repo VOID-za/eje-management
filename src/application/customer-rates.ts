@@ -2,9 +2,16 @@ import {
   getJobTypeDefinition,
   asCustomerId,
   can,
+  companyDetailsFromSettings,
+  companyDetailsOf,
   customerRateModeOf,
   pricingInputsFrom,
+  settingsForCompany,
   CUSTOMER_RATE_MODE_LABELS,
+  DEFAULT_COMPANY_ID,
+  type Company,
+  type CompanyDetails,
+  type CompanyId,
   type Customer,
   type CustomerRateMode,
   type CustomerRates,
@@ -35,13 +42,25 @@ import { WorkflowError } from './errors';
  * NOTHING ALREADY PRICED MOVES. A signed or issued job card carries its pricing
  * snapshot, and every document and total reads the snapshot; changing the
  * default or a customer's custom rates afterwards reaches no such job.
+ *
+ * THE DEFAULTS ARE THE JOB'S COMPANY'S. MULTI-CO-1 (stage B): an EJE job is
+ * priced at EJE's rates and a WD Hearn JHB job at WD Hearn JHB's, each as
+ * Administration holds them on the company; a Custom Rates customer's own
+ * rates still override either. The settings handed back also carry the
+ * company's NAME AND DETAILS, so whatever describes the job describes it as
+ * the job's company's.
  */
 export interface JobRateSource {
   readonly mode: CustomerRateMode;
-  /** The settings to price with: the defaults, or the defaults' other fields with the customer's rates. */
+  /**
+   * The settings to price with: the job's company's identity and rates over the
+   * shared settings, with the customer's own rates instead for Custom Rates.
+   */
   readonly settings: SystemSettings;
   /** Why this job cannot be priced, or null. Only ever for a Custom Rates customer without rates. */
   readonly problem: string | null;
+  /** The job's company, whose letterhead the job's documents carry. */
+  readonly company: CompanyDetails;
 }
 
 const ZERO_RATES: PricingInputs = {
@@ -64,31 +83,52 @@ const withRates = (settings: SystemSettings, rates: PricingInputs): SystemSettin
 export const customRatesMissing = (customer: Pick<Customer, 'name'>): string =>
   `${customer.name} is on Custom Rates, but its custom rates have not been set. Job cards for this customer cannot be priced until a Senior Tech or the Office sets them on the customer's Custom Rates tab.`;
 
-/** The rates that price this customer's jobs, decided from the customer's own mode. */
+/**
+ * The company a job belongs to, as the register of companies has it, and the
+ * settings described and priced as that company. A company the register does
+ * not hold (only possible for a record older than the register, which
+ * migration 0058 makes EJE) is EJE.
+ */
+export const resolveCompanyDefaults = async (
+  context: Pick<OperationContext, 'repos'>,
+  companyId: CompanyId | undefined,
+): Promise<{ readonly company: Company | null; readonly settings: SystemSettings }> => {
+  const [settings, company] = await Promise.all([
+    context.repos.settings.get(),
+    context.repos.companies.findById(companyId ?? DEFAULT_COMPANY_ID),
+  ]);
+  return { company, settings: company === null ? settings : settingsForCompany(settings, company) };
+};
+
+/** The job a rate source is resolved for: its customer and, MULTI-CO-1, its company. */
+export type RatedJob = Pick<Job, 'customerId'> & { readonly companyId?: CompanyId };
+
+/** The rates that price this job: its company's defaults, or its customer's own. */
 export const resolveCustomerRateSource = async (
   context: Pick<OperationContext, 'repos'>,
-  customerId: string,
-  settings?: SystemSettings,
+  job: RatedJob,
 ): Promise<JobRateSource> => {
-  const defaults = settings ?? (await context.repos.settings.get());
-  const customer = await context.repos.customers.findById(asCustomerId(customerId));
+  const { company: stored, settings: defaults } = await resolveCompanyDefaults(context, job.companyId);
+  const company = stored === null ? companyDetailsFromSettings(defaults) : companyDetailsOf(stored);
+  const customer = await context.repos.customers.findById(asCustomerId(job.customerId));
   if (customer === null || customerRateModeOf(customer) === 'default') {
-    return { mode: 'default', settings: defaults, problem: null };
+    return { mode: 'default', settings: defaults, problem: null, company };
   }
   const rates = await context.repos.customers.findCustomRates(customer.id);
-  if (rates === null) return { mode: 'custom', settings: withRates(defaults, ZERO_RATES), problem: customRatesMissing(customer) };
-  return { mode: 'custom', settings: withRates(defaults, rates), problem: null };
+  if (rates === null) return { mode: 'custom', settings: withRates(defaults, ZERO_RATES), problem: customRatesMissing(customer), company };
+  return { mode: 'custom', settings: withRates(defaults, rates), problem: null, company };
 };
 
 /**
  * The rates a job's prices are frozen at. Refuses for a Custom Rates customer
  * whose rates are not set — never the defaults instead.
  */
-export const customerPricingInputs = async (context: OperationContext, job: Pick<Job, 'customerId' | 'jobNumber'> & Partial<Pick<Job, 'jobType'>>): Promise<PricingInputs> => {
-  const source = await resolveCustomerRateSource(context, job.customerId);
+export const customerPricingInputs = async (context: OperationContext, job: RatedJob & Pick<Job, 'jobNumber'> & Partial<Pick<Job, 'jobType'>>): Promise<PricingInputs> => {
+  const source = await resolveCustomerRateSource(context, job);
   // DELIVERY-NOTE-1: a job type that prices nothing is never blocked by missing Custom Rates — it has no amount to price.
+  // MULTI-CO-1: and then it is frozen at its COMPANY'S rates.
   if (source.problem !== null && job.jobType !== undefined && !getJobTypeDefinition(job.jobType).priced) {
-    return pricingInputsFrom((await context.repos.settings.get()));
+    return pricingInputsFrom((await resolveCompanyDefaults(context, job.companyId)).settings);
   }
   if (source.problem !== null) {
     throw new WorkflowError(`${job.jobNumber} cannot be priced: its customer's custom rates are not set.`, [

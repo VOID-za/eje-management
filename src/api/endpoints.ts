@@ -91,6 +91,7 @@ import type { ClosedJobFilters, ClosedJobsPage } from '@/application/closed-jobs
 import type { ConversationSummary } from '@/application/chat-operations';
 import type { SubmitResult } from '@/application/job-operations';
 import type { JobListRow, JobView } from '@/application/job-view';
+import type { CompanyAdminView, CompanyUpdate } from '@/application/company-operations';
 import type { MyAttendance } from '@/application/attendance-operations';
 import type {
   Timesheet,
@@ -280,13 +281,25 @@ export interface JobScreen {
   readonly submissionCover: SubmissionCover;
 }
 
+/** A company as the New Job form offers it. MULTI-CO-1. */
+export interface CompanyOption {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly jobNumberPrefix: string;
+  readonly isDefault: boolean;
+}
+
 export interface JobFormData {
+  /** Each carries its `companyIds`, so the form offers only the chosen company's customers. MULTI-CO-1. */
   readonly customers: readonly Customer[];
   readonly sites: readonly Site[];
   readonly contacts: readonly Contact[];
   readonly machines: readonly Machine[];
   readonly users: readonly User[];
   readonly settings: SystemSettings;
+  /** EJE first (the default), then WD Hearn JHB. MULTI-CO-1. */
+  readonly companies: readonly CompanyOption[];
 }
 
 export interface CustomerRow {
@@ -298,6 +311,8 @@ export interface CustomerRow {
   readonly machineCount: number;
   readonly openJobs: number;
   readonly active: boolean;
+  /** MULTI-CO-1: the companies the customer is a customer of. */
+  readonly companyIds: readonly string[];
 }
 
 export interface MachineRow {
@@ -478,7 +493,13 @@ export const reads = {
         page: String(page),
       })}`,
     ),
-  customers: () => query<readonly CustomerRow[]>('/api/customers'),
+  /** MULTI-CO-1: `company` lists only that company's customers. */
+  customers: (company?: string) =>
+    query<readonly CustomerRow[]>(
+      company === undefined ? '/api/customers' : `/api/customers?company=${encodeURIComponent(company)}`,
+    ),
+  /** MULTI-CO-1: the companies, for Administration (`settings.rates`). */
+  companies: () => query<readonly CompanyAdminView[]>('/api/admin/companies'),
   customer: (customerId: string) => query<CustomerScreen>(`/api/customers/${segment(customerId)}`),
   machines: () => query<readonly MachineRow[]>('/api/machines'),
   machine: (machineId: string) => query<MachineScreen>(`/api/machines/${segment(machineId)}`),
@@ -1244,6 +1265,12 @@ export const integrations = {
 
 export const settings = {
   update: (input: unknown) => apiPatch<SystemSettings>('/api/settings', input),
+};
+
+/** MULTI-CO-1: one company's details, notification sender, numbering and rates. */
+export const companies = {
+  update: (companyId: string, input: CompanyUpdate) =>
+    apiPatch<CompanyAdminView>(`/api/admin/companies/${segment(companyId)}`, input),
 };
 
 /**

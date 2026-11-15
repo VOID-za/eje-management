@@ -153,6 +153,43 @@ export const resolveCustomerCompanies = async (
   return unique;
 };
 
+/**
+ * A COMPANY STAYS ON A CUSTOMER WHILE IT HAS WORK THERE. MULTI-CO-1 (stage B).
+ *
+ * Taking WD Hearn JHB off a customer that has a WD Hearn JHB job would leave
+ * that job raised for a company its customer is not a customer of — and a
+ * job's company can never change, so the contradiction could never be put
+ * right. Any job counts, open or closed, cancelled or invoiced: each is that
+ * company's record of work for this customer. A DRAFT does not: it is not yet
+ * work, and releasing it asks again whether its customer is still the
+ * company's (`releaseDraft`), so the office can correct a draft raised for the
+ * wrong company by unlinking and never releasing it. Adding a company is
+ * always fine.
+ */
+const refuseRemovingCompanyInUse = async (
+  context: OperationContext,
+  customer: Pick<Customer, 'id' | 'name'>,
+  companyIds: readonly CompanyId[],
+): Promise<void> => {
+  const stored = await context.repos.customers.findById(customer.id);
+  if (stored === null) return;
+  const removed = stored.companyIds.filter((companyId) => !companyIds.includes(companyId));
+  if (removed.length === 0) return;
+  const jobs = await context.repos.jobs.list({ customerId: customer.id });
+  const inUse = removed.filter((companyId) =>
+    jobs.some((job) => job.companyId === companyId && job.status !== 'draft'),
+  );
+  if (inUse.length === 0) return;
+  const companies = await context.repos.companies.list();
+  const names = inUse.map((companyId) => companies.find((company) => company.id === companyId)?.name ?? companyId);
+  throw new WorkflowError(`${names.join(' and ')} cannot be taken off ${stored.name}.`, [
+    {
+      code: 'customer_company_in_use',
+      message: `${stored.name} has jobs raised for ${names.join(' and ')}, and a job’s company never changes. The company stays on the customer while it has work there.`,
+    },
+  ]);
+};
+
 export const createCustomer = async (
   context: OperationContext,
   input: NewCustomerInput,
@@ -221,6 +258,7 @@ export const updateCustomer = async (
   assertManages(context);
   // MULTI-CO-1: the company links are held to the same rule as on creation.
   const companyIds = await resolveCustomerCompanies(context, customer.companyIds);
+  await refuseRemovingCompanyInUse(context, customer, companyIds);
   const saved = await context.repos.customers.save({ ...customer, companyIds });
   await audit(context, {
     jobId: null,

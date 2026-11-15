@@ -13,6 +13,7 @@ import type {
   Machine,
   Site,
   SystemSettings,
+  CompanyDetails,
   User,
 } from '@/domain';
 import {
@@ -91,6 +92,14 @@ export interface JobView {
   readonly settings: SystemSettings;
   /** CUST-RATES-1: which rates price this job, and why it cannot be priced (custom rates missing). */
   readonly rateSource: { readonly mode: 'default' | 'custom'; readonly problem: string | null };
+  /**
+   * THE JOB'S COMPANY. MULTI-CO-1 (stage B): its id, code, name and the
+   * details its documents' letterhead is built from (`companyBlockFrom`) — on
+   * the server for the issued copy and in the browser for the preview, so the
+   * two cannot disagree. Never the letterhead's storage key: a key is not a way
+   * in.
+   */
+  readonly company: CompanyDetails;
   /** Everyone who could be named on this job, for resolving note and entry authors. */
   readonly users: readonly User[];
   /**
@@ -249,7 +258,7 @@ export const loadJobView = async (
   const [customer, machine, rateSource, sites, contacts, users] = await Promise.all([
     repos.customers.findById(job.customerId),
     job.machineId === null ? Promise.resolve(null) : repos.machines.findById(job.machineId),
-    resolveCustomerRateSource({ repos }, job.customerId),
+    resolveCustomerRateSource({ repos }, job),
     // Resolution, not selection: a job must still resolve the site and contact
     // it was carried out for even after that record has been withdrawn from the
     // register, or a closed job card would stop rendering.
@@ -355,6 +364,7 @@ export const loadJobView = async (
     settings: rateSource.settings,
     // DELIVERY-NOTE-1: a type that prices nothing has no rates to be missing.
     rateSource: { mode: rateSource.mode, problem: getJobTypeDefinition(job.jobType).priced ? rateSource.problem : null },
+    company: rateSource.company,
     users,
     checklistTemplate,
     checklistOptions,

@@ -135,6 +135,7 @@ export const documentIdentityFor = async (
         site: input.site,
         contact: input.contact,
         settings: input.settings,
+        company: input.company,
         users: input.users,
       },
       '1970-01-01T00:00:00.000Z',

@@ -1,8 +1,11 @@
 import {
   NO_SITE_ID,
+  companyBlockFrom,
+  companyDetailsFromSettings,
   getJobTypeDefinition,
   repairItemsOf,
   requiresDeliveryNote,
+  type CompanyDetails,
   type Contact,
   type Customer,
   type Job,
@@ -92,6 +95,8 @@ export interface DeliveryNoteInput {
   readonly site: Site;
   readonly contact: Contact | null;
   readonly settings: SystemSettings;
+  /** MULTI-CO-1: the job's company, whose letterhead this is; absent, the settings' EJE details. */
+  readonly company?: CompanyDetails;
   readonly users: readonly Pick<User, 'id' | 'firstName' | 'lastName'>[];
 }
 
@@ -99,6 +104,7 @@ export const deliveryNoteFileName = (job: Pick<Job, 'jobNumber'>): string => `${
 
 export const buildDeliveryNoteModel = (input: DeliveryNoteInput, generatedAt: string): DeliveryNoteModel => {
   const { job, customer, site, contact, settings } = input;
+  const letterhead = companyBlockFrom(input.company ?? companyDetailsFromSettings(settings));
   const definition = getJobTypeDefinition(job.jobType);
   // TR-PARTS-1: EVERY part booked in, each with its own quantity, on this one note.
   const repairItem = definition.capturesRepairItem
@@ -127,9 +133,9 @@ export const buildDeliveryNoteModel = (input: DeliveryNoteInput, generatedAt: st
   return {
     title: 'Delivery Note',
     company: {
-      name: settings.companyName,
-      address: settings.companyAddress,
-      contactLine: `Tel ${settings.companyPhone} · ${settings.companyEmail}`,
+      name: letterhead.name,
+      address: letterhead.address,
+      contactLine: letterhead.contactLine,
     },
     jobNumber: job.jobNumber,
     deliverTo: [
@@ -165,7 +171,7 @@ export const buildDeliveryNoteModel = (input: DeliveryNoteInput, generatedAt: st
             signatureData: job.signature.strokeData,
             reference: courierSignatureReference(job) ?? '',
           },
-    footer: `${settings.companyName} · ${job.jobNumber} · Delivery Note · Generated ${formatDateTime(generatedAt)}`,
+    footer: `${letterhead.name} · ${job.jobNumber} · Delivery Note · Generated ${formatDateTime(generatedAt)}`,
   };
 };
 

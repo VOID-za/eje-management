@@ -129,12 +129,15 @@ export const signedJobCardValues = async (
   job: Job,
   recipient: JobCardRecipient,
 ): Promise<PlaceholderValues> => {
-  const [customer, site, machine, technician] = await Promise.all([
+  const [customer, site, machine, technician, ourCompany, settings] = await Promise.all([
     context.repos.customers.findById(job.customerId),
     // DN-SITE-OPT-1: a Delivery Note may have no site.
     job.siteId === null ? Promise.resolve(null) : context.repos.customers.findSiteById(job.siteId),
     job.machineId === null ? Promise.resolve(null) : context.repos.machines.findById(job.machineId),
     job.primaryTechnicianId === null ? Promise.resolve(null) : context.repos.users.findById(job.primaryTechnicianId),
+    // MULTI-CO-1: whose job this is — `{{our_company}}`. `{{company_name}}` stays the CUSTOMER.
+    context.repos.companies.findById(job.companyId),
+    context.repos.settings.get(),
   ]);
   const machineName =
     machine === null
@@ -145,6 +148,7 @@ export const signedJobCardValues = async (
   return {
     customer_name: recipient.displayName.length > 0 ? recipient.displayName : (customer?.name ?? ''),
     company_name: customer?.name ?? '',
+    our_company: ourCompany?.name ?? settings.companyName,
     customer_email: recipient.email,
     job_number: job.jobNumber,
     job_type: getJobTypeDefinition(job.jobType).label,
@@ -432,7 +436,37 @@ export type EmailAttemptOutcome =
  * One attempt at one claimed email. Touches NO repository: it runs outside
  * any transaction, between the claim and the record. Never throws.
  */
-export const attemptCustomerEmail = async (services: AppServices, email: CustomerEmail): Promise<EmailAttemptOutcome> => {
+/**
+ * WHO A CUSTOMER EMAIL IS FROM, AS ITS JOB'S COMPANY SAYS. MULTI-CO-1.
+ *
+ * The company's notification sender name and reply-to address, read when the
+ * email is attempted (so a correction in Administration reaches an email still
+ * waiting to go). Empty means not configured, and the adapter's own sender and
+ * reply-to stand. The mailbox it is sent FROM is never changed by this: that
+ * is the deployment's (EMAIL_SENDER), and the only one Mail.Send is granted.
+ */
+export interface CompanySender {
+  readonly senderName: string;
+  readonly replyTo: string;
+}
+
+export const companySenderFor = async (
+  repos: Pick<OperationContext['repos'], 'jobs' | 'companies'>,
+  email: Pick<CustomerEmail, 'jobId'>,
+): Promise<CompanySender | undefined> => {
+  if (email.jobId === null) return undefined;
+  const job = await repos.jobs.findById(email.jobId as JobId);
+  if (job === null) return undefined;
+  const company = await repos.companies.findById(job.companyId);
+  if (company === null) return undefined;
+  return { senderName: company.notificationSenderName.trim(), replyTo: company.notificationReplyTo.trim() };
+};
+
+export const attemptCustomerEmail = async (
+  services: AppServices,
+  email: CustomerEmail,
+  sender?: CompanySender,
+): Promise<EmailAttemptOutcome> => {
   /*
    * JOB-ATT-3: every selected document is read and checked like the PDF. A
    * missing or changed one fails the email — it is never sent without it —
@@ -489,6 +523,8 @@ export const attemptCustomerEmail = async (services: AppServices, email: Custome
         ...extras.map((extra) => ({ fileName: extra.fileName, storageKey: extra.storageKey })),
       ],
       reference: email.id,
+      ...(sender === undefined || sender.senderName.length === 0 ? {} : { senderName: sender.senderName }),
+      ...(sender === undefined || sender.replyTo.length === 0 ? {} : { replyTo: sender.replyTo }),
     });
     if (receipt.state === 'failed') {
       const kind = receipt.failureKind ?? null;
@@ -630,7 +666,8 @@ export const dispatchCustomerEmailsInline = async (context: OperationContext): P
   await expireStuckCustomerEmails(context);
   const claimed = await context.repos.customerEmails.claimDue(context.services.clock.now(), DISPATCH_BATCH);
   for (const email of claimed) {
-    await recordCustomerEmailOutcome(context, email, await attemptCustomerEmail(context.services, email));
+    const sender = await companySenderFor(context.repos, email);
+    await recordCustomerEmailOutcome(context, email, await attemptCustomerEmail(context.services, email, sender));
   }
   return claimed.length;
 };

@@ -4,6 +4,8 @@ import {
   buildPartsDocument,
   jobDetailLabel,
   calculateJobTotals,
+  companyBlockFrom,
+  companyDetailsFromSettings,
   contactFullName,
   currentRefusal,
   customerFacingNotes,
@@ -23,6 +25,7 @@ import {
   type ChecklistResponse,
   type ChecklistSignatureRole,
   type ChecklistTemplate,
+  type CompanyDetails,
   type Contact,
   type Customer,
   type IsoDateTime,
@@ -277,6 +280,12 @@ export interface JobCardModelInput {
   readonly contact: Contact | null;
   readonly machine: Machine | null;
   readonly settings: SystemSettings;
+  /**
+   * The company the job was raised for (MULTI-CO-1): whose letterhead the
+   * document carries. Absent, the settings' EJE details — what every caller
+   * from before companies means.
+   */
+  readonly company?: CompanyDetails;
   readonly checklistTemplate: ChecklistTemplate | null;
   readonly users: readonly User[];
   /**
@@ -438,6 +447,9 @@ export const documentPhotos = (job: Job): Job['photos'] =>
 export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
   const { job, customer, site, contact, machine, settings, checklistTemplate, users } = input;
   const totals = calculateJobTotals(job, settings);
+  // MULTI-CO-1: the letterhead is the JOB'S company, from the one builder every document uses.
+  const companyDetails = input.company ?? companyDetailsFromSettings(settings);
+  const letterhead = companyBlockFrom(companyDetails);
   const definition = getJobTypeDefinition(job.jobType);
   const collectionDocument = buildPartsDocument(job);
   const scheduleWindow = jobScheduleWindow(job);
@@ -447,7 +459,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
 
   const authorName = (authorId: string): string => {
     const author = users.find((candidate) => candidate.id === authorId);
-    return author === undefined ? settings.companyName : userFullName(author);
+    return author === undefined ? letterhead.name : userFullName(author);
   };
 
   const responses = new Map<string, ChecklistResponse>(
@@ -527,10 +539,10 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
     // document is the priced one either way.
     documentTitle: job.jobType === 'parts' ? 'Parts Collection Note' : 'Job Card',
     company: {
-      name: settings.companyName,
-      address: settings.companyAddress,
-      contactLine: `Tel ${settings.companyPhone} · ${settings.companyEmail}`,
-      registrationLine: `Reg. ${settings.companyRegistration} · VAT ${settings.companyVatNumber}`,
+      name: letterhead.name,
+      address: letterhead.address,
+      contactLine: letterhead.contactLine,
+      registrationLine: letterhead.registrationLine,
     },
     jobNumber: job.jobNumber,
 
@@ -855,7 +867,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
           },
 
     footerLines: [
-      `${settings.companyName} · ${job.jobNumber} · Generated ${formatDateTime(input.generatedAt)} · Demonstration document, fictional data`,
+      `${letterhead.name} · ${job.jobNumber} · Generated ${formatDateTime(input.generatedAt)} · Demonstration document, fictional data`,
       // Says WHY the rates were frozen when they were. A refused job card must
       // not claim the customer signed — the rest of the document exists to say
       // they did not.
@@ -898,7 +910,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
   return {
     ...jobCard,
     documentTitle: INSTALLATION_DELIVERY_NOTE_TITLE,
-    company: { ...jobCard.company, registrationLine: `Reg. ${settings.companyRegistration}` },
+    company: { ...jobCard.company, registrationLine: companyBlockFrom(companyDetails, { vat: false }).registrationLine },
     jobDetails: jobCard.jobDetails.flatMap((row) => {
       if (row.label === 'Scheduled') {
         return [
