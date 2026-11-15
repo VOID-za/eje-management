@@ -446,7 +446,22 @@ export const printPdf = async (bytes: Uint8Array, onProgress?: (done: number, to
   const root = window.document.createElement('div');
   root.className = 'eje-print-root';
   const style = window.document.createElement('style');
-  style.textContent = '@media print { @page { margin: 0; } .eje-print-root img { display: block; width: 100%; height: auto; break-after: page; page-break-after: always; } .eje-print-root img:last-child { break-after: auto; page-break-after: auto; } }';
+  /*
+   * PRINT-BLANK-1 (the owner, 15 November 2026): every printed page was followed by a BLANK sheet — a one-page
+   * form printed two sheets, a two-page job card four (measured in Chrome, Edge and Chromium's print layout).
+   * Root cause: each page image is the PDF page drawn at 200 dpi into a canvas FLOORED to whole pixels
+   * (1653 × 2338), and stretched to the sheet's full width it came out 297.02 mm tall on a 297 mm A4 sheet; an
+   * image cannot be split, so the 0.02 mm overflow went onto a sheet of its own. The PDFs themselves have the
+   * right page count.
+   * Fix: the paper is stated (A4, no margin), each page image is sized by HEIGHT a millimetre under the sheet
+   * (296 mm — 0.3 % smaller, centred, nothing clipped), and the app's page-height rules (`min-h-dvh` on the
+   * body) are switched off while printing so they cannot add a sheet either.
+   */
+  style.textContent =
+    '@media print { @page { size: A4 portrait; margin: 0; } ' +
+    'html.eje-print-isolate, html.eje-print-isolate body { min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 0 !important; } ' +
+    '.eje-print-root img { display: block; width: auto; height: 296mm; max-width: 100%; margin: 0 auto; break-after: page; page-break-after: always; } ' +
+    '.eje-print-root img:last-child { break-after: auto; page-break-after: auto; } }';
   try {
     for (let number = 1; number <= pdf.numPages; number += 1) {
       const page = await pdf.getPage(number);
