@@ -32,7 +32,11 @@
  *
  *   node scripts/generate-eje-letterhead-text.mjs [<fonts-dir>]     (default C:\Windows\Fonts)
  *
- * `opentype.js` is used HERE ONLY, at authoring time.
+ * `opentype.js` is used HERE ONLY, at authoring time, and is deliberately NOT a dependency of the
+ * project: the lockfile must stay identical to the live release's for the rollback-compatibility check.
+ * Install it for one run, without saving it:
+ *
+ *   npm install --no-save opentype.js@1.3.4
  */
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
