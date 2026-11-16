@@ -28,7 +28,7 @@ import { renderCorrectionPdf } from './correction-pdf';
 import { DELIVERY_NOTE_MASTER_EXTRA, renderDeliveryNotePdf } from './delivery-note-pdf';
 import { renderTimesheetPdf } from './timesheet-pdf';
 import { renderAttendancePdf } from './attendance-pdf';
-import { FORM_TITLE_SIZE, LETTERHEAD_TOP, TRACK_TITLE, drawLetterhead, fitLetterhead } from './pdf-sheet';
+import { FORM_TITLE_SIZE, FORM_TITLE_TRACKING, LETTERHEAD_TOP, drawLetterhead, fitLetterhead } from './pdf-sheet';
 import { PdfBuilder } from '@/lib/pdf/writer';
 import {
   FROZEN_AT,
@@ -527,7 +527,7 @@ describe('LETTERHEAD-3 — the attendance and timesheet header', () => {
     // The title: smaller than the 16–17pt that dominated, flush right, clear of the letterhead, centred on its height.
     const title = runs.find((run) => run.value === form.title)!;
     expect(title.size).toBe(FORM_TITLE_SIZE);
-    expect(title.x + textWidth(form.title, FORM_TITLE_SIZE, 'bold', TRACK_TITLE)).toBeCloseTo(form.right, 1);
+    expect(title.x + textWidth(form.title, FORM_TITLE_SIZE, 'bold', FORM_TITLE_TRACKING)).toBeCloseTo(form.right, 1);
     const letterheadRight = Math.max(...lines.map((run) => run.x + run.width / SUBSTITUTION_ALLOWANCE));
     expect(title.x - letterheadRight).toBeGreaterThanOrEqual(10);
     const inkTop = Math.max(...mark.map((p) => p.y), ...lines.map((run) => run.y + run.size * 0.72));
@@ -586,5 +586,11 @@ describe('LETTERHEAD-3 leaves every approved master header as v1.13.0 drew it', 
 describe('the clock frozen before the imports', () => {
   it('is the same instant as FROZEN_AT, so the two cannot drift apart', () => {
     expect(FROZEN_AT.toISOString()).toBe('2026-11-15T08:00:00.000Z');
+  });
+});
+
+describe('LETTERHEAD-3 — the form title stays one word to a PDF reader', () => {
+  it('is letter-spaced in the same proportion as the 16pt title was (wider reads as "A T T E N D A N C E")', () => {
+    expect(FORM_TITLE_TRACKING / FORM_TITLE_SIZE).toBeLessThanOrEqual(1.35 / 16 + 1e-3);
   });
 });

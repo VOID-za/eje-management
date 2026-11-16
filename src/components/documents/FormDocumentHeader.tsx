@@ -43,7 +43,7 @@ export const FormDocumentHeader = ({
       >
         <EjeLetterhead fit="ink" />
       </div>
-      <p className="ml-auto shrink-0 text-[18px] font-bold tracking-[0.1em] whitespace-nowrap" data-testid="form-document-title">
+      <p className="ml-auto shrink-0 text-[18px] font-bold tracking-[0.085em] whitespace-nowrap" data-testid="form-document-title">
         {title}
       </p>
     </header>
