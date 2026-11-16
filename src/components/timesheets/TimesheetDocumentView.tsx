@@ -1,6 +1,6 @@
 import type { TimesheetDocument } from '@/application/timesheets';
 import { DEFAULT_COMPANY_ID } from '@/domain';
-import { FormDocumentHeader } from '@/components/documents/FormDocumentHeader';
+import { DocumentLetterhead } from '@/components/documents/EjeLetterhead';
 import { formatCurrency, formatDateTime } from '@/lib/format';
 import { formatDayAndDate } from '@/lib/timesheet-dates';
 import { TIMESHEET_PDF_COLUMNS, timesheetPdfCells, timesheetRecordedOnlyNote } from '@/services/simulated/timesheet-pdf';
@@ -19,16 +19,21 @@ export const TimesheetDocumentView = ({ document }: { readonly document: Timeshe
     className="eje-document mx-auto max-w-[210mm] bg-white p-6 text-[12px] text-steel-900 shadow-sm"
     data-testid="timesheet-document"
   >
-    {/*
-      LETTERHEAD-3: the default company's (EJE's) master letterhead in the form's own header — large and
-      readable, the title on the right — the header the PDF routes draw (`drawFormHeader`), so the screen,
-      the print and the PDF match. The company's name in text stays the fallback, as before.
-    */}
-    <FormDocumentHeader
-      companyId={DEFAULT_COMPANY_ID}
-      title="TIME SHEET"
-      fallback={<p className="text-base font-bold">{document.companyName}</p>}
-    />
+    <header className="flex flex-wrap items-start justify-between gap-4 sm:flex-nowrap">
+      {/*
+        LETTERHEAD-2: the default company's (EJE's) letterhead, as the PDF has it — the PDF routes draw
+        this form on `defaultCompanyLetterhead`, the EJE master letterhead — so the screen, the print and
+        the PDF carry the same header. The company's name in text stays the fallback, as before.
+      */}
+      <DocumentLetterhead
+        companyId={DEFAULT_COMPANY_ID}
+        companyName={document.companyName}
+        className="min-w-0 flex-1"
+        masterClassName="-mx-4 min-w-0 basis-[calc(100%+2rem)] sm:mx-0 sm:flex-1"
+        fallback={<p className="text-base font-bold">{document.companyName}</p>}
+      />
+      <p className="text-xl font-bold tracking-[0.15em]">TIME SHEET</p>
+    </header>
     <h2 className="mt-5 text-sm font-bold">Time Sheet</h2>
     <dl className="mt-2 grid grid-cols-[8rem_1fr] gap-y-1">
       <dt className="text-steel-500">Technician Name</dt>

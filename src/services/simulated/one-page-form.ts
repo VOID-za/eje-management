@@ -1,32 +1,16 @@
 import { A4_HEIGHT, A4_WIDTH, PdfBuilder, textWidth } from '@/lib/pdf/writer';
-import { BAND, BODY, INK, LETTERHEAD_TOP, MUTED, RULE, RULE_SOFT, TRACK_TITLE, compactFormHeader, drawFormHeader, drawLetterhead, fullFormHeader, type FormHeaderLayout } from './pdf-sheet';
+import { BAND, BODY, INK, LETTERHEAD_TOP, MUTED, RULE, RULE_SOFT, TRACK_TITLE, drawLetterhead } from './pdf-sheet';
 import { isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 
 /**
- * LETTERHEAD-3 (the owner, 16 November 2026): with the EJE master letterhead the form has the header of
- * `drawFormHeader` — the letterhead large and readable left of a smaller title, a rule, then the fields —
- * instead of its text heading. `plan` reserves that header's height, so the rows are sized for the room
- * that is left. Any other company's form — an uploaded image or the text heading — is laid out exactly
- * as before.
- *
- * A LARGER HEADER NEVER COSTS A MONTH ITS PAGE (the independent review: about two lines a day, a full
- * header would have tipped a one-page timesheet onto two). So `choosePlan` first lays the month out as
- * v1.13.0 did — its heading reserved `v113Top` — and then takes the LARGEST header that lands the month
- * the same way: the same panels, and type no smaller than then (or still at least `readableBodyPt`).
- * Most months take the full header; a tight one steps down through compact headers, and the last step
- * is exactly v1.13.0's room with v1.13.0's letterhead size — never smaller.
+ * LETTERHEAD-2 (the owner, 15 November 2026): the EJE master letterhead needs a readable band. In the room the
+ * text heading had (~33 pt) its serif lines came out ~2.5 pt; this much more makes the band ~65 pt and the lines
+ * ~5 pt, as on the job card. `plan` reserves it, so the rows are sized for the room that is left and the form is
+ * still ONE page (the worst-case months are tested). Only the master letterhead takes it: any other company's form
+ * — an uploaded image or the text heading — is laid out exactly as before.
  */
-const masterHeader = (spec: Pick<FormSpec, 'letterhead'>): boolean => isMasterLetterhead(spec.letterhead);
-
-/** What the text heading reserves (and what v1.13.0's master letterhead reserved: 32 more). */
-const textTop = (sizes: Sizes): number => Math.max(sizes.company, sizes.title) + sizes.gap;
-const v113Top = (sizes: Sizes): number => textTop(sizes) + 32;
-
-/** The master's header for a plan, by the room it is given at that size. */
-type HeaderChoice = (sizes: Sizes) => FormHeaderLayout;
-const FULL_HEADER: HeaderChoice = () => fullFormHeader(WIDTH);
-const COMPACT_STEPS = [77, 73, 69, 65, 61];
-const V113_ROOM: HeaderChoice = (sizes) => compactFormHeader(WIDTH, v113Top(sizes));
+const MASTER_HEADER_EXTRA = 32;
+const headerExtra = (spec: Pick<FormSpec, 'letterhead'>): number => (isMasterLetterhead(spec.letterhead) ? MASTER_HEADER_EXTRA : 0);
 
 /**
  * ONE PAGE, ALWAYS. PAY-04 (29 October 2026): every timesheet and attendance
@@ -87,12 +71,6 @@ export interface FormSpec {
   readonly footer: string;
   /** LETTERHEAD-1: the company's uploaded letterhead, prepared; absent, the company's name in text. */
   readonly letterhead?: DocumentLetterhead;
-  /**
-   * LETTERHEAD-3: the smallest body the caller still calls readable on one page (the timesheet's
-   * READABLE_BODY_PT; below it the timesheet goes onto several pages). The master's larger header never
-   * takes a month below it that was above it. Default: MIN_BODY_PT.
-   */
-  readonly readableBodyPt?: number;
 }
 
 export interface FormLayout {
@@ -275,16 +253,13 @@ interface Plan {
   readonly commentLines: readonly string[];
   readonly commentHeight: number;
   readonly used: number;
-  /** The master letterhead's header (LETTERHEAD-3); null for the text heading or an uploaded image. */
-  readonly header: FormHeaderLayout | null;
 }
 
-export const plan = (spec: FormSpec, scale: number, panels: 1 | 2, choice: HeaderChoice | 'v113' = FULL_HEADER): Plan | null => {
+export const plan = (spec: FormSpec, scale: number, panels: 1 | 2): Plan | null => {
   const sizes = sizesAt(scale);
   const panelWidth = panels === 1 ? WIDTH : (WIDTH - PANEL_GAP) / 2;
   const widths = contentWidths(spec, panelWidth, sizes.body, panels);
-  const header = masterHeader(spec) && choice !== 'v113' ? choice(sizes) : null;
-  const top = header !== null ? header.height : choice === 'v113' && masterHeader(spec) ? v113Top(sizes) : textTop(sizes);
+  const top = Math.max(sizes.company, sizes.title) + sizes.gap + headerExtra(spec);
   const fieldsHeight = spec.fields.length * sizes.fieldLeading + sizes.gap * 0.6;
   const notes = spec.notes.flatMap((note) => PdfBuilder.wrap(note, WIDTH, sizes.note));
   const notesHeight = notes.length * sizes.note * 1.35 + (notes.length > 0 ? sizes.gap * 0.5 : 0);
@@ -305,49 +280,17 @@ export const plan = (spec: FormSpec, scale: number, panels: 1 | 2, choice: Heade
   return {
     sizes, scale, panels, widths, panelWidth, head, split, fieldsHeight, notes, commentLines, commentHeight,
     used: fixed + tallest,
-    header,
   };
 };
 
-/** The largest size, from full down to `minBody`, at which the form fits in `panels` panels. */
-const searchPanels = (spec: FormSpec, choice: HeaderChoice | 'v113', panels: 1 | 2, minBody = MIN_BODY_PT): Plan | null => {
-  for (let scale = 1; BASE_BODY * scale >= minBody - 1e-9; scale = Math.round((scale - 0.02) * 100) / 100) {
-    const found = plan(spec, scale, panels, choice);
-    if (found !== null) return found;
-  }
-  return null;
-};
-
-/** The renderer's rule: one panel at the largest size that fits, else two. */
-const search = (spec: FormSpec, choice: HeaderChoice | 'v113'): Plan | null =>
-  searchPanels(spec, choice, 1) ?? searchPanels(spec, choice, 2);
-
 const choosePlan = (spec: FormSpec): Plan => {
-  if (!masterHeader(spec)) {
-    const found = search(spec, FULL_HEADER);
-    if (found === null) throw new OnePageOverflow(spec.rows.length);
-    return found;
+  for (const panels of [1, 2] as const) {
+    for (let scale = 1; BASE_BODY * scale >= MIN_BODY_PT - 1e-9; scale = Math.round((scale - 0.02) * 100) / 100) {
+      const found = plan(spec, scale, panels);
+      if (found !== null) return found;
+    }
   }
-  // LETTERHEAD-3: how v1.13.0 landed this month, then the largest header that lands it the same way.
-  const before = search(spec, 'v113');
-  if (before === null) throw new OnePageOverflow(spec.rows.length);
-  const readable = spec.readableBodyPt ?? MIN_BODY_PT;
-  // Below the caller's readable size the month was not printed on one page (the timesheet goes onto several):
-  // nothing to keep, so the same room as then gives the same answer, at the cost of one search.
-  if (before.sizes.body < readable - 1e-9) return search(spec, V113_ROOM) ?? before;
-  /*
-   * A header lands the month the same way when the renderer's rule, given that header, picks
-   * `before`'s panels at a readable size. Every header here leaves no more room than v1.13.0's, so
-   * when `before` needed two panels one cannot fit, and only `before`'s panels down to the readable
-   * size need trying — the same answer as the full search, at a fraction of its cost.
-   */
-  const choices: HeaderChoice[] = [FULL_HEADER, ...COMPACT_STEPS.map((height): HeaderChoice => () => compactFormHeader(WIDTH, height))];
-  for (const choice of choices) {
-    const found = searchPanels(spec, choice, before.panels, readable);
-    if (found !== null) return found;
-  }
-  // v1.13.0's own room: the same answer as then.
-  return search(spec, V113_ROOM) ?? before;
+  throw new OnePageOverflow(spec.rows.length);
 };
 
 export const renderOnePageForm = (spec: FormSpec): RenderedForm => {
@@ -355,30 +298,24 @@ export const renderOnePageForm = (spec: FormSpec): RenderedForm => {
   const { sizes, widths, panelWidth } = chosen;
   const pdf = new PdfBuilder();
   pdf.addPage();
-  let y: number;
-  if (masterHeader(spec)) {
-    // LETTERHEAD-3: the EJE master letterhead's own header; `y` is the first field's baseline.
-    y = drawFormHeader(pdf, MARGIN, A4_HEIGHT - MARGIN, WIDTH, spec.title, chosen.header ?? fullFormHeader(WIDTH));
-  } else {
-    y = A4_HEIGHT - MARGIN - Math.max(sizes.company, sizes.title) * 0.8;
+  let y = A4_HEIGHT - MARGIN - Math.max(sizes.company, sizes.title) * 0.8 - headerExtra(spec);
 
-    // Heading: the company, and the form's title on the right.
-    const titleWidth = textWidth(spec.title, sizes.title, 'bold', TRACK_TITLE);
-    /*
-     * LETTERHEAD-1: the default company's uploaded letterhead in place of its
-     * name — a strip in the room the heading has today plus the top margin, left
-     * of the title and clear of the first field's capitals. `plan` is not told:
-     * the letterhead takes no room the text heading did not, so the form is
-     * sized, and every line below placed, exactly as without it.
-     */
-    const firstField = y - sizes.gap - sizes.field * 0.4;
-    const bandBottom = firstField + sizes.field * 0.75 + 2;
-    if (!drawLetterhead(pdf, spec.letterhead, { x: MARGIN, y: bandBottom, width: WIDTH - titleWidth - 12, height: LETTERHEAD_TOP - bandBottom })) {
-      pdf.text(MARGIN, y, spec.companyName, { font: 'bold', size: sizes.company, colour: INK });
-    }
-    pdf.text(A4_WIDTH - MARGIN - titleWidth, y, spec.title, { font: 'bold', size: sizes.title, colour: INK, tracking: TRACK_TITLE });
-    y -= sizes.gap + sizes.field * 0.4;
+  // Heading: the company, and the form's title on the right.
+  const titleWidth = textWidth(spec.title, sizes.title, 'bold', TRACK_TITLE);
+  /*
+   * LETTERHEAD-1: the default company's uploaded letterhead in place of its
+   * name — a strip in the room the heading has today plus the top margin, left
+   * of the title and clear of the first field's capitals. `plan` is not told:
+   * the letterhead takes no room the text heading did not, so the form is
+   * sized, and every line below placed, exactly as without it.
+   */
+  const firstField = y - sizes.gap - sizes.field * 0.4;
+  const bandBottom = firstField + sizes.field * 0.75 + 2;
+  if (!drawLetterhead(pdf, spec.letterhead, { x: MARGIN, y: bandBottom, width: WIDTH - titleWidth - 12, height: LETTERHEAD_TOP - bandBottom })) {
+    pdf.text(MARGIN, y, spec.companyName, { font: 'bold', size: sizes.company, colour: INK });
   }
+  pdf.text(A4_WIDTH - MARGIN - titleWidth, y, spec.title, { font: 'bold', size: sizes.title, colour: INK, tracking: TRACK_TITLE });
+  y -= sizes.gap + sizes.field * 0.4;
 
   // Labelled fields.
   for (const [label, value] of spec.fields) {

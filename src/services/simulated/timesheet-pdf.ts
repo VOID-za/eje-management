@@ -3,8 +3,16 @@ import { formatCurrency, formatDateTime } from '@/lib/format';
 import { formatDayAndDate } from '@/lib/timesheet-dates';
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
 import { OnePageOverflow, renderOnePageForm, type FormLayout, type FormRow } from './one-page-form';
-import { BAND, BODY, CONTENT_WIDTH, GAP, INK, LETTERHEAD_TOP, MARGIN, MUTED, RIGHT, RULE, RULE_SOFT, Sheet, SIZE, TRACK_TITLE, compactFormHeader, drawFormHeader, drawLetterhead, fullFormHeader, type FormHeaderLayout } from './pdf-sheet';
+import { BAND, BODY, CONTENT_WIDTH, GAP, INK, LETTERHEAD_TOP, MARGIN, MUTED, RIGHT, RULE, RULE_SOFT, Sheet, SIZE, TRACK_TITLE, drawLetterhead } from './pdf-sheet';
 import { isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+
+/**
+ * LETTERHEAD-2: how much taller the multi-page timesheet's header band is for the EJE master letterhead. In the
+ * strip the company's name had (~38 pt) its serif lines came out ~2.9 pt; this makes the band ~66 pt and the lines
+ * ~5 pt, as on the job card. The title and everything below it on the FIRST page move down by exactly this much;
+ * the following pages are untouched, and any other company's timesheet is laid out exactly as before.
+ */
+export const MULTI_PAGE_MASTER_EXTRA = 28;
 
 /**
  * THE TIMESHEET PDF LAYOUT. PDF-01 … PDF-04 (the real-world reviewer, and the
@@ -172,7 +180,6 @@ export const renderTimesheetPdf = (doc: TimesheetDocument, options: TimesheetPdf
     comment: { title: 'Comments', text: doc.comment },
     footer,
     letterhead: options.letterhead,
-    readableBodyPt: READABLE_BODY_PT,
     });
   } catch (cause) {
     if (!(cause instanceof OnePageOverflow)) throw cause;
@@ -180,37 +187,8 @@ export const renderTimesheetPdf = (doc: TimesheetDocument, options: TimesheetPdf
   if (onePage !== null && onePage.layout.bodyPt >= READABLE_BODY_PT - 1e-9) {
     return { fileName: doc.fileName, bytes: onePage.bytes, pageCount: onePage.pageCount, layout: onePage.layout };
   }
-  const multi = isMasterLetterhead(options.letterhead)
-    ? multiPageWithMasterHeader(doc, fields, notes, footer, options.letterhead)
-    : renderMultiPageTimesheet(doc, fields, notes, footer, options.letterhead);
+  const multi = renderMultiPageTimesheet(doc, fields, notes, footer, options.letterhead);
   return { fileName: doc.fileName, bytes: multi.bytes, pageCount: multi.pageCount, layout: null };
-};
-
-/**
- * LETTERHEAD-3: THE LARGER HEADER NEVER ADDS A PAGE (the independent review: with the full header on
- * page 1, about one multi-page timesheet in twenty ran one page longer than v1.13.0's). v1.13.0's
- * first page put the first field 50pt below the margin; laid out in that room first, the timesheet
- * gives the page count to keep, and the largest header that keeps it is taken — usually the full one.
- */
-const MULTI_PAGE_V113_ROOM = 50;
-/** On the multi-page timesheet (margin 40) the letterhead may start 21pt above the margin, 19pt below the edge. */
-const MULTI_PAGE_RISE = 21;
-
-const multiPageWithMasterHeader = (
-  doc: TimesheetDocument,
-  fields: readonly (readonly [string, string])[],
-  notes: readonly string[],
-  footer: string,
-  letterhead: DocumentLetterhead,
-): { bytes: Uint8Array; pageCount: number } => {
-  const render = (header: FormHeaderLayout) => renderMultiPageTimesheet(doc, fields, notes, footer, letterhead, header);
-  const v113 = render(compactFormHeader(CONTENT_WIDTH, MULTI_PAGE_V113_ROOM, MULTI_PAGE_RISE));
-  const headers = [fullFormHeader(CONTENT_WIDTH), ...[77, 73, 69, 65, 61, 55].map((height) => compactFormHeader(CONTENT_WIDTH, height, MULTI_PAGE_RISE))];
-  for (const header of headers) {
-    const rendered = render(header);
-    if (rendered.pageCount <= v113.pageCount) return rendered;
-  }
-  return v113;
 };
 
 /**
@@ -225,27 +203,24 @@ const renderMultiPageTimesheet = (
   notes: readonly string[],
   footer: string,
   letterhead: DocumentLetterhead | undefined,
-  header: FormHeaderLayout = fullFormHeader(CONTENT_WIDTH),
 ): { bytes: Uint8Array; pageCount: number } => {
   const sheet = new Sheet();
   const title = 'TIME SHEET';
   const titleWidth = textWidth(title, SIZE.jobNumber, 'bold', TRACK_TITLE);
-  if (isMasterLetterhead(letterhead)) {
-    // LETTERHEAD-3: the EJE master letterhead's own form header (as the one-page form has it).
-    sheet.setCursor(drawFormHeader(sheet.pdf, MARGIN, sheet.cursor, CONTENT_WIDTH, title, header));
-  } else {
-    /*
-     * LETTERHEAD-1: the default company's uploaded letterhead in place of its
-     * name, in the space left of the title and above the first field (whose
-     * 9pt capitals reach about 786). The title stays exactly where it is.
-     */
-    const bandBottom = sheet.cursor - 12;
-    if (!drawLetterhead(sheet.pdf, letterhead, { x: MARGIN, y: bandBottom, width: CONTENT_WIDTH - titleWidth - 12, height: LETTERHEAD_TOP - bandBottom })) {
-      sheet.text(MARGIN, doc.companyName, { font: 'bold', size: SIZE.companyName, colour: INK });
-    }
-    sheet.pdf.text(RIGHT - titleWidth, sheet.cursor, title, { font: 'bold', size: SIZE.jobNumber, colour: INK, tracking: TRACK_TITLE });
-    sheet.move(GAP.sectionLarge);
+  /*
+   * LETTERHEAD-1: the default company's uploaded letterhead in place of its
+   * name, in the space left of the title and above the first field (whose
+   * 9pt capitals reach about 786). The title stays exactly where it is —
+   * except under the EJE master letterhead (LETTERHEAD-2), whose taller band
+   * moves the title and the whole first page down by MULTI_PAGE_MASTER_EXTRA.
+   */
+  if (isMasterLetterhead(letterhead)) sheet.move(MULTI_PAGE_MASTER_EXTRA);
+  const bandBottom = sheet.cursor - 12;
+  if (!drawLetterhead(sheet.pdf, letterhead, { x: MARGIN, y: bandBottom, width: CONTENT_WIDTH - titleWidth - 12, height: LETTERHEAD_TOP - bandBottom })) {
+    sheet.text(MARGIN, doc.companyName, { font: 'bold', size: SIZE.companyName, colour: INK });
   }
+  sheet.pdf.text(RIGHT - titleWidth, sheet.cursor, title, { font: 'bold', size: SIZE.jobNumber, colour: INK, tracking: TRACK_TITLE });
+  sheet.move(GAP.sectionLarge);
   for (const [label, value] of fields) {
     const lines = PdfBuilder.wrap(value, CONTENT_WIDTH - 110, SIZE.body);
     sheet.need(GAP.line * lines.length);

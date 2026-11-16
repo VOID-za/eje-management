@@ -3,10 +3,8 @@ import { displaySize, type PdfImage } from '@/lib/pdf/image';
 import {
   LETTERHEAD_INK,
   LETTERHEAD_PDF_FONT,
-  LETTERHEAD_INK_ASPECT,
   isMasterLetterhead,
   layoutLetterhead,
-  layoutLetterheadInk,
   letterheadLineWidth,
   type DocumentLetterhead,
   type LetterheadArea,
@@ -225,8 +223,8 @@ const areaOf = (box: LetterheadBox): LetterheadArea => ({
  * as its traced outline, filled even-odd. Fitted exactly as an uploaded image is: uniformly,
  * against the box's left edge, centred top to bottom. Nothing outside the box moves.
  */
-export const drawEjeLetterhead = (pdf: PdfBuilder, box: LetterheadBox, fit: 'sheet' | 'ink' = 'sheet'): void => {
-  const placed = fit === 'ink' ? layoutLetterheadInk(areaOf(box)) : layoutLetterhead(areaOf(box));
+export const drawEjeLetterhead = (pdf: PdfBuilder, box: LetterheadBox): void => {
+  const placed = layoutLetterhead(areaOf(box));
   const mark = placed.mark;
   pdf.fillPolygons(
     placed.markPolygons,
@@ -295,109 +293,4 @@ export const drawLetterheadOverTitle = (
   // Clear of the number's capitals (about 0.72 of its size) by a few points.
   const bottom = baseline + SIZE.jobNumber * 0.72 + 4;
   drawLetterhead(pdf, letterhead, { x: MARGIN, y: bottom, width: CONTENT_WIDTH, height: LETTERHEAD_TOP - bottom });
-};
-
-/**
- * THE ATTENDANCE AND TIMESHEET HEADER WITH THE EJE MASTER LETTERHEAD. LETTERHEAD-3 (the owner,
- * 16 November 2026): the letterhead squeezed into the forms' short heading came out tiny — the
- * mark, the name and the details hard to read — while the title dominated the page.
- *
- * So a form gives the master letterhead a header of its own, taller than the job card's: the
- * letterhead's INK (`layoutLetterheadInk`, the paper margin around it not reserved) fills the
- * width left of the title — the same lines, mark, faces and proportions as every EJE document —
- * and the title, smaller than before, sits on the right, centred on the letterhead's height. A
- * fine rule closes the header, and the form's fields begin a clear gap below it.
- *
- * The title's room is ATTENDANCE's, whichever form it is, so the timesheet and the attendance
- * form carry the letterhead at the same size. The screen (`FORM_LETTERHEAD_SHARE`) gives the
- * letterhead the same share of the width, so the preview, the PDF and the print match.
- *
- * ONE PAGE STAYS ONE PAGE: a one-page form whose month is tight may be given a COMPACT header
- * (`compactFormHeader`) — the letterhead a little smaller, the gaps tighter — never smaller than
- * the letterhead v1.13.0 printed. See `one-page-form.ts`.
- */
-export const FORM_TITLE_SIZE = 13;
-/**
- * The title's letter-spacing in proportion to its size, as the 16pt title had it (TRACK_TITLE, 1.35pt): 1.1pt.
- * Wider, and a PDF reader takes the gaps for spaces — "A T T E N D A N C E" — so the title could no longer
- * be searched for or copied (the forms regression caught it).
- */
-export const FORM_TITLE_TRACKING = Math.round(((TRACK_TITLE * FORM_TITLE_SIZE) / 16) * 100) / 100;
-const FORM_TITLE_GAP = 16;
-
-/** A form header's geometry, in points. `height` is how far below the form's top margin the first field's baseline is. */
-export interface FormHeaderLayout {
-  /** The letterhead's ink height (its width follows, at the ink's proportions). */
-  readonly inkHeight: number;
-  /** How far above the top margin the letterhead starts. */
-  readonly rise: number;
-  /** The rule: this far below the letterhead's ink. */
-  readonly ruleGap: number;
-  /** The first field's baseline: this far below the rule. */
-  readonly fieldsGap: number;
-  readonly height: number;
-}
-
-const formHeaderLayout = (inkHeight: number, rise: number, ruleGap: number, fieldsGap: number): FormHeaderLayout => ({
-  inkHeight,
-  rise,
-  ruleGap,
-  fieldsGap,
-  height: inkHeight - rise + ruleGap + fieldsGap,
-});
-
-/** The width the master letterhead may take in a form header `contentWidth` wide. */
-export const formLetterheadWidth = (contentWidth: number): number =>
-  contentWidth - textWidth('ATTENDANCE', FORM_TITLE_SIZE, 'bold', FORM_TITLE_TRACKING) - FORM_TITLE_GAP;
-
-/** The letterhead's share of a one-page form's width (539pt), for the screen. */
-export const FORM_LETTERHEAD_SHARE = formLetterheadWidth(A4_WIDTH - 56) / (A4_WIDTH - 56);
-
-/**
- * The full header: the letterhead as wide as the title leaves room for, starting 8pt above the top
- * margin (still 20pt clear of the paper's edge on a one-page form), the rule 8pt below its ink and
- * the first field 17pt below the rule (its ~6pt capitals ~11pt clear).
- */
-export const fullFormHeader = (contentWidth: number): FormHeaderLayout =>
-  formHeaderLayout(formLetterheadWidth(contentWidth) / LETTERHEAD_INK_ASPECT, 8, 8, 17);
-
-/**
- * A compact header `height` tall, for a tight one-page month: the letterhead reaching up to
- * LETTERHEAD_TOP (14pt below the paper's edge — the one-page form's margin is 28), the rule 3pt
- * below it and the first field 10pt below the rule; the letterhead takes the rest, up to the full
- * header's. At the height the v1.13.0 heading reserved it is at least the size v1.13.0 printed.
- * `rise`: how far above the top margin the letterhead starts (the multi-page timesheet's margin is 40).
- */
-export const compactFormHeader = (contentWidth: number, height: number, rise = 14): FormHeaderLayout => {
-  const ruleGap = 3;
-  const fieldsGap = 10;
-  return formHeaderLayout(Math.min(fullFormHeader(contentWidth).inkHeight, height + rise - ruleGap - fieldsGap), rise, ruleGap, fieldsGap);
-};
-
-/** How far below `top` (the form's top margin) the full header puts the first field's baseline. */
-export const formHeaderHeight = (contentWidth: number): number => fullFormHeader(contentWidth).height;
-
-/**
- * Draws the header: the letterhead from `top + rise` down, the title on the right, centred on the
- * letterhead's height, and the rule. Returns the first field's baseline (`top - layout.height`).
- */
-export const drawFormHeader = (
-  pdf: PdfBuilder,
-  left: number,
-  top: number,
-  contentWidth: number,
-  title: string,
-  layout: FormHeaderLayout = fullFormHeader(contentWidth),
-): number => {
-  const height = layout.inkHeight;
-  const width = height * LETTERHEAD_INK_ASPECT;
-  const inkTop = top + layout.rise;
-  drawEjeLetterhead(pdf, { x: left, y: inkTop - height, width, height }, 'ink');
-  const titleWidth = textWidth(title, FORM_TITLE_SIZE, 'bold', FORM_TITLE_TRACKING);
-  // Centred on the letterhead's height: the capitals (~0.72 of the size) straddle its middle.
-  const baseline = inkTop - height / 2 - FORM_TITLE_SIZE * 0.36;
-  pdf.text(left + contentWidth - titleWidth, baseline, title, { font: 'bold', size: FORM_TITLE_SIZE, colour: INK, tracking: FORM_TITLE_TRACKING });
-  const rule = inkTop - height - layout.ruleGap;
-  pdf.line(left, rule, left + contentWidth, rule, 0.8, RULE);
-  return rule - layout.fieldsGap;
 };

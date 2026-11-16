@@ -181,48 +181,6 @@ export const layoutLetterhead = (
   };
 };
 
-/**
- * WHERE THE LETTERHEAD'S INK IS, in the reference space: the mark and every line (from a little
- * above its capitals to below its descenders), with no paper margin around it. LETTERHEAD-3: a
- * form's header fits THIS, not the whole reference sheet — the sheet's empty right-hand margin
- * and top and bottom edges otherwise cost the header a sixth of its size.
- */
-export const LETTERHEAD_INK_BOUNDS: LetterheadArea = (() => {
-  let left: number = LETTERHEAD_MARK_BOX.x;
-  let top: number = LETTERHEAD_MARK_BOX.y;
-  let right: number = LETTERHEAD_MARK_BOX.x + LETTERHEAD_MARK_BOX.width;
-  let bottom: number = LETTERHEAD_MARK_BOX.y + LETTERHEAD_MARK_BOX.height;
-  for (const value of LETTERHEAD_LINES) {
-    const half = letterheadLineWidth(value) / 2;
-    const size = Math.max(...value.runs.map((part) => part.size));
-    left = Math.min(left, value.x - half);
-    right = Math.max(right, value.x + half);
-    top = Math.min(top, value.baseline - size * 0.76);
-    bottom = Math.max(bottom, value.baseline + size * 0.24);
-  }
-  return { left, top, width: right - left, height: bottom - top };
-})();
-
-/** The ink's width ÷ height: a box this shape holds the letterhead with nothing to spare. */
-export const LETTERHEAD_INK_ASPECT = LETTERHEAD_INK_BOUNDS.width / LETTERHEAD_INK_BOUNDS.height;
-
-/**
- * The master header placed so its INK fills the box: scaled uniformly by the tighter of the box's
- * width and height, against the box's left edge, centred top to bottom. The same lines, mark and
- * proportions as `layoutLetterhead` — only the paper margin around them is not reserved.
- */
-export const layoutLetterheadInk = (box: LetterheadArea): PlacedLetterhead => {
-  const ink = LETTERHEAD_INK_BOUNDS;
-  const scale = Math.max(0, Math.min(box.width / ink.width, box.height / ink.height));
-  const top = box.top + (box.height - ink.height * scale) / 2;
-  return layoutLetterhead({
-    left: box.left - ink.left * scale,
-    top: top - ink.top * scale,
-    width: LETTERHEAD_REFERENCE.width * scale,
-    height: LETTERHEAD_REFERENCE.height * scale,
-  });
-};
-
 /** The mark's outlines as an SVG path `d`, in the mark box's units (for an even-odd fill). */
 export const markPathData = (mark: LetterheadArea, polygons: readonly (readonly number[])[] = EJE_MARK_POLYGONS): string =>
   polygons

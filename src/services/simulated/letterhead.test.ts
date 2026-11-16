@@ -1,16 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-/*
- * The seed's dates are relative to today, and some of them are taken when its modules are IMPORTED —
- * before `beforeAll` runs. So the clock is frozen here, before any import, as well as in `beforeAll`:
- * without it the hashes below held only on the day they were taken (they failed from 16 November).
- * The same instant as FROZEN_AT (src/test/letterhead-documents.ts), which cannot be imported this early.
- */
-vi.hoisted(() => {
-  vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(new Date('2026-11-15T08:00:00.000Z'));
-});
 import type { PdfImage } from '@/lib/pdf/image';
-import { A4_HEIGHT, A4_WIDTH, textWidth } from '@/lib/pdf/writer';
+import { A4_HEIGHT, A4_WIDTH } from '@/lib/pdf/writer';
 import { inspectPdf, pdfPlainText } from '@/lib/pdf/inspect';
 import { SUBSTITUTION_ALLOWANCE } from '@/lib/pdf/metrics';
 import { WD_HEARN_JHB_COMPANY_ID, type CompanyDetails } from '@/domain';
@@ -28,7 +18,7 @@ import { renderCorrectionPdf } from './correction-pdf';
 import { DELIVERY_NOTE_MASTER_EXTRA, renderDeliveryNotePdf } from './delivery-note-pdf';
 import { renderTimesheetPdf } from './timesheet-pdf';
 import { renderAttendancePdf } from './attendance-pdf';
-import { FORM_TITLE_SIZE, FORM_TITLE_TRACKING, LETTERHEAD_TOP, drawLetterhead, fitLetterhead } from './pdf-sheet';
+import { LETTERHEAD_TOP, drawLetterhead, fitLetterhead } from './pdf-sheet';
 import { PdfBuilder } from '@/lib/pdf/writer';
 import {
   FROZEN_AT,
@@ -85,17 +75,10 @@ interface Generator {
   /** The header band: the letterhead must be drawn inside it, and nothing below `bottom` may move. */
   readonly band: { readonly bottom: number; readonly left: number; readonly right: number };
   /**
-   * LETTERHEAD-2: how much LOWER the band reaches for the EJE master letterhead (the delivery note's
-   * long-number layout reserves DELIVERY_NOTE_MASTER_EXTRA so its lines are readable). Everything below
-   * then moves down by exactly this much.
+   * LETTERHEAD-2: how much LOWER the band reaches for the EJE master letterhead (one-page forms reserve
+   * MASTER_HEADER_EXTRA so its lines are readable). Everything below then moves down by exactly this much.
    */
   readonly masterBandDrop?: number;
-  /**
-   * LETTERHEAD-3: the attendance and timesheet forms give the master letterhead a header of their own
-   * (`drawFormHeader`), taller than the text heading; the drop is measured — how much lower the first
-   * field ("Technician Name") is — and the header itself is tested on its own below.
-   */
-  readonly formHeader?: boolean;
   /** A document that runs onto further pages: what no longer fits on page 1 flows onto the next. */
   readonly multiPage?: boolean;
   /** What must still read in the header with a letterhead. */
@@ -141,7 +124,7 @@ const GENERATORS: readonly Generator[] = [
   {
     name: 'timesheetMultiPage',
     band: { bottom: 789, left: 40, right: 555.28 },
-    formHeader: true,
+    masterBandDrop: 28,
     multiPage: true,
     header: ['TIME SHEET'],
     render: async (letterhead, omit) =>
@@ -150,7 +133,7 @@ const GENERATORS: readonly Generator[] = [
   {
     name: 'timesheetOnePage',
     band: { bottom: 794, left: 28, right: A4_WIDTH - 28 },
-    formHeader: true,
+    masterBandDrop: 32,
     header: ['TIME SHEET'],
     render: async (letterhead, omit) =>
       renderTimesheetPdf(timesheet(10), omit === true ? { generatedAt: GENERATED_AT } : { generatedAt: GENERATED_AT, letterhead }).bytes,
@@ -158,7 +141,7 @@ const GENERATORS: readonly Generator[] = [
   {
     name: 'attendance',
     band: { bottom: 794, left: 28, right: A4_WIDTH - 28 },
-    formHeader: true,
+    masterBandDrop: 32,
     header: ['ATTENDANCE'],
     render: async (letterhead, omit) =>
       renderAttendancePdf(attendance(), omit === true ? { generatedAt: GENERATED_AT } : { generatedAt: GENERATED_AT, letterhead }).bytes,
@@ -308,20 +291,9 @@ describe('the delivery note with a long job number and the EJE master letterhead
  */
 const MASTER_TEXT = LETTERHEAD_LINES.map(letterheadLineText);
 
-/** How much lower a form's first field is with the master's form header than with the text heading. */
-const fieldDrop = (without: Uint8Array, withMaster: Uint8Array): number => {
-  const label = (bytes: Uint8Array) => textRuns(bytes).find((run) => run.page === 1 && run.value === 'Technician Name')!.y;
-  return label(without) - label(withMaster);
-};
-
 describe.each(GENERATORS)('$name with the EJE master letterhead', (generator) => {
-  let drop = generator.masterBandDrop ?? 0;
-  let masterBottom = generator.band.bottom - drop;
-  beforeAll(async () => {
-    if (generator.formHeader !== true) return;
-    drop = fieldDrop(await generator.render(undefined), await generator.render(EJE_MASTER_LETTERHEAD));
-    masterBottom = generator.band.bottom - drop;
-  });
+  const drop = generator.masterBandDrop ?? 0;
+  const masterBottom = generator.band.bottom - drop;
   it('carries every line of the official letterhead as text, inside the header band, and no image', async () => {
     const bytes = await generator.render(EJE_MASTER_LETTERHEAD);
     expect(imageObjectCount(bytes)).toBe(0);
@@ -414,7 +386,7 @@ describe.each(GENERATORS)('$name with the EJE master letterhead', (generator) =>
   });
 
   // Where the master reserves a taller band (one-page forms) it is deliberately NOT where an image would be.
-  it.skipIf((generator.masterBandDrop ?? 0) !== 0 || generator.formHeader === true)('is drawn in exactly the place an uploaded image of the same proportions would be', async () => {
+  it.skipIf(drop !== 0)('is drawn in exactly the place an uploaded image of the same proportions would be', async () => {
     const image = await preparedLetterhead(letterheadPng(LETTERHEAD_REFERENCE.width / 10, LETTERHEAD_REFERENCE.height / 10));
     const [drawn] = drawnImages(await generator.render(image));
     const mark = filledPaths(await generator.render(EJE_MASTER_LETTERHEAD))[0]!.points;
@@ -491,106 +463,5 @@ describe('WD Hearn JHB, with and without its uploaded letterhead', () => {
     now['timesheetMultiPage:image'] = sha256(renderTimesheetPdf(timesheet(400), { generatedAt: GENERATED_AT, letterhead: image }).bytes);
     now['attendance:image'] = sha256(renderAttendancePdf(attendance(), { generatedAt: GENERATED_AT, letterhead: image }).bytes);
     expect(now).toEqual(WD_HEARN_BEFORE_MASTER);
-  });
-});
-
-/**
- * LETTERHEAD-3 (the owner, 16 November 2026): on the attendance and timesheet forms the master letterhead
- * was squeezed into the text heading's short band — tiny, hard to read, and the title dominated. The forms
- * now give it a header of their own (`drawFormHeader`): larger, balanced, the title on the right.
- */
-describe('LETTERHEAD-3 — the attendance and timesheet header', () => {
-  const FORMS = [
-    { name: 'attendance (one page)', title: 'ATTENDANCE', left: 28, right: A4_WIDTH - 28, render: () => renderAttendancePdf(attendance(), { generatedAt: GENERATED_AT, letterhead: EJE_MASTER_LETTERHEAD }) },
-    { name: 'timesheet (one page)', title: 'TIME SHEET', left: 28, right: A4_WIDTH - 28, render: () => renderTimesheetPdf(timesheet(10), { generatedAt: GENERATED_AT, letterhead: EJE_MASTER_LETTERHEAD }) },
-    { name: 'timesheet (31 days, one page)', title: 'TIME SHEET', left: 28, right: A4_WIDTH - 28, render: () => renderTimesheetPdf(timesheet(31), { generatedAt: GENERATED_AT, letterhead: EJE_MASTER_LETTERHEAD }) },
-    { name: 'timesheet (several pages)', title: 'TIME SHEET', left: 40, right: A4_WIDTH - 40, render: () => renderTimesheetPdf(timesheet(400), { generatedAt: GENERATED_AT, letterhead: EJE_MASTER_LETTERHEAD }) },
-  ] as const;
-
-  it.each(FORMS)('$name: a larger, readable letterhead, the title beside it, a clear gap before the fields', (form) => {
-    const bytes = form.render().bytes;
-    const runs = textRuns(bytes).filter((run) => run.page === 1);
-    const lines = MASTER_TEXT.map((value) => runs.find((run) => run.value === value)!);
-    // Larger than the ~4.9pt / ~11.6pt the short band gave: the details ≥ 6pt, the name ≥ 14pt, Reg and VAT ≥ 5pt.
-    expect(runs.find((run) => run.value === 'Bonfoi Office Park')!.size).toBeGreaterThanOrEqual(6);
-    expect(runs.find((run) => run.value.startsWith('EJE Industrial Electronics'))!.size).toBeGreaterThanOrEqual(14);
-    expect(runs.find((run) => run.value === 'VAT NO: 4950134991')!.size).toBeGreaterThanOrEqual(5);
-    // The mark, its proportions kept (1.5 : 1), at least 50pt tall (it was ~41pt).
-    const mark = filledPaths(bytes)[0]!.points;
-    const markWidth = Math.max(...mark.map((p) => p.x)) - Math.min(...mark.map((p) => p.x));
-    const markHeight = Math.max(...mark.map((p) => p.y)) - Math.min(...mark.map((p) => p.y));
-    expect(markHeight).toBeGreaterThanOrEqual(50);
-    const xs = EJE_MARK_POLYGONS.flatMap((polygon) => polygon.filter((_, index) => index % 2 === 0));
-    const ys = EJE_MARK_POLYGONS.flatMap((polygon) => polygon.filter((_, index) => index % 2 === 1));
-    const traced = ((Math.max(...xs) - Math.min(...xs)) * LETTERHEAD_MARK_BOX.width) / ((Math.max(...ys) - Math.min(...ys)) * LETTERHEAD_MARK_BOX.height);
-    expect(markWidth / markHeight).toBeCloseTo(traced, 2);
-    // The title: smaller than the 16–17pt that dominated, flush right, clear of the letterhead, centred on its height.
-    const title = runs.find((run) => run.value === form.title)!;
-    expect(title.size).toBe(FORM_TITLE_SIZE);
-    expect(title.x + textWidth(form.title, FORM_TITLE_SIZE, 'bold', FORM_TITLE_TRACKING)).toBeCloseTo(form.right, 1);
-    const letterheadRight = Math.max(...lines.map((run) => run.x + run.width / SUBSTITUTION_ALLOWANCE));
-    expect(title.x - letterheadRight).toBeGreaterThanOrEqual(10);
-    const inkTop = Math.max(...mark.map((p) => p.y), ...lines.map((run) => run.y + run.size * 0.72));
-    const inkBottom = Math.min(...mark.map((p) => p.y), ...lines.map((run) => run.y - run.size * 0.22));
-    expect(title.y + title.size * 0.36).toBeCloseTo((inkTop + inkBottom) / 2, 0);
-    // Inside the paper's printable area, and the whole letterhead within the form's margins.
-    expect(inkTop).toBeLessThanOrEqual(A4_HEIGHT - 20);
-    expect(Math.min(...mark.map((p) => p.x))).toBeGreaterThanOrEqual(form.left - 0.01);
-    // The fields start a clear gap below the letterhead (a rule between): ≥ 18pt from its ink to the first capitals.
-    const field = runs.find((run) => run.value === 'Technician Name')!;
-    expect(inkBottom - (field.y + field.size * 0.72)).toBeGreaterThanOrEqual(18);
-    // Nothing collides, overruns or leaves the page (the footer sits 18pt from the foot, as it always has).
-    expect(inspectPdf(bytes, { margin: form.left, edge: A4_HEIGHT - LETTERHEAD_TOP }).problems).toEqual([]);
-  });
-
-  it('the attendance form and the timesheets carry the letterhead at the same size on one-page forms', () => {
-    const size = (bytes: Uint8Array) => textRuns(bytes).find((run) => run.value === 'Bonfoi Office Park')!.size;
-    expect(size(FORMS[0].render().bytes)).toBeCloseTo(size(FORMS[1].render().bytes), 6);
-  });
-
-  it('pagination: one-page forms stay one page; the multi-page timesheet keeps its pages and repeats no letterhead', () => {
-    expect(FORMS[0].render().pageCount).toBe(1);
-    expect(FORMS[1].render().pageCount).toBe(1);
-    expect(FORMS[2].render().pageCount).toBe(1);
-    const multi = FORMS[3].render();
-    const plain = renderTimesheetPdf(timesheet(400), { generatedAt: GENERATED_AT });
-    expect(multi.pageCount).toBe(plain.pageCount);
-    expect(inspectPdf(multi.bytes).pageCount).toBe(multi.pageCount);
-    expect(textRuns(multi.bytes).filter((run) => run.page > 1 && MASTER_TEXT.includes(run.value))).toEqual([]);
-  });
-});
-
-/**
- * LETTERHEAD-3: the approved headers are NOT touched — the job card, the parts collection note, the
- * installation delivery note, the correction addendum and the delivery note with the master letterhead
- * render to exactly the bytes v1.13.0 (a7e2a31) rendered, on the same frozen inputs.
- */
-const APPROVED_MASTER_DOCUMENTS = {
-  jobCard: 'd0156a7bb91418d9cd19267ac06e74e49630062f935e545562434819e5879c15',
-  partsCollectionNote: 'efb1fa327dbad3c03aac6eff34b6d88db4ebe5f09a682add6a11882a20cb4ef9',
-  installationDeliveryNote: 'a616c02a2a9f16a6037bd9ae3ca874932ab5515e40859ac8b041da4c8889d8b1',
-  correction: 'f8a0bae3e1f85ce09031a53797c279c7056be7e40e3cf06482c23de430a6c892',
-  deliveryNote: '95d87e5093f22c7d06d7aeaf7a2020c47f3629e84e7f535c972bc6c94488e254',
-};
-
-describe('LETTERHEAD-3 leaves every approved master header as v1.13.0 drew it', () => {
-  it('the job card, parts collection note, installation delivery note, correction and delivery note: same bytes', async () => {
-    const now: Record<string, string> = {};
-    for (const generator of GENERATORS) {
-      if (generator.name in APPROVED_MASTER_DOCUMENTS) now[generator.name] = sha256(await generator.render(EJE_MASTER_LETTERHEAD));
-    }
-    expect(now).toEqual(APPROVED_MASTER_DOCUMENTS);
-  });
-});
-
-describe('the clock frozen before the imports', () => {
-  it('is the same instant as FROZEN_AT, so the two cannot drift apart', () => {
-    expect(FROZEN_AT.toISOString()).toBe('2026-11-15T08:00:00.000Z');
-  });
-});
-
-describe('LETTERHEAD-3 — the form title stays one word to a PDF reader', () => {
-  it('is letter-spaced in the same proportion as the 16pt title was (wider reads as "A T T E N D A N C E")', () => {
-    expect(FORM_TITLE_TRACKING / FORM_TITLE_SIZE).toBeLessThanOrEqual(1.35 / 16 + 1e-3);
   });
 });
