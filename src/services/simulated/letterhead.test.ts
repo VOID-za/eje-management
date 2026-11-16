@@ -316,10 +316,13 @@ describe.each(GENERATORS)('$name with the EJE master letterhead', (generator) =>
     // Readable: the serif address and contact lines at about the job card's size (~5 pt), never the ~3 pt of a thin strip.
     const serif = runs.find((candidate) => candidate.value === 'Bonfoi Office Park')!;
     expect(serif.size).toBeGreaterThanOrEqual(4.5);
-    // The faces of the paper: Helvetica-BoldOblique, Times-Bold and Times-BoldItalic, named and not embedded.
+    // LETTERHEAD-4: the paper's faces are drawn as glyph OUTLINES (forms), and the words are there as
+    // invisible text (render mode 3) for search and copy — no stand-in face, no font file embedded.
     const text = Buffer.from(bytes).toString('latin1');
-    for (const font of ['Helvetica-BoldOblique', 'Times-Bold', 'Times-BoldItalic']) expect(text).toContain(`/BaseFont /${font} `);
+    for (const font of ['Helvetica-BoldOblique', 'Times-Bold', 'Times-BoldItalic']) expect(text).not.toContain(`/BaseFont /${font} `);
     expect(text).not.toContain('/FontFile');
+    expect(text).toContain('/Subtype /Form');
+    expect(text).toMatch(/q 3 Tr [\d.]+ Tz BT 0 0 0 rg \/F1 [\d.]+ Tf 0 Tc 1 0 0 1 [\d.]+ [\d.]+ Tm \(VAT NO: 4950134991\) Tj ET Q/u);
     // The en dash is WinAnsi 0x96, not a stand-in.
     expect(text).toContain('7736 \x96 Peet Buitendag');
     // Only on the first page: a multi-page document is not re-headed.

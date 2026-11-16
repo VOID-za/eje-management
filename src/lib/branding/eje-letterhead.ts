@@ -1,42 +1,52 @@
 import { DEFAULT_COMPANY_ID } from '@/domain/types/company';
 import type { PdfImage } from '@/lib/pdf/image';
-import type { PdfFont } from '@/lib/pdf/writer';
-import { charWidth } from '@/lib/pdf/metrics';
 import { EJE_MARK_ASPECT, EJE_MARK_POLYGONS } from './eje-letterhead-mark';
+import {
+  LETTERHEAD_GLYPH_LINES,
+  LETTERHEAD_GLYPH_REFERENCE,
+  LETTERHEAD_GLYPHS,
+  LETTERHEAD_MARK_PLACEMENT,
+  LETTERHEAD_UNITS_PER_EM,
+  type LetterheadGlyphFace,
+} from './eje-letterhead-glyphs';
 
 /**
- * THE EJE MASTER LETTERHEAD, AS DATA. LETTERHEAD-2 (15 November 2026).
+ * THE EJE MASTER LETTERHEAD, AS DATA. LETTERHEAD-2 (15 November 2026), LETTERHEAD-4 (16 November).
  *
  * The owner: the official EJE letterhead recreated as a proper, reusable header — crisp
- * vector text and a clean logo, not a pasted image — ONE master header for every EJE
+ * vector artwork and a clean logo, not a pasted image — ONE master header for every EJE
  * document, identical in the in-app preview, the generated PDF and the printed PDF.
  *
  * So the header is described ONCE, here, and both renderers draw from it: the PDF
  * (`drawEjeLetterhead` in services/simulated/pdf-sheet.ts) and the screen (`EjeLetterhead`
  * in components/documents). Neither has a position of its own.
  *
- * WHERE THE NUMBERS COME FROM: the approved digital recreation of the owner's photographed
- * letterhead ("EJE Letterhead - digital v3.png", 3300 × 660), whose generator placed every
- * line at the photo's own centre and baseline. The wording is the official paper's,
+ * THE PAPER'S OWN TYPEFACES (LETTERHEAD-4): the name, "Reg:" and "VAT NO:" in Verdana Bold
+ * Italic; the address and contact columns and "Atlasville" in Georgia Bold (with its old-style
+ * figures); "P.O. Box 16282" and "1465" in Georgia Bold Italic. Those faces are neither PDF
+ * base-14 fonts nor on every device, so every line is drawn from its glyph OUTLINES
+ * (eje-letterhead-glyphs.ts, generated from the fonts by scripts/generate-eje-letterhead-text.mjs)
+ * — the same shapes in the PDF and on screen, whatever fonts the device has. The PDF also
+ * carries each line as invisible text, so it can still be searched and copied.
+ *
+ * WHERE THE NUMBERS COME FROM: each line fitted onto the owner's photograph of the official
+ * paper, outline to ink (the generator says how). The wording is the official paper's,
  * character for character — the double spaces and the en dashes included. Nothing is
  * invented, rewritten or left out.
  *
  * Coordinates are in that reference space: x to the right, y DOWNWARDS from the top edge,
- * baselines for text, a text line's x is its CENTRE.
+ * baselines for text, a text line's x is the CENTRE of its advance.
  */
 
-export const LETTERHEAD_REFERENCE = { width: 3300, height: 660 } as const;
+export const LETTERHEAD_REFERENCE = LETTERHEAD_GLYPH_REFERENCE;
 
 /** The letterhead's ink: dark grey on white, as the paper. */
 export const LETTERHEAD_INK = '#333333';
 
-/**
- * The three faces of the paper: a bold italic sans for the name block, a bold serif for the
- * address and contact columns, a bold italic serif for the PO Box.
- */
-export type LetterheadFontRole = 'sansBoldItalic' | 'serifBold' | 'serifBoldItalic';
+/** The three faces of the paper: Verdana Bold Italic, Georgia Bold, Georgia Bold Italic. */
+export type LetterheadFontRole = LetterheadGlyphFace;
 
-/** One run of a line: most lines are one; the name's "cc" is set smaller. */
+/** A line's text and its em size. */
 export interface LetterheadRun {
   readonly text: string;
   readonly size: number;
@@ -50,75 +60,77 @@ export interface LetterheadLine {
   readonly baseline: number;
   readonly runs: readonly LetterheadRun[];
   readonly ink: string;
+  /** Horizontal scale: the paper sets its glyphs this much narrower than the face's own. */
+  readonly hscale: number;
+  /** The line's advance — what it spans, centred on x. */
+  readonly width: number;
+  /** Each character's pen position along the line, in font units from its start. */
+  readonly pens: readonly number[];
 }
 
 /** The EJE mark's box (its proportions are the traced mark's own). */
 export const LETTERHEAD_MARK_BOX = {
-  x: 16,
-  y: 215,
-  height: 420,
-  width: 420 * EJE_MARK_ASPECT,
+  x: LETTERHEAD_MARK_PLACEMENT.x,
+  y: LETTERHEAD_MARK_PLACEMENT.y,
+  height: LETTERHEAD_MARK_PLACEMENT.height,
+  width: LETTERHEAD_MARK_PLACEMENT.height * EJE_MARK_ASPECT,
 } as const;
 
-const line = (role: LetterheadFontRole, x: number, baseline: number, ...runs: LetterheadRun[]): LetterheadLine => ({
-  role,
+export const LETTERHEAD_LINES: readonly LetterheadLine[] = LETTERHEAD_GLYPH_LINES.map((line) => ({
+  role: line.role,
   anchor: 'middle',
-  x,
-  baseline,
-  runs,
+  x: line.x,
+  baseline: line.baseline,
+  runs: [{ text: line.text, size: line.size }],
   ink: LETTERHEAD_INK,
-});
-const run = (text: string, size: number): LetterheadRun => ({ text, size });
-
-/** v3's baselines were placed on the photo; its top margin of 110 px is trimmed here. */
-const DY = -110;
-
-export const LETTERHEAD_LINES: readonly LetterheadLine[] = [
-  // The name block, centred above.
-  line('sansBoldItalic', 1772, 197 + DY, run('Reg: CK1987/020035/23', 44)),
-  line('sansBoldItalic', 1895, 333 + DY, run('EJE Industrial Electronics ', 118), run('cc', 96)),
-  line('sansBoldItalic', 1772, 402 + DY, run('VAT NO: 4950134991', 44)),
-  // The address column.
-  line('serifBold', 1032, 478 + DY, run('Bonfoi Office Park', 50)),
-  line('serifBold', 1032, 535 + DY, run('c/oTempelhof South  Rd', 50)),
-  line('serifBold', 1032, 592 + DY, run('and Atlas Rd', 50)),
-  line('serifBold', 1032, 649 + DY, run('Bonaero Park', 50)),
-  line('serifBold', 1032, 708 + DY, run('Kempton Park, 1619', 50)),
-  // The contact column.
-  line('serifBold', 1942, 478 + DY, run('Cell:  083 443 7736 – Peet Buitendag', 50)),
-  line('serifBold', 1942, 539 + DY, run('Cell: 082 330 3404 – Dawie Malan', 50)),
-  line('serifBold', 1942, 600 + DY, run('Tel: 083 285 1644/011 979 5080', 50)),
-  line('serifBold', 1942, 659 + DY, run('Fax: 086 529 0073', 50)),
-  line('serifBold', 1942, 718 + DY, run('Email: sales@ejeie.co.za or peetb@ejeie.co.za', 50)),
-  // The PO Box, at the right.
-  line('serifBoldItalic', 2974, 424 + DY, run('P.O. Box 16282', 50)),
-  line('serifBoldItalic', 2974, 486 + DY, run('Atlasville', 50)),
-  line('serifBoldItalic', 2974, 553 + DY, run('1465', 50)),
-];
+  hscale: line.hscale,
+  width: line.width,
+  pens: line.pens,
+}));
 
 /** The full text of a line, as a reader reads it. */
 export const letterheadLineText = (value: LetterheadLine): string => value.runs.map((part) => part.text).join('');
 
-/** The PDF's face for each of the paper's (base-14: Helvetica-BoldOblique, Times-Bold, Times-BoldItalic). */
-export const LETTERHEAD_PDF_FONT: Record<LetterheadFontRole, PdfFont> = {
-  sansBoldItalic: 'boldItalic',
-  serifBold: 'serifBold',
-  serifBoldItalic: 'serifBoldItalic',
+/** A line's advance, in the line's own units: the span both renderers centre on its x. */
+export const letterheadLineWidth = (value: LetterheadLine): number => value.width;
+
+export { LETTERHEAD_UNITS_PER_EM };
+
+/** One glyph of a line: which outline (font units, y UP) and where its pen stands. */
+export interface LetterheadLineGlyph {
+  /** Stable within the letterhead: the face and the character. */
+  readonly key: string;
+  readonly path: string;
+  readonly pen: number;
+}
+
+/** A line's visible glyphs (a space draws nothing), in order. */
+export const letterheadLineGlyphs = (value: LetterheadLine): readonly LetterheadLineGlyph[] => {
+  const glyphs: LetterheadLineGlyph[] = [];
+  [...letterheadLineText(value)].forEach((character, index) => {
+    const glyph = LETTERHEAD_GLYPHS[value.role][character];
+    if (glyph === undefined) throw new Error(`The letterhead has no ${value.role} outline for "${character}"`);
+    if (glyph.path.length === 0) return;
+    glyphs.push({ key: `${value.role}:${character}`, path: glyph.path, pen: value.pens[index] ?? 0 });
+  });
+  return glyphs;
 };
 
 /**
- * A line's width as the PDF's font metrics give it, in the line's own units — what a PDF viewer
- * advances, WITHOUT the substitution allowance `textWidth` adds for layout. LETTERHEAD-2: the PDF
- * centres each line by it, and the screen sets each line to exactly it (`textLength`), so a line
- * is the same length on every device whatever fonts that device has.
+ * Where a line's glyph outlines go: the matrix a b c d e f that takes font units (y UP, the
+ * line's start at 0) to the line's own space (y DOWN) — a = em × hscale ÷ units, d = −em ÷ units,
+ * (e, f) the start of the line's advance on its baseline. Both renderers place every glyph by it.
  */
-export const letterheadLineWidth = (value: LetterheadLine): number => {
-  const font = LETTERHEAD_PDF_FONT[value.role];
-  return value.runs.reduce((sum, part) => {
-    let thousandths = 0;
-    for (const character of part.text) thousandths += charWidth(character, font);
-    return sum + (thousandths / 1000) * part.size;
-  }, 0);
+export const letterheadLineMatrix = (value: LetterheadLine): readonly [number, number, number, number, number, number] => {
+  const size = value.runs[0]?.size ?? 0;
+  return [
+    (size * value.hscale) / LETTERHEAD_UNITS_PER_EM,
+    0,
+    0,
+    -size / LETTERHEAD_UNITS_PER_EM,
+    value.x - value.width / 2,
+    value.baseline,
+  ];
 };
 
 /** A box in a y-DOWN space (the screen's, or a PDF page measured from its top). */
@@ -176,6 +188,7 @@ export const layoutLetterhead = (
       ...value,
       x: left + value.x * scale,
       baseline: top + value.baseline * scale,
+      width: value.width * scale,
       runs: value.runs.map((part) => ({ text: part.text, size: part.size * scale })),
     })),
   };

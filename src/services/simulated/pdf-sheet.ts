@@ -1,11 +1,13 @@
-import { A4_HEIGHT, A4_WIDTH, PdfBuilder, textWidth, type PdfFont } from '@/lib/pdf/writer';
+import { A4_HEIGHT, A4_WIDTH, PdfBuilder, textWidth, type PdfFont, type PdfForm } from '@/lib/pdf/writer';
 import { displaySize, type PdfImage } from '@/lib/pdf/image';
+import { parseSvgPath, pathBounds, pathOperators } from '@/lib/pdf/path';
 import {
   LETTERHEAD_INK,
-  LETTERHEAD_PDF_FONT,
   isMasterLetterhead,
   layoutLetterhead,
-  letterheadLineWidth,
+  letterheadLineGlyphs,
+  letterheadLineMatrix,
+  letterheadLineText,
   type DocumentLetterhead,
   type LetterheadArea,
 } from '@/lib/branding/eje-letterhead';
@@ -221,15 +223,35 @@ const areaOf = (box: LetterheadBox): LetterheadArea => ({
 });
 
 /**
- * THE EJE MASTER LETTERHEAD, DRAWN INTO A BOX. LETTERHEAD-2 (15 November 2026).
+ * Each glyph of the master letterhead as a form, built once per process and shared by every
+ * document — so a document writes each distinct glyph once, however often its lines use it.
+ */
+const GLYPH_FORMS = new Map<string, PdfForm>();
+const glyphForm = (key: string, path: string): PdfForm => {
+  let form = GLYPH_FORMS.get(key);
+  if (form === undefined) {
+    const commands = parseSvgPath(path);
+    const bounds = pathBounds(commands) ?? { left: 0, bottom: 0, right: 0, top: 0 };
+    // Font units are whole numbers; a curve's raised control points are rounded back to them.
+    const content = `${pathOperators(commands, (value) => String(Math.round(value)))} f`;
+    form = { bbox: [bounds.left, bounds.bottom, bounds.right, bounds.top], content };
+    GLYPH_FORMS.set(key, form);
+  }
+  return form;
+};
+
+/**
+ * THE EJE MASTER LETTERHEAD, DRAWN INTO A BOX. LETTERHEAD-2 (15 November 2026), LETTERHEAD-4.
  *
- * The owner: the official letterhead recreated as a header — crisp vector text and a clean
+ * The owner: the official letterhead recreated as a header — crisp vector artwork and a clean
  * logo, not a pasted image — the same on every EJE document and on the screen. So this draws
  * `layoutLetterhead` (lib/branding/eje-letterhead.ts), the one description both renderers
- * use: every line as real, searchable text in the paper's faces (Helvetica-BoldOblique,
- * Times-Bold, Times-BoldItalic), centred on its own x by its metric width, and the EJE mark
- * as its traced outline, filled even-odd. Fitted exactly as an uploaded image is: uniformly,
- * against the box's left edge, centred top to bottom. Nothing outside the box moves.
+ * use: every line as its glyph outlines in the paper's own faces (Verdana Bold Italic, Georgia
+ * Bold, Georgia Bold Italic — each glyph a form, written once), filled in the letterhead's
+ * ink; each line ALSO as invisible text (render mode 3) over it, so the document is searched
+ * and copied exactly as before; and the EJE mark as its traced outline, filled even-odd.
+ * Fitted exactly as an uploaded image is: uniformly, against the box's left edge, centred top
+ * to bottom. Nothing outside the box moves.
  */
 export const drawEjeLetterhead = (pdf: PdfBuilder, box: LetterheadBox): void => {
   const placed = layoutLetterhead(areaOf(box));
@@ -240,16 +262,14 @@ export const drawEjeLetterhead = (pdf: PdfBuilder, box: LetterheadBox): void => 
     LETTERHEAD_INK,
   );
   for (const line of placed.lines) {
-    const font = LETTERHEAD_PDF_FONT[line.role];
-    // Centred by its metric width — the same width the screen sets the line to (`letterheadLineWidth`).
-    const x = line.x - letterheadLineWidth(line) / 2;
-    const y = A4_HEIGHT - line.baseline;
-    const [only] = line.runs;
-    if (line.runs.length === 1 && only !== undefined) {
-      pdf.text(x, y, only.text, { font, size: only.size, colour: line.ink });
-    } else {
-      pdf.textLine(x, y, line.runs.map((part) => ({ value: part.text, size: part.size })), { font, colour: line.ink });
-    }
+    const [a, , , d, e, f] = letterheadLineMatrix(line);
+    // The layout's y runs down the page; PDF's runs up — so the glyphs' own y-up units map with +|d|.
+    pdf.drawForms(
+      letterheadLineGlyphs(line).map((glyph) => ({ form: glyphForm(glyph.key, glyph.path), x: glyph.pen })),
+      [a, 0, 0, -d, e, A4_HEIGHT - f],
+      line.ink,
+    );
+    pdf.invisibleText(e, A4_HEIGHT - f, letterheadLineText(line), { size: line.runs[0]?.size ?? 0, width: line.width });
   }
 };
 

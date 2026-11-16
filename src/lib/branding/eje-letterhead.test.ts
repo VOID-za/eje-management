@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { asCompanyId, DEFAULT_COMPANY_ID, WD_HEARN_JHB_COMPANY_ID } from '@/domain';
 import { companies } from '@/api/endpoints';
 import { A4_HEIGHT, PdfBuilder } from '@/lib/pdf/writer';
-import { charWidth } from '@/lib/pdf/metrics';
+import { parseSvgPath } from '@/lib/pdf/path';
 import { inspectPdf } from '@/lib/pdf/inspect';
 import { drawEjeLetterhead, drawLetterhead } from '@/services/simulated/pdf-sheet';
 import { DocumentLetterhead, EjeLetterhead } from '@/components/documents/EjeLetterhead';
@@ -20,19 +20,22 @@ import { CompanyLetterheadCard } from '@/components/admin/CompanyLetterheadCard'
 import { attendance, deliveryNoteModel, timesheet } from '@/test/letterhead-documents';
 import { filledPaths } from '@/test/letterhead-fixture';
 import { EJE_MARK_ASPECT, EJE_MARK_POLYGONS } from './eje-letterhead-mark';
+import { LETTERHEAD_GLYPHS } from './eje-letterhead-glyphs';
 import {
   EJE_MASTER_LETTERHEAD,
   LETTERHEAD_LINES,
   LETTERHEAD_MARK_BOX,
   LETTERHEAD_REFERENCE,
+  LETTERHEAD_UNITS_PER_EM,
   carriesMasterLetterhead,
   MASTER_LETTERHEAD_RENDERER,
   isMasterLetterhead,
   layoutLetterhead,
+  letterheadLineGlyphs,
+  letterheadLineMatrix,
   letterheadLineText,
   letterheadLineWidth,
   showsMasterLetterhead,
-  type LetterheadFontRole,
 } from './eje-letterhead';
 
 // The Administration card's operation hook needs the app's provider; its render here needs none of it.
@@ -61,12 +64,12 @@ describe('the master letterhead’s wording', () => {
       ['serifBold', 'Fax: 086 529 0073'],
       ['serifBold', 'Email: sales@ejeie.co.za or peetb@ejeie.co.za'],
       ['serifBoldItalic', 'P.O. Box 16282'],
-      ['serifBoldItalic', 'Atlasville'],
+      // Upright on the paper (LETTERHEAD-4, measured on the photograph): Georgia Bold.
+      ['serifBold', 'Atlasville'],
       ['serifBoldItalic', '1465'],
     ]);
-    // The name's "cc" is set smaller than the name, as on the paper.
-    const name = LETTERHEAD_LINES[1]!;
-    expect(name.runs.map((run) => run.size)).toEqual([118, 96]);
+    // LETTERHEAD-4: on the paper the name's "cc" is the name's own size (measured), one run.
+    expect(LETTERHEAD_LINES[1]!.runs).toHaveLength(1);
     for (const line of LETTERHEAD_LINES) expect(line.ink).toBe('#333333');
   });
 
@@ -77,6 +80,8 @@ describe('the master letterhead’s wording', () => {
     for (const line of LETTERHEAD_LINES) {
       expect(line.baseline).toBeGreaterThan(0);
       expect(line.baseline).toBeLessThanOrEqual(LETTERHEAD_REFERENCE.height);
+      expect(line.x - line.width / 2).toBeGreaterThan(LETTERHEAD_MARK_BOX.x + LETTERHEAD_MARK_BOX.width);
+      expect(line.x + line.width / 2).toBeLessThan(LETTERHEAD_REFERENCE.width);
     }
   });
 
@@ -89,6 +94,26 @@ describe('the master letterhead’s wording', () => {
         expect(value).toBeGreaterThanOrEqual(0);
         expect(value).toBeLessThanOrEqual(1);
       }
+    }
+  });
+
+  it('every character of every line has its face’s outline (a space draws nothing), and the pens advance by them', () => {
+    for (const line of LETTERHEAD_LINES) {
+      const characters = [...letterheadLineText(line)];
+      expect(line.pens).toHaveLength(characters.length);
+      characters.forEach((character, index) => {
+        const glyph = LETTERHEAD_GLYPHS[line.role][character];
+        expect(glyph, `${line.role} "${character}"`).toBeDefined();
+        if (character === ' ') expect(glyph!.path).toBe('');
+        else expect(parseSvgPath(glyph!.path).length, character).toBeGreaterThan(3);
+        // No kerning applies to this wording: each pen is the previous one plus its advance.
+        if (index > 0) expect(line.pens[index]).toBe(line.pens[index - 1]! + LETTERHEAD_GLYPHS[line.role][characters[index - 1]!]!.advance);
+      });
+      // The advance, in reference units, is the line's width.
+      const last = characters[characters.length - 1]!;
+      const advance = line.pens[characters.length - 1]! + LETTERHEAD_GLYPHS[line.role][last]!.advance;
+      expect(line.width).toBeCloseTo((advance * line.runs[0]!.size * line.hscale) / LETTERHEAD_UNITS_PER_EM, 1);
+      expect(letterheadLineWidth(line)).toBe(line.width);
     }
   });
 });
@@ -118,37 +143,76 @@ describe('layoutLetterhead', () => {
       const source = LETTERHEAD_LINES[index]!;
       expect(line.x).toBeCloseTo(5 + source.x * 0.2, 9);
       expect(line.baseline).toBeCloseTo(7 + source.baseline * 0.2, 9);
+      expect(line.width).toBeCloseTo(source.width * 0.2, 9);
       expect(line.runs.map((run) => run.size)).toEqual(source.runs.map((run) => run.size * 0.2));
+      // The glyph matrix scales with it: the same artwork, smaller.
+      const [a, , , d, e, f] = letterheadLineMatrix(line);
+      const [sa, , , sd, se, sf] = letterheadLineMatrix(source);
+      expect(a).toBeCloseTo(sa * 0.2, 12);
+      expect(d).toBeCloseTo(sd * 0.2, 12);
+      expect(e).toBeCloseTo(5 + se * 0.2, 9);
+      expect(f).toBeCloseTo(7 + sf * 0.2, 9);
     });
   });
 });
 
-const PDF_FONT: Record<LetterheadFontRole, Parameters<typeof charWidth>[1]> = {
-  sansBoldItalic: 'boldItalic',
-  serifBold: 'serifBold',
-  serifBoldItalic: 'serifBoldItalic',
-};
-const naturalWidth = (line: (typeof LETTERHEAD_LINES)[number], scale: number) =>
-  line.runs.reduce((sum, run) => sum + ([...run.text].reduce((width, character) => width + charWidth(character, PDF_FONT[line.role]), 0) / 1000) * run.size * scale, 0);
+/** Every `drawForms` line of a page: its matrix and the glyphs it places (form name, pen). */
+const formLines = (bytes: Uint8Array) =>
+  [...Buffer.from(bytes).toString('latin1').matchAll(/q [\d.]+ [\d.]+ [\d.]+ rg (\S+) 0 0 (\S+) (\S+) (\S+) cm ((?:q 1 0 0 1 [\d.]+ 0 cm \/Fm\d+ Do Q ?)+)Q/gu)].map((match) => ({
+    matrix: [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])],
+    glyphs: [...match[5]!.matchAll(/q 1 0 0 1 ([\d.]+) 0 cm \/(Fm\d+) Do Q/gu)].map((glyph) => ({ pen: Number(glyph[1]), form: glyph[2]! })),
+  }));
 
-describe('the PDF and the screen draw the same layout', () => {
+describe('the PDF and the screen draw the same artwork', () => {
   const box = { x: 40, y: 760, width: 515.28, height: 67.89 };
   const pdf = new PdfBuilder();
   pdf.addPage();
   drawEjeLetterhead(pdf, box);
   const bytes = pdf.toBytes();
+  const text = Buffer.from(bytes).toString('latin1');
   const placed = layoutLetterhead({ left: box.x, top: A4_HEIGHT - (box.y + box.height), width: box.width, height: box.height });
 
-  it('the PDF puts each line at the layout’s centre and baseline, as real text', () => {
+  it('the PDF draws each line’s glyph outlines by the layout’s matrix, each distinct glyph written once', () => {
+    const lines = formLines(bytes);
+    expect(lines).toHaveLength(LETTERHEAD_LINES.length);
+    lines.forEach((drawn, index) => {
+      const line = placed.lines[index]!;
+      const [a, , , d, e, f] = letterheadLineMatrix(line);
+      expect(drawn.matrix[0]).toBeCloseTo(a, 5);
+      expect(drawn.matrix[1]).toBeCloseTo(-d, 5);
+      expect(drawn.matrix[2]).toBeCloseTo(e, 5);
+      expect(drawn.matrix[3]).toBeCloseTo(A4_HEIGHT - f, 5);
+      expect(drawn.glyphs.map((glyph) => glyph.pen)).toEqual(letterheadLineGlyphs(line).map((glyph) => glyph.pen));
+    });
+    // One form per distinct glyph: the same character in the same face is the same form everywhere.
+    const keys = new Set(LETTERHEAD_LINES.flatMap((line) => letterheadLineGlyphs(line).map((glyph) => glyph.key)));
+    expect([...text.matchAll(/\/Subtype \/Form /gu)]).toHaveLength(keys.size);
+    const formOf = new Map<string, string>();
+    lines.forEach((drawn, index) =>
+      letterheadLineGlyphs(LETTERHEAD_LINES[index]!).forEach((glyph, position) => {
+        const form = drawn.glyphs[position]!.form;
+        expect(formOf.get(glyph.key) ?? form).toBe(form);
+        formOf.set(glyph.key, form);
+      }),
+    );
+    // Curves stay curves (`c`), filled nonzero; no font of the paper's is named or embedded.
+    expect(text).toMatch(/stream\n[^\n]* c [^\n]* f\nendstream/u);
+    expect(text).not.toContain('/FontFile');
+    for (const font of ['Helvetica-BoldOblique', 'Times-Bold', 'Times-BoldItalic', 'Verdana', 'Georgia']) expect(text).not.toContain(`/BaseFont /${font}`);
+  });
+
+  it('the PDF carries each line as invisible text over its outlines, so it is searched and copied', () => {
     const runs = inspectPdf(bytes).runs;
     expect(runs.map((run) => run.value)).toEqual(LETTERHEAD_LINES.map(letterheadLineText));
     runs.forEach((run, index) => {
       const line = placed.lines[index]!;
       expect(run.y).toBeCloseTo(A4_HEIGHT - line.baseline, 2);
-      expect(run.x + naturalWidth(LETTERHEAD_LINES[index]!, placed.scale) / 2).toBeCloseTo(line.x, 2);
+      expect(run.x).toBeCloseTo(line.x - line.width / 2, 2);
       expect(run.size).toBeCloseTo(line.runs[0]!.size, 2);
-      expect(run.font).toBe(PDF_FONT[line.role]);
     });
+    // Render mode 3 (never painted), scoped so nothing drawn after it inherits it.
+    expect([...text.matchAll(/q 3 Tr [\d.]+ Tz BT .*? ET Q/gu)]).toHaveLength(LETTERHEAD_LINES.length);
+    expect(text).toContain('(VAT NO: 4950134991) Tj');
   });
 
   it('the PDF fills the mark in the layout’s mark box', () => {
@@ -156,59 +220,54 @@ describe('the PDF and the screen draw the same layout', () => {
     const polygon = EJE_MARK_POLYGONS[0]!;
     expect(path!.points[0]!.x).toBeCloseTo(placed.mark.left + polygon[0]! * placed.mark.width, 2);
     expect(path!.points[0]!.y).toBeCloseTo(A4_HEIGHT - (placed.mark.top + polygon[1]! * placed.mark.height), 2);
-    expect(Buffer.from(bytes).toString('latin1')).toMatch(/ h f\*/u);
+    expect(text).toMatch(/ h f\*/u);
   });
 
-  it('the screen’s SVG has the same positions, in the layout’s own units (the same layout at scale 1)', () => {
+  it('the screen’s SVG places the same glyph outlines by the same matrices (the layout at scale 1), with no font of the device', () => {
     const markup = renderToStaticMarkup(createElement(EjeLetterhead));
     expect(markup).toContain(`viewBox="0 0 ${LETTERHEAD_REFERENCE.width} ${LETTERHEAD_REFERENCE.height}"`);
-    const texts = [...markup.matchAll(/<text x="([\d.]+)" y="([\d.]+)"[^>]*>(.*?)<\/text>/gu)];
-    expect(texts).toHaveLength(LETTERHEAD_LINES.length);
-    texts.forEach((match, index) => {
-      const line = placed.lines[index]!;
-      // The PDF's position, taken back to the reference space, is the SVG's.
-      expect(Number(match[1])).toBeCloseTo((line.x - placed.area.left) / placed.scale, 6);
-      expect(Number(match[2])).toBeCloseTo((line.baseline - placed.area.top) / placed.scale, 6);
-      expect(match[3]!.replace(/<[^>]+>/gu, '').replace(/&amp;/gu, '&')).toBe(letterheadLineText(LETTERHEAD_LINES[index]!));
+    const groups = [...markup.matchAll(/<g data-line="([^"]*)" transform="matrix\(([^)]*)\)" fill="#333333">(.*?)<\/g>/gu)];
+    expect(groups).toHaveLength(LETTERHEAD_LINES.length);
+    groups.forEach((match, index) => {
+      const line = LETTERHEAD_LINES[index]!;
+      expect(match[1]!.replace(/&amp;/gu, '&')).toBe(letterheadLineText(line));
+      const matrix = match[2]!.split(' ').map(Number);
+      letterheadLineMatrix(line).forEach((value, position) => expect(matrix[position]).toBeCloseTo(value, 5));
+      // The PDF's matrix, taken back to the reference space, is the SVG's.
+      const pdfLine = placed.lines[index]!;
+      expect((letterheadLineMatrix(pdfLine)[4] - placed.area.left) / placed.scale).toBeCloseTo(matrix[4]!, 4);
+      const uses = [...match[3]!.matchAll(/<use href="#([^"]+)" x="([\d.]+)"><\/use>/gu)];
+      expect(uses.map((use) => Number(use[2]))).toEqual(letterheadLineGlyphs(line).map((glyph) => glyph.pen));
+      // Each use is the glyph's own outline, defined once.
+      letterheadLineGlyphs(line).forEach((glyph, position) => {
+        expect(markup).toContain(`<path id="${uses[position]![1]}" d="${glyph.path}"></path>`);
+      });
     });
-    // Centred, bold, in the paper's faces; spaces kept as written; the mark filled even-odd.
-    expect(markup).toContain('text-anchor="middle"');
-    expect(markup).toContain('font-family="Helvetica, Arial, sans-serif"');
-    expect(markup).toContain('font-family="&#x27;Times New Roman&#x27;, Times, serif"');
-    expect(markup).toContain('xml:space="preserve"');
+    expect(markup).not.toContain('<text');
+    expect(markup).not.toContain('font-family');
+    expect(markup).toContain(`aria-label="${LETTERHEAD_LINES.map(letterheadLineText).join(', ')}"`);
+    expect(markup).toContain('role="img"');
     expect(markup).toMatch(/<path d="M[\d.,L]+Z" fill="#333333" fill-rule="evenodd"/u);
     expect(markup).not.toContain('<img');
     expect(markup).not.toContain('<image');
   });
 
-  it('every SVG line is set to exactly its PDF width, so a wider device font cannot make columns touch', () => {
-    const markup = renderToStaticMarkup(createElement(EjeLetterhead));
-    const texts = [...markup.matchAll(/<text [^>]*>/gu)].map((match) => match[0]);
-    expect(texts).toHaveLength(LETTERHEAD_LINES.length);
-    texts.forEach((tag, index) => {
-      const line = LETTERHEAD_LINES[index]!;
-      const length = Number(/textLength="([\d.]+)"/u.exec(tag)?.[1]);
-      // The metric width, computed independently here, without the substitution allowance, in reference units.
-      expect(length, letterheadLineText(line)).toBeCloseTo(naturalWidth(line, 1), 1);
-      expect(length).toBeCloseTo(letterheadLineWidth(line), 1);
-      expect(tag).toContain('lengthAdjust="spacingAndGlyphs"');
-      expect(tag).toContain('text-anchor="middle"');
-    });
-    // The PDF centres each line by that same width: at a tenth of the reference size, its left edge is (x − width / 2) / 10.
-    const pdf = new PdfBuilder();
-    pdf.addPage();
-    const tenth = { width: LETTERHEAD_REFERENCE.width / 10, height: LETTERHEAD_REFERENCE.height / 10 };
-    drawEjeLetterhead(pdf, { x: 0, y: A4_HEIGHT - tenth.height, ...tenth });
-    inspectPdf(pdf.toBytes()).runs.forEach((run, index) => {
-      const line = LETTERHEAD_LINES[index]!;
-      expect(run.x).toBeCloseTo((line.x - letterheadLineWidth(line) / 2) / 10, 2);
-    });
-    // No two lines on one baseline overlap at their PDF widths (the address and contact columns).
+  it('two letterheads on one page never share glyph ids', () => {
+    const markup = renderToStaticMarkup(createElement('div', null, createElement(EjeLetterhead), createElement(EjeLetterhead)));
+    const ids = [...markup.matchAll(/ id="([^"]+)"/gu)].map((match) => match[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('no two lines on one baseline overlap (the address and contact columns)', () => {
     const rows = new Map<number, (typeof LETTERHEAD_LINES)[number][]>();
-    for (const line of LETTERHEAD_LINES) rows.set(line.baseline, [...(rows.get(line.baseline) ?? []), line]);
+    for (const line of LETTERHEAD_LINES) {
+      const row = [...rows.keys()].find((baseline) => Math.abs(baseline - line.baseline) < 5) ?? line.baseline;
+      rows.set(row, [...(rows.get(row) ?? []), line]);
+    }
+    expect([...rows.values()].some((lines) => lines.length > 1)).toBe(true);
     for (const lines of rows.values()) {
-      const spans = lines.map((line) => [line.x - letterheadLineWidth(line) / 2, line.x + letterheadLineWidth(line) / 2] as const).sort((a, b) => a[0] - b[0]);
-      for (let index = 1; index < spans.length; index += 1) expect(spans[index]![0]).toBeGreaterThan(spans[index - 1]![1]);
+      const spans = lines.map((line) => [line.x - line.width / 2, line.x + line.width / 2] as const).sort((a, b) => a[0] - b[0]);
+      for (let index = 1; index < spans.length; index += 1) expect(spans[index]![0]).toBeGreaterThan(spans[index - 1]![1] + 100);
     }
   });
 });
