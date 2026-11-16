@@ -6,7 +6,7 @@ import { companies } from '@/api/endpoints';
 import { A4_HEIGHT, PdfBuilder } from '@/lib/pdf/writer';
 import { charWidth } from '@/lib/pdf/metrics';
 import { inspectPdf } from '@/lib/pdf/inspect';
-import { drawEjeLetterhead, drawLetterhead } from '@/services/simulated/pdf-sheet';
+import { FORM_LETTERHEAD_SHARE, drawEjeLetterhead, drawLetterhead } from '@/services/simulated/pdf-sheet';
 import { DocumentLetterhead, EjeLetterhead } from '@/components/documents/EjeLetterhead';
 import { DeliveryNoteDocument } from '@/components/jobs/DeliveryNoteDocument';
 import { JobCardDocument } from '@/components/jobs/JobCardDocument';
@@ -336,8 +336,15 @@ describe('which header a document carries', () => {
     ]) {
       expect(markup).toContain('data-letterhead="eje-master"');
       expect(markup).not.toContain('<img');
-      expect(markup).toContain('basis-[calc(100%+2rem)]');
+      // LETTERHEAD-3: the form's own header — the letterhead cropped to its ink, given the PDF's share of the
+      // width (FORM_LETTERHEAD_SHARE), the title on the right, a rule before the fields.
+      expect(markup).toContain('data-testid="form-document-header"');
+      expect(markup).toContain('data-letterhead-fit="ink"');
+      expect(markup).toContain(`--form-letterhead-share:${(FORM_LETTERHEAD_SHARE * 100).toFixed(2)}%`);
+      expect(markup).toMatch(/data-testid="form-document-title">(TIME SHEET|ATTENDANCE)</u);
     }
+    expect(FORM_LETTERHEAD_SHARE).toBeGreaterThan(0.7);
+    expect(FORM_LETTERHEAD_SHARE).toBeLessThan(0.8);
   });
 
   it('the PDF makes the same choice: the master for EJE only', () => {

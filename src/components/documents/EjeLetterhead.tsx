@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { companies } from '@/api/endpoints';
 import type { LetterheadReference } from '@/domain';
 import {
+  LETTERHEAD_INK_BOUNDS,
   LETTERHEAD_REFERENCE,
   carriesMasterLetterhead,
   layoutLetterhead,
@@ -37,16 +38,23 @@ const FACE: Record<LetterheadFontRole, { readonly fontFamily: string; readonly f
 /** The reference box: the SVG's viewBox, so its coordinates are the layout's own. */
 const REFERENCE_BOX = { left: 0, top: 0, width: LETTERHEAD_REFERENCE.width, height: LETTERHEAD_REFERENCE.height };
 
-export const EjeLetterhead = ({ className }: { readonly className?: string }) => {
+/** LETTERHEAD-3: `fit="ink"` crops to the letterhead's ink (no paper margin), as a form's PDF header fits it. */
+const INK_VIEW_BOX = [LETTERHEAD_INK_BOUNDS.left, LETTERHEAD_INK_BOUNDS.top, LETTERHEAD_INK_BOUNDS.width, LETTERHEAD_INK_BOUNDS.height]
+  .map((value) => Number(value.toFixed(2)))
+  .join(' ');
+
+export const EjeLetterhead = ({ className, fit = 'sheet' }: { readonly className?: string; readonly fit?: 'sheet' | 'ink' }) => {
   const placed = layoutLetterhead(REFERENCE_BOX);
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox={`0 0 ${LETTERHEAD_REFERENCE.width} ${LETTERHEAD_REFERENCE.height}`}
+      viewBox={fit === 'ink' ? INK_VIEW_BOX : `0 0 ${LETTERHEAD_REFERENCE.width} ${LETTERHEAD_REFERENCE.height}`}
       preserveAspectRatio="xMinYMid meet"
       role="img"
       aria-label={placed.lines.map(letterheadLineText).join(', ')}
       data-letterhead="eje-master"
+      data-letterhead-fit={fit}
+      overflow={fit === 'ink' ? 'visible' : undefined}
       className={className ?? 'block h-auto w-full'}
     >
       <path d={markPathData(placed.mark, placed.markPolygons)} fill={placed.lines[0]?.ink} fillRule="evenodd" />
