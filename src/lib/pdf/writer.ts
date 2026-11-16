@@ -19,6 +19,21 @@
 /** A4 in PostScript points, the page size every EJE document uses. */
 import { charWidth, SUBSTITUTION_ALLOWANCE } from './metrics';
 import type { PdfImage } from './image';
+import { pathOperators, type PathCommand } from './path';
+
+/**
+ * A reusable drawing — a Form XObject — written ONCE into a document however often it is drawn
+ * (LETTERHEAD-4: one per glyph of the master letterhead's lettering). Its content is PDF
+ * operators in its own units; it paints with whatever fill colour is current where it is drawn.
+ */
+export interface PdfForm {
+  /** left, bottom, right, top — in the form's own units. */
+  readonly bbox: readonly [number, number, number, number];
+  readonly content: string;
+}
+
+/** A transformation matrix a b c d e f, as `cm` takes it. */
+export type PdfMatrix = readonly [number, number, number, number, number, number];
 
 export const A4_WIDTH = 595.28;
 export const A4_HEIGHT = 841.89;
@@ -155,6 +170,15 @@ const round = (value: number): string => {
   return fixed.replace(/\.?0+$/, '') || '0';
 };
 
+/** A matrix's numbers: six decimals, since a matrix may scale font units (2048 to the em) to points. */
+const matrixOperands = (matrix: PdfMatrix): string =>
+  matrix
+    .map((value) => {
+      const fixed = value.toFixed(6).replace(/\.?0+$/, '');
+      return fixed === '' || fixed === '-0' ? '0' : fixed;
+    })
+    .join(' ');
+
 export interface TextOptions {
   readonly font?: PdfFont;
   readonly size?: number;
@@ -182,6 +206,8 @@ class PdfPage {
   readonly operations: string[] = [];
   /** Image resource names this page draws, so its dictionary lists only those. */
   readonly images = new Set<number>();
+  /** Likewise its forms. */
+  readonly forms = new Set<number>();
 }
 
 /**
@@ -231,6 +257,7 @@ export class PdfBuilder {
   private current: PdfPage | null = null;
   private readonly usedFonts = new Set<PdfFont>();
   private readonly images: PdfImage[] = [];
+  private readonly forms: PdfForm[] = [];
 
   addPage(): void {
     const page = new PdfPage();
@@ -326,6 +353,63 @@ export class PdfBuilder {
     }
     if (parts.length === 0) return;
     this.page().operations.push(`${colourOperands(colour)} rg ${parts.join(' ')} f*`);
+  }
+
+  /**
+   * Fills a path of move / line / curve / close commands (quadratic curves are drawn as the
+   * identical cubic, `c`), NONZERO winding unless `evenOdd`. With a `matrix` the coordinates
+   * are in its units (`q … cm … Q`); otherwise in PDF user space.
+   */
+  fillPath(
+    commands: readonly PathCommand[],
+    options: { readonly colour?: string; readonly evenOdd?: boolean; readonly matrix?: PdfMatrix } = {},
+  ): void {
+    const path = pathOperators(commands, round);
+    if (path.length === 0) return;
+    const fill = `${colourOperands(options.colour)} rg ${path} ${options.evenOdd === true ? 'f*' : 'f'}`;
+    this.page().operations.push(options.matrix === undefined ? fill : `q ${matrixOperands(options.matrix)} cm ${fill} Q`);
+  }
+
+  /**
+   * Draws forms along a line, in one colour: `matrix` maps the forms' units onto the page and
+   * each form is offset by its `x` (in those units) — how the master letterhead sets a line of
+   * glyphs (LETTERHEAD-4). Each distinct form is written into the document once.
+   */
+  drawForms(
+    placements: readonly { readonly form: PdfForm; readonly x: number }[],
+    matrix: PdfMatrix,
+    colour?: string,
+  ): void {
+    if (placements.length === 0) return;
+    const page = this.page();
+    const calls = placements.map(({ form, x }) => {
+      let index = this.forms.indexOf(form);
+      if (index === -1) {
+        this.forms.push(form);
+        index = this.forms.length - 1;
+      }
+      page.forms.add(index);
+      return `q 1 0 0 1 ${round(x)} 0 cm /Fm${index + 1} Do Q`;
+    });
+    page.operations.push(`q ${colourOperands(colour)} rg ${matrixOperands(matrix)} cm ${calls.join(' ')} Q`);
+  }
+
+  /**
+   * Text that is never painted (render mode 3) but is there to be searched, selected and
+   * copied — the words of artwork drawn as outlines (LETTERHEAD-4). Set in Helvetica, squeezed
+   * or stretched (`Tz`) to `width` so a selection covers the drawn line. Its text state is
+   * restored after it (`q … Q`), so nothing drawn later inherits it.
+   */
+  invisibleText(x: number, y: number, value: string, options: { readonly size: number; readonly width: number }): void {
+    this.usedFonts.add('regular');
+    let thousandths = 0;
+    for (const character of value) thousandths += charWidth(character, 'regular');
+    const natural = (thousandths / 1000) * options.size;
+    const scale = natural > 0 ? (100 * options.width) / natural : 100;
+    this.page().operations.push(
+      `q 3 Tr ${round(scale)} Tz BT 0 0 0 rg /${FONT_RESOURCE.regular} ${round(options.size)} Tf 0 Tc ` +
+        `1 0 0 1 ${round(x)} ${round(y)} Tm (${escapeLiteral(value)}) Tj ET Q`,
+    );
   }
 
   line(x1: number, y1: number, x2: number, y2: number, width = 0.6, colour?: string): void {
@@ -453,6 +537,9 @@ export class PdfBuilder {
       imageObjects.push(nextObject);
       nextObject += image.softMask === undefined ? 1 : 2;
     }
+    // Forms follow the images, so a document without any is numbered exactly as before.
+    const formBase = nextObject;
+    nextObject += this.forms.length;
     const totalObjects = nextObject - 1;
 
     const fontResources = fonts
@@ -467,12 +554,11 @@ export class PdfBuilder {
         .join(' ')}] /Count ${this.pages.length} >>`,
     );
     this.pages.forEach((page, index) => {
-      const xObjects =
-        page.images.size === 0
-          ? ''
-          : ` /XObject << ${[...page.images]
-              .map((image) => `/Im${image + 1} ${imageObjects[image]} 0 R`)
-              .join(' ')} >>`;
+      const xObjectEntries = [
+        ...[...page.images].map((image) => `/Im${image + 1} ${imageObjects[image]} 0 R`),
+        ...[...page.forms].sort((a, b) => a - b).map((form) => `/Fm${form + 1} ${formBase + form} 0 R`),
+      ];
+      const xObjects = xObjectEntries.length === 0 ? '' : ` /XObject << ${xObjectEntries.join(' ')} >>`;
       objects.push(
         `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${round(A4_WIDTH)} ${round(A4_HEIGHT)}] ` +
           `/Resources << /Font << ${fontResources} >>${xObjects} >> /Contents ${contentBase + index} 0 R >>`,
@@ -513,6 +599,13 @@ ${latin1(image.softMask)}
 endstream`,
         );
       }
+    });
+
+    this.forms.forEach((form) => {
+      objects.push(
+        `<< /Type /XObject /Subtype /Form /BBox [${form.bbox.map(round).join(' ')}] /Resources << >> ` +
+          `/Length ${form.content.length} >>\nstream\n${form.content}\nendstream`,
+      );
     });
 
     // The second line marks the file as binary, as the specification advises

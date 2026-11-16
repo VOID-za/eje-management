@@ -1,44 +1,48 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { companies } from '@/api/endpoints';
 import type { LetterheadReference } from '@/domain';
 import {
   LETTERHEAD_REFERENCE,
   carriesMasterLetterhead,
   layoutLetterhead,
+  letterheadLineGlyphs,
+  letterheadLineMatrix,
   letterheadLineText,
-  letterheadLineWidth,
   markPathData,
-  type LetterheadFontRole,
 } from '@/lib/branding/eje-letterhead';
 
 /**
- * THE EJE MASTER LETTERHEAD, ON SCREEN. LETTERHEAD-2 (15 November 2026).
+ * THE EJE MASTER LETTERHEAD, ON SCREEN. LETTERHEAD-2 (15 November 2026), LETTERHEAD-4.
  *
  * The owner: one master header for every EJE document, identical in the in-app preview and
- * the PDF. So this draws the SAME `layoutLetterhead` and the SAME traced mark the PDF draws
- * (`drawEjeLetterhead`), as inline SVG in the layout's own coordinate space: crisp at any
- * size, scaled to the width it is given and never stretched (its height follows its width).
+ * the PDF. So this draws the SAME `layoutLetterhead`, the SAME glyph outlines and the SAME
+ * traced mark the PDF draws (`drawEjeLetterhead`), as inline SVG in the layout's own
+ * coordinate space: crisp at any size, scaled to the width it is given and never stretched
+ * (its height follows its width).
  *
- * The faces are the PDF's: Helvetica bold italic for the name block, Times bold and bold
- * italic for the columns — with the usual stand-ins where a device lacks them. Spaces are
- * kept as written (the paper's double spaces), as the PDF keeps them.
- *
- * EVERY LINE IS ITS PDF LENGTH (LETTERHEAD-2 review): a stand-in face can be ~15 % wider (an
- * Android tablet's Roboto and Noto Serif), which made the address and contact columns touch.
- * So each line is set to exactly the width the PDF's metrics give it (`textLength`, glyphs and
- * spacing adjusted together) and centred on the same x — the same length on every device.
+ * LETTERHEAD-4: the lettering is the paper's own faces (Verdana Bold Italic, Georgia Bold,
+ * Georgia Bold Italic) as OUTLINES, not text in whatever font the device has — so it is the
+ * same artwork on a phone, a tablet and the PDF. Each distinct glyph is defined once and each
+ * line places its glyphs with the line's matrix (`letterheadLineMatrix`), exactly as the PDF
+ * does. The words are the image's accessible name.
  */
-const FACE: Record<LetterheadFontRole, { readonly fontFamily: string; readonly fontStyle: 'italic' | 'normal' }> = {
-  sansBoldItalic: { fontFamily: 'Helvetica, Arial, sans-serif', fontStyle: 'italic' },
-  serifBold: { fontFamily: "'Times New Roman', Times, serif", fontStyle: 'normal' },
-  serifBoldItalic: { fontFamily: "'Times New Roman', Times, serif", fontStyle: 'italic' },
-};
 
 /** The reference box: the SVG's viewBox, so its coordinates are the layout's own. */
 const REFERENCE_BOX = { left: 0, top: 0, width: LETTERHEAD_REFERENCE.width, height: LETTERHEAD_REFERENCE.height };
 
+const number = (value: number): string => Number(value.toFixed(6)).toString();
+
 export const EjeLetterhead = ({ className }: { readonly className?: string }) => {
+  // Each instance's glyph ids are its own, so two letterheads on one page never share a definition.
+  const prefix = `eje-lh-${useId().replace(/[^A-Za-z0-9_-]/gu, '')}`;
   const placed = layoutLetterhead(REFERENCE_BOX);
+  const lines = placed.lines.map((line) => ({ line, glyphs: letterheadLineGlyphs(line) }));
+  const definitions = new Map<string, { readonly id: string; readonly path: string }>();
+  for (const { glyphs } of lines) {
+    for (const glyph of glyphs) {
+      if (!definitions.has(glyph.key)) definitions.set(glyph.key, { id: `${prefix}-${definitions.size}`, path: glyph.path });
+    }
+  }
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -49,28 +53,23 @@ export const EjeLetterhead = ({ className }: { readonly className?: string }) =>
       data-letterhead="eje-master"
       className={className ?? 'block h-auto w-full'}
     >
+      <defs>
+        {[...definitions.values()].map((definition) => (
+          <path key={definition.id} id={definition.id} d={definition.path} />
+        ))}
+      </defs>
       <path d={markPathData(placed.mark, placed.markPolygons)} fill={placed.lines[0]?.ink} fillRule="evenodd" />
-      {placed.lines.map((line) => (
-        <text
-          key={`${line.x},${line.baseline}`}
-          x={line.x}
-          y={line.baseline}
-          textAnchor="middle"
+      {lines.map(({ line, glyphs }) => (
+        <g
+          key={letterheadLineText(line)}
+          data-line={letterheadLineText(line)}
+          transform={`matrix(${letterheadLineMatrix(line).map(number).join(' ')})`}
           fill={line.ink}
-          fontFamily={FACE[line.role].fontFamily}
-          fontStyle={FACE[line.role].fontStyle}
-          fontWeight="bold"
-          textLength={Number(letterheadLineWidth(line).toFixed(2))}
-          lengthAdjust="spacingAndGlyphs"
-          xmlSpace="preserve"
-          style={{ whiteSpace: 'pre' }}
         >
-          {line.runs.map((part) => (
-            <tspan key={part.text} fontSize={part.size}>
-              {part.text}
-            </tspan>
+          {glyphs.map((glyph, index) => (
+            <use key={index} href={`#${definitions.get(glyph.key)!.id}`} x={glyph.pen} />
           ))}
-        </text>
+        </g>
       ))}
     </svg>
   );
