@@ -5,7 +5,7 @@ import { loadJobView } from './job-view';
 import { loadDocumentPhotos } from './document-photos';
 import { loadCompanyLetterhead } from './company-letterhead';
 import { StorageIntegrityFailed, type FinalDocumentSource, type StoredDocument } from '@/services/ports';
-import { MASTER_LETTERHEAD_RENDERER, isMasterLetterhead } from '@/lib/branding/eje-letterhead';
+import { JOB_CARD_LAYOUT_RENDERER } from '@/lib/job-card/layout-version';
 
 /**
  * The final document on a closed job: retrieval, not generation.
@@ -134,7 +134,13 @@ export const storeFinalDocument = async (
      * shows the header this file has (`showsMasterLetterhead`). Only issues are marked: a backfill
      * below is still written and compared as RENDERER_VERSION, so none is ever re-rendered for it.
      */
-    renderer: isMasterLetterhead(letterhead) ? MASTER_LETTERHEAD_RENDERER : RENDERER_VERSION,
+    /*
+     * JOB-CARD-2: every issue is now drawn in the redesigned layout (and EJE's on the master
+     * letterhead), so it records JOB_CARD_LAYOUT_RENDERER — the screen then shows that layout beside
+     * it. Issues recorded 5 (master letterhead) or RENDERER_VERSION before keep their number, their
+     * file and, on screen, their layout.
+     */
+    renderer: JOB_CARD_LAYOUT_RENDERER,
     // Issued, not backfilled: these bytes are the historical document and are
     // never re-rendered, however the renderer changes later.
     backfilled: false,
@@ -222,7 +228,8 @@ export const loadFinalDocumentFile = async (
   // (LETTERHEAD-1), deliberately: this is history issued before letterheads,
   // drawn as it was issued — the same reason RENDERER_VERSION is unchanged.
   const rendered = await context.services.pdf.render(
-    { ...source, photoImages: await loadDocumentPhotos(context.services.storage, source.job) },
+    // JOB-CARD-2: and in the layout that history had (`layout: 'v5'`), never today's.
+    { ...source, photoImages: await loadDocumentPhotos(context.services.storage, source.job), layout: 'v5' },
     'final',
     descriptor.generatedAt,
   );

@@ -3,7 +3,8 @@ import { DEFAULT_COMPANY_ID } from '@/domain';
 import type { JobView } from '@/application/job-view';
 import { SignatureDisplay } from './SignaturePad';
 import { DocumentLetterhead } from '@/components/documents/EjeLetterhead';
-import { showsMasterLetterhead } from '@/lib/branding/eje-letterhead';
+import { showsCurrentJobCardLayout } from '@/lib/job-card/layout-version';
+import { PartsCollectionNoteV5 } from './PartsCollectionNoteV5';
 
 /**
  * The EJE parts collection / delivery note.
@@ -21,8 +22,15 @@ import { showsMasterLetterhead } from '@/lib/branding/eje-letterhead';
  * the collection details, whether prices appear, the goods, the declaration the
  * collector signed — is decided in `buildJobCardModel` and merely drawn here.
  * Nothing about the document is decided in this file.
+ *
+ * JOB-CARD-2 (the owner, 16 November 2026): as the job card — the contact person grouped under their
+ * own label, the details column to the right, and the collector's acceptance on the right directly
+ * under the totals. A note ISSUED before the redesign is shown as it was issued (`PartsCollectionNoteV5`).
  */
-export const PartsCollectionNote = ({ view }: { readonly view: JobView }) => {
+export const PartsCollectionNote = ({ view }: { readonly view: JobView }) =>
+  showsCurrentJobCardLayout(view.job.finalDocument) ? <CurrentPartsCollectionNote view={view} /> : <PartsCollectionNoteV5 view={view} />;
+
+const CurrentPartsCollectionNote = ({ view }: { readonly view: JobView }) => {
   const model = buildJobCardModel({
     job: view.job,
     customer: view.customer,
@@ -60,7 +68,8 @@ export const PartsCollectionNote = ({ view }: { readonly view: JobView }) => {
           companyId={view.job.companyId}
           companyName={model.company.name}
           letterhead={view.companyLetterhead}
-          master={showsMasterLetterhead(view.job.finalDocument)}
+          // Shown only for a note not yet issued or issued in this layout — always on the master letterhead.
+          master
           className="min-w-0 flex-1 basis-[22rem]"
           masterClassName="-mx-6 min-w-0 basis-[calc(100%+3rem)] sm:mx-0 sm:flex-1 sm:basis-[22rem]"
           fallback={
@@ -102,8 +111,8 @@ export const PartsCollectionNote = ({ view }: { readonly view: JobView }) => {
         </div>
       </header>
 
-      <section className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
-        <div>
+      <section className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-[minmax(0,1fr)_21rem] sm:gap-8">
+        <div className="min-w-0">
           <h3 className="mb-2 text-xs font-bold tracking-[0.12em] text-steel-500 uppercase">
             Customer
           </h3>
@@ -116,15 +125,23 @@ export const PartsCollectionNote = ({ view }: { readonly view: JobView }) => {
             ))}
           </p>
           {model.customer.contact !== null && (
-            <p className="mt-2 text-steel-600">
-              <span className="font-medium text-steel-800">{model.customer.contact.name}</span>
-              <br />
-              {model.customer.contact.contactLine}
-            </p>
+            <div className="mt-3" data-testid="parts-note-contact">
+              <h3 className="mb-2 text-xs font-bold tracking-[0.12em] text-steel-500 uppercase">Contact details</h3>
+              <p className="font-semibold text-steel-800">{model.customer.contact.name}</p>
+              <p className="text-steel-600">
+                {[model.customer.contact.position, model.customer.contact.phone, model.customer.contact.email]
+                  .filter((line) => line.trim().length > 0)
+                  .map((line) => (
+                    <span key={line} className="block break-words">
+                      {line}
+                    </span>
+                  ))}
+              </p>
+            </div>
           )}
         </div>
 
-        <div>
+        <div className="min-w-0">
           <h3 className="mb-2 text-xs font-bold tracking-[0.12em] text-steel-500 uppercase">
             Collection details
           </h3>
@@ -285,22 +302,8 @@ export const PartsCollectionNote = ({ view }: { readonly view: JobView }) => {
         </section>
       ) : null}
 
-      {model.notes.length > 0 && (
-        <section className="mt-6">
-          <h3 className="mb-2 text-xs font-bold tracking-[0.12em] text-steel-500 uppercase">
-            Additional notes
-          </h3>
-          <ul className="space-y-1">
-            {model.notes.map((note) => (
-              <li key={note.byline} className="text-steel-700">
-                {note.body}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section className="mt-8 border-t-2 border-steel-900 pt-5">
+      {/* JOB-CARD-2: the whole acceptance, on the right, directly under the totals. */}
+      <section className="mt-6 break-inside-avoid sm:ml-auto sm:w-[22.5rem]" data-testid="parts-note-acceptance">
         <h3 className="mb-2 text-xs font-bold tracking-[0.12em] text-steel-500 uppercase">
           Collected by
         </h3>
@@ -325,10 +328,10 @@ export const PartsCollectionNote = ({ view }: { readonly view: JobView }) => {
             </div>
           )
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div>
             <div>
               <p className="mb-2 text-steel-700">{model.acceptance.declaration}</p>
-              <dl className="space-y-0.5 text-steel-600">
+              <dl className="mb-2 space-y-0.5 text-steel-600">
                 {model.acceptance.rows.map((row) => (
                   <div key={row.label} className="flex gap-2">
                     <dt className="w-28 shrink-0 text-steel-500">{row.label}</dt>
@@ -346,6 +349,22 @@ export const PartsCollectionNote = ({ view }: { readonly view: JobView }) => {
           </div>
         )}
       </section>
+
+
+      {model.notes.length > 0 && (
+        <section className="mt-6">
+          <h3 className="mb-2 text-xs font-bold tracking-[0.12em] text-steel-500 uppercase">
+            Additional notes
+          </h3>
+          <ul className="space-y-1">
+            {model.notes.map((note) => (
+              <li key={note.byline} className="text-steel-700">
+                {note.body}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <footer className="mt-8 border-t border-steel-200 pt-3 text-xs text-steel-400">
         {model.footerLines.map((line) => (

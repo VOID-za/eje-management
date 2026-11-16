@@ -281,6 +281,12 @@ export interface FinalDocumentSource {
    */
   readonly photoImages?: ReadonlyMap<string, PreparedPhoto>;
   /**
+   * JOB-CARD-2: 'v5' draws the job card in the layout it had up to v1.14.0 — for the backfill of
+   * history and for previewing a job ISSUED in that layout, so neither shows a document that differs
+   * from the one that was issued. Absent: the current layout.
+   */
+  readonly layout?: 'v5';
+  /**
    * LETTERHEAD-1: the job company's uploaded letterhead, prepared, printed
    * across the top of the document in place of the text header. Absent — no
    * letterhead uploaded, or a document from before letterheads (a backfill of

@@ -10,7 +10,7 @@ vi.hoisted(() => {
   vi.setSystemTime(new Date('2026-11-15T08:00:00.000Z'));
 });
 import type { PdfImage } from '@/lib/pdf/image';
-import { A4_HEIGHT, A4_WIDTH } from '@/lib/pdf/writer';
+import { A4_HEIGHT } from '@/lib/pdf/writer';
 import { inspectPdf, pdfPlainText } from '@/lib/pdf/inspect';
 import { SUBSTITUTION_ALLOWANCE } from '@/lib/pdf/metrics';
 import { WD_HEARN_JHB_COMPANY_ID, type CompanyDetails } from '@/domain';
@@ -24,6 +24,7 @@ import {
 } from '@/lib/branding/eje-letterhead';
 import { EJE_MARK_POLYGONS } from '@/lib/branding/eje-letterhead-mark';
 import { renderJobCardPdf } from './job-card-pdf';
+import { renderJobCardPdfV5 } from './job-card-pdf-v5';
 import { renderCorrectionPdf } from './correction-pdf';
 import { DELIVERY_NOTE_MASTER_EXTRA, renderDeliveryNotePdf } from './delivery-note-pdf';
 import { renderTimesheetPdf } from './timesheet-pdf';
@@ -171,13 +172,26 @@ describe('drawLetterhead', () => {
   });
 });
 
+/**
+ * JOB-CARD-2 (16 November 2026): the job card, the Parts Collection Note and the Installation Delivery
+ * Note are drawn in a redesigned layout now, so "the same file as before letterheads" is a promise about
+ * HISTORY: the frozen renderer (job-card-pdf-v5.ts) that draws a job issued before the redesign — the
+ * backfill of the seeded history, a preview of such a job — still produces exactly those bytes.
+ */
+const JOB_GENERATORS = new Set<Name>(['jobCard', 'partsCollectionNote', 'installationDeliveryNote']);
+const historyRender = async (generator: Generator): Promise<Uint8Array> => {
+  if (!JOB_GENERATORS.has(generator.name)) return generator.render(undefined, true);
+  const number = JOB_DOCUMENTS[generator.name as keyof typeof JOB_DOCUMENTS];
+  return renderJobCardPdfV5(sources.get(number)!, `${number}.pdf`, GENERATED_AT).bytes;
+};
+
 describe.each(GENERATORS)('$name', (generator) => {
-  it('without a letterhead is the same file, to the byte, as before letterheads existed', async () => {
-    const omitted = await generator.render(undefined, true);
-    const undefinedGiven = await generator.render(undefined);
-    expect(sha256(omitted)).toBe(BEFORE_LETTERHEADS[generator.name]);
-    expect(sha256(undefinedGiven)).toBe(BEFORE_LETTERHEADS[generator.name]);
-    expect(imageObjectCount(omitted)).toBe(0);
+  it('without a letterhead is the same file, to the byte, as before letterheads existed (as history is drawn)', async () => {
+    const history = await historyRender(generator);
+    expect(sha256(history)).toBe(BEFORE_LETTERHEADS[generator.name]);
+    expect(imageObjectCount(history)).toBe(0);
+    // Omitted or given as undefined: the same file.
+    expect(sha256(await generator.render(undefined, true))).toBe(sha256(await generator.render(undefined)));
   });
 
   it('with a letterhead embeds exactly that image once, inside the header band', async () => {
@@ -456,10 +470,11 @@ describe('WD Hearn JHB, with and without its uploaded letterhead', () => {
     };
     const image = await preparedLetterhead(letterheadPng(500, 120, [200, 30, 30]));
     const now: Record<string, string> = {};
+    // JOB-CARD-2: WD Hearn's job documents as HISTORY is drawn (the frozen layout) — unchanged to the byte.
     for (const [name, number] of Object.entries(JOB_DOCUMENTS)) {
       const source = { ...sources.get(number)!, company: WDJ };
-      now[`${name}:none`] = sha256(renderJobCardPdf(source, `${number}.pdf`, GENERATED_AT).bytes);
-      now[`${name}:image`] = sha256(renderJobCardPdf({ ...source, letterhead: image }, `${number}.pdf`, GENERATED_AT).bytes);
+      now[`${name}:none`] = sha256(renderJobCardPdfV5(source, `${number}.pdf`, GENERATED_AT).bytes);
+      now[`${name}:image`] = sha256(renderJobCardPdfV5({ ...source, letterhead: image }, `${number}.pdf`, GENERATED_AT).bytes);
     }
     const wdCorrection = {
       ...correctionSource,
@@ -471,5 +486,27 @@ describe('WD Hearn JHB, with and without its uploaded letterhead', () => {
     now['deliveryNote:none'] = sha256(renderDeliveryNotePdf(wdNote).bytes);
     now['deliveryNote:image'] = sha256(renderDeliveryNotePdf(wdNote, image).bytes);
     expect(now).toEqual(WD_HEARN_BEFORE_MASTER);
+  });
+
+  it('in the redesigned job card (JOB-CARD-2) keeps its own branding and never inherits EJE’s letterhead', async () => {
+    const WDJ: CompanyDetails = {
+      id: WD_HEARN_JHB_COMPANY_ID, code: 'WDJ', name: 'WD Hearn JHB', registration: '', vatNumber: '',
+      physicalAddress: '12 Hearn Street, Germiston', postalAddress: '', phone: '', fax: '', email: '',
+    };
+    const image = await preparedLetterhead(letterheadPng(500, 120, [200, 30, 30]));
+    for (const number of Object.values(JOB_DOCUMENTS)) {
+      const source = { ...sources.get(number)!, company: WDJ };
+      const plain = renderJobCardPdf(source, `${number}.pdf`, GENERATED_AT).bytes;
+      const withOwn = renderJobCardPdf({ ...source, letterhead: image }, `${number}.pdf`, GENERATED_AT).bytes;
+      for (const bytes of [plain, withOwn]) {
+        expect(filledPaths(bytes)).toEqual([]);
+        const values = textRuns(bytes).map((run) => run.value);
+        for (const line of MASTER_TEXT) expect(values, line).not.toContain(line);
+      }
+      // No letterhead uploaded: its own name in the text header. Uploaded: exactly its own image, once.
+      expect(pdfPlainText(plain)).toContain('WD Hearn JHB');
+      expect(imageObjectCount(plain)).toBe(0);
+      expect(embedsImageData(withOwn, image)).toBe(true);
+    }
   });
 });

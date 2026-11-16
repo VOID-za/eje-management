@@ -8,7 +8,8 @@ import {
 import { SignatureDisplay } from "./SignaturePad";
 import { DocumentPhoto } from "./DocumentPhoto";
 import { DocumentLetterhead } from "@/components/documents/EjeLetterhead";
-import { showsMasterLetterhead } from "@/lib/branding/eje-letterhead";
+import { showsCurrentJobCardLayout } from "@/lib/job-card/layout-version";
+import { JobCardDocumentV5 } from "./JobCardDocumentV5";
 
 /**
  * The EJE job card document, on screen.
@@ -17,8 +18,17 @@ import { showsMasterLetterhead } from "@/lib/branding/eje-letterhead";
  * definition this and the PDF renderer share, so the file a customer keeps and
  * the document they were shown cannot say different things. This file decides
  * only how to draw that model in HTML.
+ *
+ * JOB-CARD-2 (the owner, 16 November 2026): the redesigned layout, as the PDF draws it — the contact
+ * details grouped, Machine and Job details to the right, WORK CARRIED OUT as a main heading over its
+ * subheadings in two columns, a Date column in the table, the customer's acceptance on the right
+ * under the totals, then the checklist, then the photographs (a new page when printed). A job ISSUED
+ * before the redesign is shown as it was issued (`JobCardDocumentV5`), beside its stored PDF.
  */
-export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
+export const JobCardDocument = ({ view }: { readonly view: JobView }) =>
+  showsCurrentJobCardLayout(view.job.finalDocument) ? <CurrentJobCard view={view} /> : <JobCardDocumentV5 view={view} />;
+
+const CurrentJobCard = ({ view }: { readonly view: JobView }) => {
   const model = buildJobCardModel({
     job: view.job,
     customer: view.customer,
@@ -54,7 +64,8 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
           companyId={view.job.companyId}
           companyName={model.company.name}
           letterhead={view.companyLetterhead}
-          master={showsMasterLetterhead(view.job.finalDocument)}
+          // Shown only for a job not yet issued or issued in this layout — always on the master letterhead.
+          master
           className="min-w-0 flex-1 basis-[22rem]"
           masterClassName="-mx-6 min-w-0 basis-[calc(100%+3rem)] sm:mx-0 sm:flex-1 sm:basis-[22rem]"
           fallback={
@@ -98,8 +109,9 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
         </div>
       </header>
 
-      <section className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
-        <div>
+      {/* JOB-CARD-2: Machine and Job details in a narrower column at the right ("Move Right"). */}
+      <section className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-[minmax(0,1fr)_21rem] sm:gap-8" data-testid="job-card-parties">
+        <div className="min-w-0">
           <SectionTitle>Customer</SectionTitle>
           <p className="font-semibold text-steel-900">{model.customer.name}</p>
           <p className="text-steel-600">
@@ -109,20 +121,25 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
               </span>
             ))}
           </p>
+          {/* JOB-CARD-2: the contact person, apart from the address, under their own label. */}
           {model.customer.contact !== null && (
-            <p className="mt-2 text-steel-600">
-              <span className="font-medium text-steel-800">
-                {model.customer.contact.name}
-              </span>
-              <br />
-              {model.customer.contact.position}
-              <br />
-              {model.customer.contact.contactLine}
-            </p>
+            <div className="mt-3" data-testid="job-card-contact">
+              <SectionTitle>Contact details</SectionTitle>
+              <p className="font-semibold text-steel-800">{model.customer.contact.name}</p>
+              <p className="text-steel-600">
+                {[model.customer.contact.position, model.customer.contact.phone, model.customer.contact.email]
+                  .filter((line) => line.trim().length > 0)
+                  .map((line) => (
+                    <span key={line} className="block break-words">
+                      {line}
+                    </span>
+                  ))}
+              </p>
+            </div>
           )}
         </div>
 
-        <div>
+        <div className="min-w-0" data-testid="job-card-details-column">
           {model.machine !== null && (
             <>
               <SectionTitle>Machine</SectionTitle>
@@ -215,22 +232,7 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
         </section>
       )}
 
-      {model.workBlocks.length > 0 && (
-        <section className="mt-6 space-y-4">
-          <SectionTitle>Work carried out</SectionTitle>
-          {model.workBlocks.map((block) => (
-            <div key={block.label}>
-              <p className="text-xs font-bold tracking-wide text-steel-600 uppercase">
-                {block.label}
-              </p>
-              {/* Every block here was written by somebody: the model drops an
-                  empty field rather than printing a faint "Not recorded" under
-                  its heading (DOC-1), so there is no second case to style. */}
-              <p className="mt-1 whitespace-pre-line text-steel-700">{block.value}</p>
-            </div>
-          ))}
-        </section>
-      )}
+      {model.workBlocks.length > 0 && <WorkCarriedOut blocks={model.workBlocks} />}
 
       {/* INSTALL-DN-1: the labour — technician, date, work, hours — and never a rate or an amount. */}
       {model.installation !== undefined && (
@@ -312,9 +314,11 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
             </dl>
           )}
           {model.charges !== null && (
-          <table className="w-full border-collapse text-xs">
+          // JOB-CARD-2: Date | Description | Qty | Rate | Amount; no line drawn above the header band.
+          <table className="w-full border-collapse text-xs" data-testid="job-card-charges">
             <thead>
-              <tr className="border-y border-steel-300 bg-steel-50 text-left">
+              <tr className="border-b border-steel-300 bg-steel-50 text-left">
+                <th className="w-[5.5rem] py-2 pr-2 font-semibold">Date</th>
                 <th className="py-2 pr-2 font-semibold">Description</th>
                 <th className="w-16 py-2 text-right font-semibold">Qty</th>
                 <th className="w-24 py-2 text-right font-semibold">Rate</th>
@@ -337,14 +341,14 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
               {model.charges.discount !== null && (
                 <>
                   <tr>
-                    <td colSpan={2} />
+                    <td colSpan={3} />
                     <td className="py-1.5 text-right text-steel-600">Subtotal</td>
                     <td className="tabular py-1.5 text-right">
                       {model.charges.discount.grossSubtotal}
                     </td>
                   </tr>
                   <tr>
-                    <td colSpan={2} className="py-1.5 pr-2 text-steel-600 italic">
+                    <td colSpan={3} className="py-1.5 pr-2 text-steel-600 italic">
                       Discount — {model.charges.discount.reason}
                     </td>
                     <td className="py-1.5 text-right text-steel-600">Discount</td>
@@ -355,7 +359,7 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
                 </>
               )}
               <tr>
-                <td colSpan={2} />
+                <td colSpan={3} />
                 <td className="py-1.5 text-right text-steel-600">
                   {model.charges.discount === null ? 'Subtotal' : 'Subtotal after discount'}
                 </td>
@@ -364,7 +368,7 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
                 </td>
               </tr>
               <tr>
-                <td colSpan={2} />
+                <td colSpan={3} />
                 <td className="py-1.5 text-right text-steel-600">
                   {model.charges.vatLabel}
                 </td>
@@ -373,7 +377,7 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
                 </td>
               </tr>
               <tr className="border-t-2 border-steel-900">
-                <td colSpan={2} />
+                <td colSpan={3} />
                 <td className="py-2 text-right font-bold text-steel-900">
                   Total
                 </td>
@@ -386,6 +390,53 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
           )}
         </section>
       )}
+
+      {/*
+        JOB-CARD-2 (the owner: "Customer acceptance block with signature should move to right under
+        Subtotal, VAT, Total"): the WHOLE block — heading, declaration, who signed and when, the
+        signature and its caption — on the right under the totals, kept together, before the
+        checklist and the photographs. A refusal replaces it outright, in the same place: no
+        signature box, because there is no signature.
+      */}
+      <section
+        className="mt-6 break-inside-avoid sm:ml-auto sm:w-[22.5rem]"
+        data-testid="job-card-acceptance"
+      >
+        <SectionTitle>
+          {model.acceptance === null ? "Customer acceptance" : `${model.acceptance.caption.split(" signature")[0]} acceptance`}
+        </SectionTitle>
+        {model.refusal !== null ? (
+          <div>
+            <p className="text-sm font-bold tracking-wide text-steel-900 uppercase">
+              {model.refusal.heading}
+            </p>
+            <p className="mt-2 text-xs font-bold tracking-[0.12em] text-steel-500 uppercase">
+              Reason
+            </p>
+            <p className="mt-0.5 whitespace-pre-wrap text-steel-800">{model.refusal.reason}</p>
+            <dl className="mt-2 space-y-0.5 text-steel-600">
+              {model.refusal.rows.map((row) => (
+                <Row key={row.label} {...row} />
+              ))}
+            </dl>
+          </div>
+        ) : model.acceptance === null ? (
+          <p className="text-steel-500 italic">Not yet signed.</p>
+        ) : (
+          <div>
+            <p className="mb-2 text-steel-700">{model.acceptance.declaration}</p>
+            <dl className="mb-2 space-y-0.5 text-steel-600">
+              {model.acceptance.rows.map((row) => (
+                <Row key={row.label} {...row} />
+              ))}
+            </dl>
+            <SignatureDisplay pathData={model.acceptance.signatureData} />
+            <p className="mt-1 border-t border-steel-300 pt-1 text-xs text-steel-500">
+              {model.acceptance.caption}
+            </p>
+          </div>
+        )}
+      </section>
 
       {model.checklist !== null && (
         <section className="mt-6">
@@ -495,8 +546,9 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
         </section>
       )}
 
+      {/* JOB-CARD-2: the photographs last, on a page of their own when printed, heading with them. */}
       {model.photos.length > 0 && (
-        <section className="mt-6">
+        <section className="mt-6 break-before-page" data-testid="job-card-photographs">
           <SectionTitle>Photographs</SectionTitle>
           {/* INSTALL-DN-1: two across on the Installation Delivery Note, as on its PDF. */}
           <ul className={`grid grid-cols-2 gap-3 ${model.installation !== undefined ? "" : "sm:grid-cols-3"}`}>
@@ -519,51 +571,6 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
         </section>
       )}
 
-      <section className="mt-8 border-t-2 border-steel-900 pt-5">
-        <SectionTitle>Customer acceptance</SectionTitle>
-        {/* A refusal replaces the acceptance outright. No signature box is
-            drawn, because there is no signature and an empty box beside a
-            declaration reads as an omission rather than as the answer the
-            customer gave. */}
-        {model.refusal !== null ? (
-          <div>
-            <p className="text-sm font-bold tracking-wide text-steel-900 uppercase">
-              {model.refusal.heading}
-            </p>
-            <p className="mt-2 text-xs font-bold tracking-[0.12em] text-steel-500 uppercase">
-              Reason
-            </p>
-            <p className="mt-0.5 whitespace-pre-wrap text-steel-800">{model.refusal.reason}</p>
-            <dl className="mt-2 space-y-0.5 text-steel-600">
-              {model.refusal.rows.map((row) => (
-                <Row key={row.label} {...row} />
-              ))}
-            </dl>
-          </div>
-        ) : model.acceptance === null ? (
-          <p className="text-steel-500 italic">Not yet signed.</p>
-        ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div>
-              <p className="mb-2 text-steel-700">
-                {model.acceptance.declaration}
-              </p>
-              <dl className="space-y-0.5 text-steel-600">
-                {model.acceptance.rows.map((row) => (
-                  <Row key={row.label} {...row} />
-                ))}
-              </dl>
-            </div>
-            <div>
-              <SignatureDisplay pathData={model.acceptance.signatureData} />
-              <p className="mt-1 border-t border-steel-300 pt-1 text-xs text-steel-500">
-                {model.acceptance.caption}
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
-
       <footer className="mt-8 border-t border-steel-200 pt-3 text-xs text-steel-400">
         {model.footerLines.map((line) => (
           <span key={line} className="block">
@@ -572,6 +579,49 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) => {
         ))}
       </footer>
     </article>
+  );
+};
+
+/*
+ * WORK CARRIED OUT, as the PDF draws it (JOB-CARD-2): the main heading, then the subheadings — bold,
+ * a little stronger than the text — with Fault findings and Diagnosis beside Work performed,
+ * Recommendations and General notes. One column when a side has nothing written. Every block here was
+ * written by somebody: the model drops an empty field (DOC-1).
+ */
+const LEFT_WRITE_UP = new Set(["Fault findings", "Diagnosis"]);
+
+type WorkBlock = ReturnType<typeof buildJobCardModel>["workBlocks"][number];
+
+const WorkBlocks = ({ blocks }: { readonly blocks: readonly WorkBlock[] }) => (
+  <div className="space-y-3">
+    {blocks.map((block) => (
+      <div key={block.label}>
+        <p className="text-[12px] font-bold tracking-[0.04em] text-steel-900 uppercase" data-testid="job-card-subheading">
+          {block.label}
+        </p>
+        <p className="mt-0.5 whitespace-pre-line text-steel-700">{block.value}</p>
+      </div>
+    ))}
+  </div>
+);
+
+const WorkCarriedOut = ({ blocks }: { readonly blocks: readonly WorkBlock[] }) => {
+  const left = blocks.filter((block) => LEFT_WRITE_UP.has(block.label));
+  const right = blocks.filter((block) => !LEFT_WRITE_UP.has(block.label));
+  return (
+    <section className="mt-6" data-testid="job-card-work">
+      <h3 className="mb-3 text-[14px] font-bold tracking-[0.12em] text-steel-900 uppercase" data-testid="job-card-main-heading">
+        Work carried out
+      </h3>
+      {left.length > 0 && right.length > 0 ? (
+        <div className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+          <WorkBlocks blocks={left} />
+          <WorkBlocks blocks={right} />
+        </div>
+      ) : (
+        <WorkBlocks blocks={blocks} />
+      )}
+    </section>
   );
 };
 
@@ -592,6 +642,8 @@ const Row = ({ label, value, mono = false }: LabelValue) => (
 
 const ChargeLine = ({ row }: { readonly row: ChargeRow }) => (
   <tr className="border-b border-steel-100">
+    {/* The day the work or travel was done, as recorded; blank for a part or a fee (JOB-CARD-2). */}
+    <td className="tabular py-2 pr-2 align-top whitespace-nowrap" data-testid="job-card-charge-date">{row.date}</td>
     <td className="py-2 pr-2">
       <span className={row.mono === true ? "font-mono" : undefined}>
         {row.description}

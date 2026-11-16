@@ -170,7 +170,8 @@ describe('a company’s letterhead over HTTP', () => {
 
   // LETTERHEAD-2: EJE's letterhead is now the MASTER letterhead — vector text and the traced
   // mark, no image — even with an EJE image uploaded; WD Hearn's image is never on them.
-  it('a timesheet and an attendance form are on EJE’s master letterhead — EJE’s own paperwork, never WD Hearn’s', async () => {
+  // FORMS-INTERNAL-1 (the owner, 16 November 2026): attendance and timesheets are internal — no letterhead at all.
+  it('a timesheet and an attendance form carry no letterhead at all — neither EJE’s nor WD Hearn’s', async () => {
     const wdPng = letterheadPng(500, 120, [200, 30, 30]);
     expect((await upload(master, 'eje', { name: 'eje.png', type: 'image/png', bytes: PNG })).status).toBe(200);
     expect((await upload(master, 'wd-hearn-jhb', { name: 'wd.png', type: 'image/png', bytes: wdPng })).status).toBe(200);
@@ -182,14 +183,15 @@ describe('a company’s letterhead over HTTP', () => {
     expect(imageObjectCount(sheet.bytes)).toBe(0);
     expect(embedsImageData(sheet.bytes, eje)).toBe(false);
     expect(embedsImageData(sheet.bytes, wd)).toBe(false);
-    expect(pdfPlainText(sheet.bytes)).toContain('EJE Industrial Electronics cc');
-    expect(pdfPlainText(sheet.bytes)).toContain('VAT NO: 4950134991');
+    expect(pdfPlainText(sheet.bytes)).not.toContain('EJE Industrial Electronics cc');
+    expect(pdfPlainText(sheet.bytes)).not.toContain('VAT NO: 4950134991');
 
     const attendance = await technician.download('/api/attendance/pdf?from=2026-10-01&to=2026-10-31');
     expect(attendance.status, attendance.error?.message).toBe(200);
     expect(imageObjectCount(attendance.bytes)).toBe(0);
+    expect(embedsImageData(attendance.bytes, eje)).toBe(false);
     expect(embedsImageData(attendance.bytes, wd)).toBe(false);
-    expect(pdfPlainText(attendance.bytes)).toContain('EJE Industrial Electronics cc');
-    expect(pdfPlainText(attendance.bytes)).toContain('P.O. Box 16282');
+    expect(pdfPlainText(attendance.bytes)).not.toContain('EJE Industrial Electronics cc');
+    expect(pdfPlainText(attendance.bytes)).not.toContain('P.O. Box 16282');
   });
 });

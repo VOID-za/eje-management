@@ -1,3 +1,4 @@
+import { showsCurrentJobCardLayout } from '@/lib/job-card/layout-version';
 import type { JobView } from '@/application/job-view';
 import type { Clock } from '@/services/ports';
 import type { SimulatedPdfService } from '@/services/simulated/pdf';
@@ -119,6 +120,8 @@ export const renderJobCardPdf = async (
       users: view.users,
       photoImages: photoImages ?? (await loadPreviewPhotos(view)),
       letterhead: letterhead ?? (await loadPreviewLetterhead(view)),
+      // JOB-CARD-2: a job issued before the redesign previews in the layout it was issued in.
+      ...(showsCurrentJobCardLayout(view.job.finalDocument) ? {} : { layout: 'v5' as const }),
     },
     'preview',
     clock.now(),

@@ -85,6 +85,14 @@ export class Sheet {
     this.y = A4_HEIGHT - MARGIN;
   }
 
+  /**
+   * Starts a new page now, unless nothing has been drawn on this one yet. JOB-CARD-2: the
+   * photographs always begin on a page of their own.
+   */
+  newPage(): void {
+    if (this.y < A4_HEIGHT - MARGIN) this.break();
+  }
+
   get cursor(): number {
     return this.y;
   }

@@ -1,6 +1,7 @@
 import { fitSignatureBox, signatureFacsimile, SIGNATURE_INK } from '@/lib/signature';
 import { buildJobCardModel, type ChargeRow, type JobCardModel, type LabelValue } from '@/lib/job-card/model';
-import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
+import { A4_HEIGHT, PdfBuilder, textWidth } from '@/lib/pdf/writer';
+import { SUBSTITUTION_ALLOWANCE } from '@/lib/pdf/metrics';
 import { displaySize, type PreparedPhoto } from '@/lib/pdf/image';
 import { DEFAULT_COMPANY_ID, SIMULATED_NOTICE_PRINT } from '@/domain';
 import type { FinalDocumentSource, RenderedPdf } from '../ports';
@@ -22,11 +23,9 @@ import type { FinalDocumentSource, RenderedPdf } from '../ports';
 import {
   BAND,
   BODY,
-  COL_AMOUNT,
-  COL_QTY,
-  COL_RATE,
   CONTENT_WIDTH,
   FAINT,
+  FOOTER_SPACE,
   GAP,
   INK,
   MARGIN,
@@ -156,37 +155,51 @@ const header = (sheet: Sheet, model: JobCardModel, letterhead: DocumentLetterhea
   sheet.move(GAP.section);
 };
 
+/** A small uppercase, letter-spaced label at `x` — the section titles' style. */
+const smallHeading = (sheet: Sheet, x: number, label: string): void => {
+  sheet.pdf.text(x, sheet.cursor, label.toUpperCase(), {
+    font: 'bold',
+    size: SIZE.small,
+    colour: MUTED,
+    tracking: TRACK_HEADING,
+  });
+  sheet.move(GAP.line);
+};
+
+/**
+ * JOB-CARD-2 (the owner's annotated job card, 16 November 2026): the Machine and Job Details column
+ * moved to the RIGHT ("Move Right") — a narrower column ending at the right margin — and the customer
+ * column wider beside it.
+ */
+const DETAILS_COLUMN = 230;
+
 const parties = (sheet: Sheet, model: JobCardModel): void => {
-  const columnWidth = (CONTENT_WIDTH - 24) / 2;
-  const rightX = MARGIN + columnWidth + 24;
+  const rightX = RIGHT - DETAILS_COLUMN;
+  const leftWidth = rightX - MARGIN - 24;
   const top = sheet.cursor;
 
-  // Left column: the customer, their site address and the site contact.
+  // Left column: the customer and their site address…
   sheet.sectionTitle('Customer');
-  sheet.paragraph(model.customer.name, { font: 'bold', colour: INK, width: columnWidth });
+  sheet.paragraph(model.customer.name, { font: 'bold', colour: INK, width: leftWidth });
   for (const line of model.customer.addressLines) {
-    sheet.paragraph(line, { colour: MUTED, width: columnWidth, leading: GAP.line });
+    sheet.paragraph(line, { colour: MUTED, width: leftWidth, leading: GAP.line });
   }
+  /*
+   * …then, apart from the address, the contact person, grouped under their own label ("Contact
+   * details" on the owner's annotation): name, position, telephone and email, each on its own line.
+   */
   if (model.customer.contact !== null) {
-    sheet.move(5);
-    sheet.paragraph(model.customer.contact.name, {
-      font: 'bold',
-      colour: BODY,
-      width: columnWidth,
-      leading: GAP.line,
-    });
-    sheet.paragraph(model.customer.contact.position, {
-      colour: MUTED,
-      width: columnWidth,
-      leading: GAP.line,
-    });
-    sheet.paragraph(model.customer.contact.contactLine, {
-      colour: MUTED,
-      width: columnWidth,
-      leading: GAP.line,
-    });
+    const contact = model.customer.contact;
+    sheet.move(7);
+    smallHeading(sheet, MARGIN, 'Contact details');
+    sheet.paragraph(contact.name, { font: 'bold', colour: BODY, width: leftWidth, leading: GAP.line });
+    for (const line of [contact.position, contact.phone, contact.email]) {
+      if (line.trim().length === 0) continue;
+      sheet.paragraph(line, { colour: MUTED, width: leftWidth, leading: GAP.line });
+    }
   }
   const leftBottom = sheet.cursor;
+  const columnWidth = DETAILS_COLUMN;
 
   // Right column: the machine, then the job's own details. Laid out from the
   // same top as the left column, not from where the left column ended.
@@ -260,22 +273,82 @@ const partsReceived = (sheet: Sheet, model: JobCardModel): void => {
   sheet.move(GAP.section - 4);
 };
 
+/*
+ * WORK CARRIED OUT. JOB-CARD-2 (the owner's annotated job card, 16 November 2026).
+ *
+ * A clear hierarchy: "WORK CARRIED OUT" is the MAIN heading — larger and in the document's ink — the
+ * five parts of the write-up are SUBHEADINGS — bold, a little stronger than the text — and the text
+ * itself stays regular and subordinate. Nothing else is bold.
+ *
+ * "Next to each other": Fault findings and Diagnosis on the left, and Work performed,
+ * Recommendations and General notes beside them on the right. When one side has nothing written (a
+ * service job has no findings), or the two columns would not fit on one page, the blocks run down the
+ * page in the same order instead — never a column split across pages.
+ */
+const MAIN_HEADING = 10;
+const SUBHEADING = 8.5;
+const WRITE_UP_LEADING = SIZE.body * 1.45;
+const LEFT_WRITE_UP = new Set(['Fault findings', 'Diagnosis']);
+
+type WorkBlock = JobCardModel['workBlocks'][number];
+
+const mainHeading = (sheet: Sheet, label: string): void => {
+  sheet.need(GAP.line * 3);
+  sheet.pdf.text(MARGIN, sheet.cursor, label.toUpperCase(), {
+    font: 'bold',
+    size: MAIN_HEADING,
+    colour: INK,
+    tracking: TRACK_HEADING,
+  });
+  sheet.move(GAP.line + 4);
+};
+
+const subheading = (sheet: Sheet, x: number, y: number, label: string): void => {
+  sheet.pdf.text(x, y, label.toUpperCase(), { font: 'bold', size: SUBHEADING, colour: INK, tracking: 0.4 });
+};
+
+/** A column's height: each block's subheading, its wrapped text and the gap after it. */
+const blocksHeight = (blocks: readonly WorkBlock[], width: number): number =>
+  blocks.reduce((sum, block) => sum + GAP.line + PdfBuilder.wrap(block.value, width, SIZE.body).length * WRITE_UP_LEADING + 7, 0);
+
+/** Draws a column from `top`; returns where it ended. The caller has made sure it fits. */
+const drawBlocks = (sheet: Sheet, blocks: readonly WorkBlock[], x: number, width: number, top: number): number => {
+  let y = top;
+  for (const block of blocks) {
+    subheading(sheet, x, y, block.label);
+    y -= GAP.line;
+    for (const line of PdfBuilder.wrap(block.value, width, SIZE.body)) {
+      sheet.pdf.text(x, y, line, { size: SIZE.body, colour: BODY });
+      y -= WRITE_UP_LEADING;
+    }
+    y -= 7;
+  }
+  return y;
+};
+
 const work = (sheet: Sheet, model: JobCardModel): void => {
   if (model.workBlocks.length === 0) return;
-  sheet.sectionTitle('Work carried out');
-  for (const block of model.workBlocks) {
-    sheet.need(GAP.line * 2);
-    sheet.pdf.text(MARGIN, sheet.cursor, block.label.toUpperCase(), {
-      font: 'bold',
-      size: SIZE.small,
-      colour: BODY,
-      tracking: 0.45,
-    });
-    sheet.move(GAP.line);
-    // As in `JobCardDocument`: an unwritten field is not a block at all
-    // (DOC-1), so there is no faint "Not recorded" variant left to render.
-    sheet.paragraph(block.value, { colour: BODY, font: 'regular' });
-    sheet.move(7);
+  mainHeading(sheet, 'Work carried out');
+  // As in `JobCardDocument`: an unwritten field is not a block at all (DOC-1).
+  const left = model.workBlocks.filter((block) => LEFT_WRITE_UP.has(block.label));
+  const right = model.workBlocks.filter((block) => !LEFT_WRITE_UP.has(block.label));
+  const columnWidth = (CONTENT_WIDTH - 24) / 2;
+  const tallest = Math.max(blocksHeight(left, columnWidth), blocksHeight(right, columnWidth));
+  const pageRoom = A4_HEIGHT - MARGIN * 2 - FOOTER_SPACE - GAP.line * 4;
+  if (left.length > 0 && right.length > 0 && tallest <= pageRoom) {
+    sheet.need(tallest);
+    const top = sheet.cursor;
+    const leftEnd = drawBlocks(sheet, left, MARGIN, columnWidth, top);
+    const rightEnd = drawBlocks(sheet, right, MARGIN + columnWidth + 24, columnWidth, top);
+    sheet.setCursor(Math.min(leftEnd, rightEnd));
+  } else {
+    for (const block of model.workBlocks) {
+      sheet.need(GAP.line * 2 + WRITE_UP_LEADING);
+      subheading(sheet, MARGIN, sheet.cursor, block.label);
+      sheet.move(GAP.line);
+      sheet.paragraph(block.value, { colour: BODY, font: 'regular', leading: WRITE_UP_LEADING });
+      sheet.move(7);
+    }
   }
   sheet.move(GAP.section - 7);
 };
@@ -291,17 +364,68 @@ const notes = (sheet: Sheet, model: JobCardModel): void => {
   sheet.move(GAP.section - 5);
 };
 
+/*
+ * THE LABOUR, TRAVEL AND PARTS TABLE. JOB-CARD-2 (the owner's layout drawing, 16 November 2026):
+ *
+ *   Date | Description | Qty | Rate | Amount
+ *
+ * The Date is the day the work or the travel was DONE, as recorded on that entry; a part, the
+ * call-out fee and any other charge have no such day and leave it blank (never an invented date).
+ * The header band has no line drawn through it under its labels ("Line removed"); the band's own
+ * edge, the rows' hairlines and the rules that set off Subtotal, VAT and Total stay.
+ *
+ * Figures are right-aligned by their exact width, so every column's right edge is one straight line.
+ */
+const DATE_X = MARGIN;
+const DESCRIPTION_X = MARGIN + 64;
+// The figures' right edges, tighter than the old table's so the Date column costs the description little, and
+// 14pt inside the margin: a reader whose font runs 16% wide (SUBSTITUTION_ALLOWANCE) still stays inside it.
+const TABLE_QTY = RIGHT - 160;
+const TABLE_RATE = RIGHT - 95;
+const TABLE_AMOUNT = RIGHT - 14;
+const DESCRIPTION_WIDTH = TABLE_QTY - 48 - DESCRIPTION_X;
+
+/** A string's width as a PDF viewer advances it (no substitution allowance): for right alignment. */
+const exactWidth = (value: string, size: number, font: 'regular' | 'bold' = 'regular'): number =>
+  textWidth(value, size, font) / SUBSTITUTION_ALLOWANCE;
+
+const rightAligned = (sheet: Sheet, x: number, y: number, value: string, size: number, font: 'regular' | 'bold', colour: string): void => {
+  sheet.pdf.text(x - exactWidth(value, size, font), y, value, { size, font, colour });
+};
+
+/** The table's header band: its labels in it, its lower edge ruled — nothing drawn through it. */
+const tableHeader = (sheet: Sheet): void => {
+  sheet.pdf.rect(MARGIN, sheet.cursor - 5, CONTENT_WIDTH, 16, BAND);
+  sheet.pdf.text(DATE_X, sheet.cursor, 'Date', { font: 'bold', size: SIZE.small, colour: BODY });
+  sheet.pdf.text(DESCRIPTION_X, sheet.cursor, 'Description', { font: 'bold', size: SIZE.small, colour: BODY });
+  for (const [x, label] of [
+    [TABLE_QTY, 'Qty'],
+    [TABLE_RATE, 'Rate'],
+    [TABLE_AMOUNT, 'Amount'],
+  ] as const) {
+    rightAligned(sheet, x, sheet.cursor, label, SIZE.small, 'bold', BODY);
+  }
+  sheet.move(5);
+  sheet.rule(RULE, 0.6);
+  sheet.move(GAP.line + 4);
+};
+
 const chargeLine = (sheet: Sheet, row: ChargeRow): void => {
-  const descriptionWidth = COL_QTY - MARGIN - 14;
   const description =
     row.detail.length > 0 ? `${row.description} — ${row.detail}` : row.description;
-  const lines = PdfBuilder.wrap(description, descriptionWidth, SIZE.body);
+  const lines = PdfBuilder.wrap(description, DESCRIPTION_WIDTH, SIZE.body);
 
-  sheet.need(lines.length * GAP.line + 8);
+  // A row that has to start a new page starts it under the column headings again.
+  const height = lines.length * GAP.line + 8;
+  if (sheet.wouldOverflow(height)) {
+    sheet.need(height + 30);
+    tableHeader(sheet);
+  }
   const rowTop = sheet.cursor;
 
+  if (row.date.length > 0) sheet.pdf.text(DATE_X, rowTop, row.date, { size: SIZE.body, colour: BODY });
   lines.forEach((line, index) => {
-    sheet.pdf.text(MARGIN, sheet.cursor, line, {
+    sheet.pdf.text(DESCRIPTION_X, sheet.cursor, line, {
       size: SIZE.body,
       colour: index === 0 ? BODY : MUTED,
     });
@@ -309,24 +433,37 @@ const chargeLine = (sheet: Sheet, row: ChargeRow): void => {
   });
 
   // Figures align to the first line of a wrapped description.
-  sheet.pdf.text(COL_QTY - textWidth(row.quantity, SIZE.body), rowTop, row.quantity, {
-    size: SIZE.body,
-    colour: BODY,
-  });
-  sheet.pdf.text(COL_RATE - textWidth(row.rate, SIZE.body), rowTop, row.rate, {
-    size: SIZE.body,
-    colour: BODY,
-  });
-  sheet.pdf.text(COL_AMOUNT - textWidth(row.amount, SIZE.body, 'bold'), rowTop, row.amount, {
-    size: SIZE.body,
-    font: 'bold',
-    colour: INK,
-  });
+  rightAligned(sheet, TABLE_QTY, rowTop, row.quantity, SIZE.body, 'regular', BODY);
+  rightAligned(sheet, TABLE_RATE, rowTop, row.rate, SIZE.body, 'regular', BODY);
+  rightAligned(sheet, TABLE_AMOUNT, rowTop, row.amount, SIZE.body, 'bold', INK);
 
   sheet.move(7);
   sheet.rule(RULE_SOFT, 0.5);
   sheet.move(GAP.line - 2);
 };
+
+type Charges = NonNullable<JobCardModel['charges']>;
+
+/**
+ * The lines above Total: Subtotal and VAT — and, when a discount was given, the subtotal before it and
+ * the discount with its reason first, as the on-screen job card has always shown (COST-5). The PDF
+ * printed only the discounted subtotal, so its lines did not add up to it; the figures are the model's
+ * own, nothing is calculated here.
+ */
+const totalsLines = (charges: Charges): readonly (readonly [label: string, value: string, note: string])[] => [
+  ...(charges.discount === null
+    ? []
+    : [
+        ['Subtotal', charges.discount.grossSubtotal, ''] as const,
+        // A hyphen-minus: the PDF's standard fonts have no U+2212 (it printed as "?").
+        ['Discount', `-${charges.discount.amount}`, `Discount — ${charges.discount.reason}`] as const,
+      ]),
+  [charges.discount === null ? 'Subtotal' : 'Subtotal after discount', charges.subtotal, ''],
+  [charges.vatLabel, charges.vat, ''],
+];
+
+/** The height of the totals, as `charges` draws them. */
+const totalsHeight = (charges: Charges): number => 4 + totalsLines(charges).length * (GAP.line + 2) + GAP.line + 2 + SIZE.total;
 
 const charges = (sheet: Sheet, model: JobCardModel): void => {
   if (model.charges === null && model.received === null) return;
@@ -344,61 +481,33 @@ const charges = (sheet: Sheet, model: JobCardModel): void => {
   }
   if (model.charges === null) return;
 
-  // Header band, as on screen.
-  sheet.need(30);
-  sheet.pdf.rect(MARGIN, sheet.cursor - 5, CONTENT_WIDTH, 16, BAND);
-  sheet.rule(RULE, 0.6);
-  sheet.move(-1);
-  sheet.pdf.text(MARGIN, sheet.cursor, 'Description', { font: 'bold', size: SIZE.small, colour: BODY });
-  for (const [x, label] of [
-    [COL_QTY, 'Qty'],
-    [COL_RATE, 'Rate'],
-    [COL_AMOUNT, 'Amount'],
-  ] as const) {
-    sheet.pdf.text(x - textWidth(label, SIZE.small, 'bold'), sheet.cursor, label, {
-      font: 'bold',
-      size: SIZE.small,
-      colour: BODY,
-    });
-  }
-  sheet.move(11);
-  sheet.rule(RULE, 0.6);
-  sheet.move(GAP.line);
+  // Header band, as on screen, with room for a first row under it; repeated on every further page.
+  sheet.need(30 + GAP.line * 2);
+  tableHeader(sheet);
 
   for (const row of model.charges.rows) chargeLine(sheet, row);
 
+  /*
+   * JOB-CARD-2: the customer's acceptance sits directly under the totals, so the totals and the
+   * whole acceptance block go onto the same page — never a signature a page away from its total.
+   */
+  sheet.need(totalsHeight(model.charges) + 8 + acceptanceHeight(model));
   sheet.move(4);
-  for (const [label, value] of [
-    ['Subtotal', model.charges.subtotal],
-    [model.charges.vatLabel, model.charges.vat],
-  ] as const) {
-    sheet.need(GAP.line);
-    sheet.pdf.text(COL_RATE - textWidth(label, SIZE.body), sheet.cursor, label, {
-      size: SIZE.body,
-      colour: MUTED,
-    });
-    sheet.pdf.text(COL_AMOUNT - textWidth(value, SIZE.body), sheet.cursor, value, {
-      size: SIZE.body,
-      colour: BODY,
-    });
+  for (const [label, value, note] of totalsLines(model.charges)) {
+    if (note.length > 0) {
+      const [first] = PdfBuilder.wrap(note, TABLE_QTY - DESCRIPTION_X, SIZE.body, 'italic');
+      sheet.pdf.text(DESCRIPTION_X, sheet.cursor, first ?? '', { size: SIZE.body, font: 'italic', colour: MUTED });
+    }
+    rightAligned(sheet, TABLE_RATE, sheet.cursor, label, SIZE.body, 'regular', MUTED);
+    rightAligned(sheet, TABLE_AMOUNT, sheet.cursor, value, SIZE.body, 'regular', BODY);
     sheet.move(GAP.line + 2);
   }
 
-  sheet.need(24);
-  sheet.rule(INK, 1.2, COL_QTY - 40, RIGHT);
+  sheet.rule(INK, 1.2, ACCEPTANCE_X, RIGHT);
   sheet.move(GAP.line + 2);
-  sheet.pdf.text(COL_RATE - textWidth('Total', SIZE.total, 'bold'), sheet.cursor, 'Total', {
-    font: 'bold',
-    size: SIZE.total,
-    colour: INK,
-  });
-  sheet.pdf.text(
-    COL_AMOUNT - textWidth(model.charges.total, SIZE.total, 'bold'),
-    sheet.cursor,
-    model.charges.total,
-    { font: 'bold', size: SIZE.total, colour: INK },
-  );
-  sheet.move(GAP.section + 4);
+  rightAligned(sheet, TABLE_RATE, sheet.cursor, 'Total', SIZE.total, 'bold', INK);
+  rightAligned(sheet, TABLE_AMOUNT, sheet.cursor, model.charges.total, SIZE.total, 'bold', INK);
+  sheet.move(SIZE.total + 8);
 };
 
 /**
@@ -432,7 +541,7 @@ const goodsTable = (sheet: Sheet, block: NonNullable<JobCardModel['collection']>
     colour: BODY,
   });
   sheet.pdf.text(
-    COL_AMOUNT - textWidth('Quantity', SIZE.small, 'bold'),
+    TABLE_AMOUNT - textWidth('Quantity', SIZE.small, 'bold'),
     sheet.cursor,
     'Quantity',
     { font: 'bold', size: SIZE.small, colour: BODY },
@@ -442,7 +551,7 @@ const goodsTable = (sheet: Sheet, block: NonNullable<JobCardModel['collection']>
   sheet.move(GAP.line);
 
   for (const line of block.lines) {
-    const width = COL_AMOUNT - MARGIN - 80;
+    const width = TABLE_AMOUNT - MARGIN - 80;
     const text =
       line.description.length > 0 ? `${line.partNumber} — ${line.description}` : line.partNumber;
     const wrapped = PdfBuilder.wrap(text, width, SIZE.body);
@@ -457,7 +566,7 @@ const goodsTable = (sheet: Sheet, block: NonNullable<JobCardModel['collection']>
       if (index < wrapped.length - 1) sheet.move(GAP.line);
     });
     sheet.pdf.text(
-      COL_AMOUNT - textWidth(line.quantity, SIZE.body, 'bold'),
+      TABLE_AMOUNT - textWidth(line.quantity, SIZE.body, 'bold'),
       rowTop,
       line.quantity,
       { size: SIZE.body, font: 'bold', colour: INK },
@@ -482,7 +591,7 @@ const goodsTable = (sheet: Sheet, block: NonNullable<JobCardModel['collection']>
     colour: INK,
   });
   sheet.pdf.text(
-    COL_AMOUNT - textWidth(block.totalQuantity, SIZE.body, 'bold'),
+    TABLE_AMOUNT - textWidth(block.totalQuantity, SIZE.body, 'bold'),
     sheet.cursor,
     block.totalQuantity,
     { font: 'bold', size: SIZE.body, colour: INK },
@@ -836,6 +945,13 @@ const photographs = (
   grid: PhotoGrid = JOB_CARD_PHOTOS,
 ): void => {
   if (model.photos.length === 0) return;
+  /*
+   * JOB-CARD-2 (the owner: "Always on new page! Heading + image together."): the photographs begin
+   * on a page of their own — after the acceptance and the checklist — so the heading is never left at
+   * the foot of a page; the heading and the first row are drawn together at its top. No photographs,
+   * no page.
+   */
+  sheet.newPage();
   sheet.sectionTitle('Photographs');
   for (let start = 0; start < model.photos.length; start += grid.columns) {
     const row = model.photos.slice(start, start + grid.columns);
@@ -867,91 +983,88 @@ const photographs = (
   sheet.move(GAP.section);
 };
 
-/**
- * The customer's refusal, in place of the signature block.
+/*
+ * THE CUSTOMER'S ACCEPTANCE. JOB-CARD-2 (the owner's annotated job card, 16 November 2026): "Customer
+ * acceptance block with signature should move to right under Subtotal, VAT, Total line." The WHOLE
+ * block — its heading, the declaration, who signed and when, the signature and its caption — in the
+ * right-hand column under the totals (the column the Total rule spans), kept together on one page,
+ * and before the checklist and the photographs.
  *
- * Deliberately NOT a bordered box with the declaration printed beside it: there
- * is no acceptance here and the document must not look as though there nearly
- * was one. It states what happened, why, who took it and when, and draws no
- * signature mark of any kind.
+ * A refusal takes the same place: it states what happened, why, who took it and when, and draws no
+ * signature mark of any kind. A document with no totals (an Installation Delivery Note, a courier's
+ * copy) has the block in the same column, where its sign-off comes.
  */
-const refusal = (sheet: Sheet, model: JobCardModel): void => {
-  const block = model.refusal;
-  if (block === null) return;
+const ACCEPTANCE_X = RIGHT - 250;
+const ACCEPTANCE_WIDTH = RIGHT - ACCEPTANCE_X;
+const SIGNATURE_BOX = 62;
+const PARAGRAPH_LEADING = SIZE.body * 1.45;
 
-  sheet.need(110);
-  sheet.move(GAP.sectionLarge);
-  sheet.rule(INK, 1.4);
-  sheet.move(GAP.section);
-  sheet.sectionTitle('Customer acceptance');
+const acceptanceTitle = (model: JobCardModel): string =>
+  model.acceptance === null
+    ? 'Customer acceptance'
+    // "Courier signature — given once, on the Delivery Note" titles as "Courier acceptance".
+    : `${model.acceptance.caption.split(' signature')[0]} acceptance`;
 
-  sheet.paragraph(block.heading.toUpperCase(), {
-    font: 'bold',
-    size: SIZE.total,
-    colour: INK,
-  });
-  sheet.move(4);
+const rowsHeight = (rows: readonly LabelValue[], width: number): number => {
+  const widest = rows.reduce((max, row) => Math.max(max, textWidth(row.label, SIZE.body)), 0);
+  const labelWidth = Math.max(78, Math.ceil(widest) + 6);
+  return rows.reduce((sum, row) => sum + PdfBuilder.wrap(row.value, width - labelWidth, SIZE.body).length * GAP.line, 0);
+};
 
-  sheet.paragraph('Reason', {
-    font: 'bold',
-    size: SIZE.small,
-    colour: MUTED,
-    leading: GAP.line,
-  });
-  sheet.paragraph(block.reason, { colour: BODY });
-  sheet.move(5);
-
-  labelValueRows(sheet, block.rows, MARGIN, CONTENT_WIDTH);
-  sheet.move(GAP.section);
+/** The block's whole height, so the caller can keep it (and the totals above it) on one page. */
+const acceptanceHeight = (model: JobCardModel): number => {
+  const lines = (text: string, size: number = SIZE.body, font: 'regular' | 'bold' = 'regular') =>
+    PdfBuilder.wrap(text, ACCEPTANCE_WIDTH, size, font).length;
+  if (model.refusal !== null) {
+    return GAP.section + GAP.line + lines(model.refusal.heading.toUpperCase(), SIZE.total, 'bold') * SIZE.total * 1.45 + 4
+      + GAP.line + lines(model.refusal.reason) * PARAGRAPH_LEADING + 5 + rowsHeight(model.refusal.rows, ACCEPTANCE_WIDTH) + GAP.section;
+  }
+  if (model.acceptance === null) return GAP.section + GAP.line + PARAGRAPH_LEADING + GAP.section;
+  return GAP.section + GAP.line + lines(model.acceptance.declaration) * PARAGRAPH_LEADING + 5
+    + rowsHeight(model.acceptance.rows, ACCEPTANCE_WIDTH) + 16 + SIGNATURE_BOX + 14 + GAP.section;
 };
 
 const acceptance = (sheet: Sheet, model: JobCardModel): void => {
-  // A refused job card has no acceptance block at all — see `refusal`.
-  if (model.refusal !== null) {
-    refusal(sheet, model);
-    return;
-  }
-
-  const columnWidth = (CONTENT_WIDTH - 24) / 2;
-  const rightX = MARGIN + columnWidth + 24;
-  const boxHeight = 62;
-
-  // The whole acceptance block stays together: a signature on a different page
-  // from the declaration it belongs to is not an acceptance.
-  sheet.need(boxHeight + 92);
-
-  sheet.move(GAP.sectionLarge);
-  sheet.rule(INK, 1.4);
+  const x = ACCEPTANCE_X;
+  const width = ACCEPTANCE_WIDTH;
+  // The whole block stays together: a signature on a different page from the declaration it
+  // belongs to is not an acceptance. (Under the totals, `charges` has already made room for it.)
+  sheet.need(acceptanceHeight(model));
   sheet.move(GAP.section);
-  sheet.sectionTitle(
-    model.acceptance === null
-      ? 'Customer acceptance'
-      // "Courier signature — given once, on the Delivery Note" titles as "Courier acceptance".
-      : `${model.acceptance.caption.split(' signature')[0]} acceptance`,
-  );
 
-  if (model.acceptance === null) {
-    sheet.paragraph('Not yet signed.', { font: 'italic', colour: MUTED });
+  if (model.refusal !== null) {
+    const block = model.refusal;
+    smallHeading(sheet, x, 'Customer acceptance');
+    sheet.paragraph(block.heading.toUpperCase(), { font: 'bold', size: SIZE.total, colour: INK, width, x });
+    sheet.move(4);
+    sheet.paragraph('Reason', { font: 'bold', size: SIZE.small, colour: MUTED, leading: GAP.line, width, x });
+    sheet.paragraph(block.reason, { colour: BODY, width, x });
+    sheet.move(5);
+    labelValueRows(sheet, block.rows, x, width);
     sheet.move(GAP.section);
     return;
   }
 
-  const top = sheet.cursor;
+  smallHeading(sheet, x, acceptanceTitle(model));
+  if (model.acceptance === null) {
+    sheet.paragraph('Not yet signed.', { font: 'italic', colour: MUTED, width, x });
+    sheet.move(GAP.section);
+    return;
+  }
 
-  // Left column: the declaration, then who signed and when.
-  sheet.paragraph(model.acceptance.declaration, { colour: BODY, width: columnWidth });
+  // The declaration, then who signed and when…
+  sheet.paragraph(model.acceptance.declaration, { colour: BODY, width, x });
   sheet.move(5);
-  labelValueRows(sheet, model.acceptance.rows, MARGIN, columnWidth);
-  const leftBottom = sheet.cursor;
+  labelValueRows(sheet, model.acceptance.rows, x, width);
 
-  // Right column: the signature itself, in the screen's bordered, tinted box.
-  const boxTop = top + 10;
-  const boxBottom = boxTop - boxHeight;
-  sheet.pdf.rect(rightX, boxBottom, columnWidth, boxHeight, BAND);
-  sheet.pdf.line(rightX, boxTop, rightX + columnWidth, boxTop, 0.6, RULE);
-  sheet.pdf.line(rightX, boxBottom, rightX + columnWidth, boxBottom, 0.6, RULE);
-  sheet.pdf.line(rightX, boxTop, rightX, boxBottom, 0.6, RULE);
-  sheet.pdf.line(rightX + columnWidth, boxTop, rightX + columnWidth, boxBottom, 0.6, RULE);
+  // …then the signature itself, in the screen's bordered, tinted box, the full width of the column.
+  const boxTop = sheet.cursor + 4;
+  const boxBottom = boxTop - SIGNATURE_BOX;
+  sheet.pdf.rect(x, boxBottom, width, SIGNATURE_BOX, BAND);
+  sheet.pdf.line(x, boxTop, x + width, boxTop, 0.6, RULE);
+  sheet.pdf.line(x, boxBottom, x + width, boxBottom, 0.6, RULE);
+  sheet.pdf.line(x, boxTop, x, boxBottom, 0.6, RULE);
+  sheet.pdf.line(x + width, boxTop, x + width, boxBottom, 0.6, RULE);
 
   const mark = signatureFacsimile(model.acceptance.signatureData);
   if (mark.kind === 'path') {
@@ -960,28 +1073,23 @@ const acceptance = (sheet: Sheet, model: JobCardModel): void => {
     sheet.pdf.normalisedPath(
       mark.path,
       // SIG-MOBILE-1: the stored 4:1 signature space, drawn at 4:1 inside the box.
-      fitSignatureBox({ x: rightX + 10, y: boxBottom + 7, width: columnWidth - 20, height: boxHeight - 14 }),
+      fitSignatureBox({ x: x + 10, y: boxBottom + 7, width: width - 20, height: SIGNATURE_BOX - 14 }),
       { colour: SIGNATURE_INK, width: 1.5 },
     );
   } else {
     // A seeded job stores a label rather than captured geometry, and the
     // on-screen card draws the name in a cursive face. Matched here, or the two
     // documents would show different things in the same box.
-    const centred =
-      rightX + columnWidth / 2 - textWidth(mark.text, SIZE.signature, 'script') / 2;
-    sheet.pdf.text(centred, boxBottom + boxHeight / 2 - 5, mark.text, {
+    const centred = x + width / 2 - textWidth(mark.text, SIZE.signature, 'script') / 2;
+    sheet.pdf.text(centred, boxBottom + SIGNATURE_BOX / 2 - 5, mark.text, {
       font: 'script',
       size: SIZE.signature,
       colour: SIGNATURE_INK,
     });
   }
 
-  sheet.pdf.text(rightX, boxBottom - 11, model.acceptance.caption, {
-    size: SIZE.tiny,
-    colour: MUTED,
-  });
-
-  sheet.setCursor(Math.min(leftBottom, boxBottom - 11));
+  sheet.pdf.text(x, boxBottom - 11, model.acceptance.caption, { size: SIZE.tiny, colour: MUTED });
+  sheet.setCursor(boxBottom - 11);
   sheet.move(GAP.section);
 };
 
@@ -1065,9 +1173,10 @@ export const renderJobCardPdf = (
     work(sheet, model);
     installationLabour(sheet, model);
     notes(sheet, model);
+    // JOB-CARD-2: the sign-off, then the supporting sections, then the photographs on their own page.
+    acceptance(sheet, model);
     checklist(sheet, model);
     photographs(sheet, model, source.photoImages, INSTALLATION_PHOTOS);
-    acceptance(sheet, model);
     footers(sheet, model, fileName, source.job.finalDocument?.provenance === 'simulated');
     return { bytes: sheet.pdf.toBytes(), pageCount: sheet.pdf.pageCount };
   }
@@ -1080,9 +1189,13 @@ export const renderJobCardPdf = (
   notes(sheet, model);
   charges(sheet, model);
   collection(sheet, model);
+  /*
+   * JOB-CARD-2: the customer's acceptance directly under the totals, on the right; then the
+   * supporting sections (the checklist); then the photographs, on a page of their own.
+   */
+  acceptance(sheet, model);
   checklist(sheet, model);
   photographs(sheet, model, source.photoImages);
-  acceptance(sheet, model);
   /*
    * WHETHER THIS IS A DEMONSTRATION DOCUMENT, taken from the JOB'S OWN RECORD.
    *

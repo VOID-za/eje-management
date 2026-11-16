@@ -65,6 +65,13 @@ export interface LabelValue {
 }
 
 export interface ChargeRow {
+  /**
+   * JOB-CARD-2 (the owner, 16 November 2026): the date the work or the travel was DONE, as recorded
+   * on that labour or travel entry (`LabourEntry.date`, `TravelEntry.date`, entered on the capture
+   * form). '' for a line with no activity date of its own — a part, the call-out fee, the test bench
+   * fee, an additional charge — which is left blank rather than given an invented date.
+   */
+  readonly date: string;
   readonly description: string;
   /** The muted continuation after an em dash, e.g. "— Preventative service". */
   readonly detail: string;
@@ -113,6 +120,9 @@ export interface JobCardModel {
       readonly name: string;
       readonly position: string;
       readonly contactLine: string;
+      /** JOB-CARD-2: the contact's telephone and email, each on its own line. */
+      readonly phone: string;
+      readonly email: string;
     } | null;
   };
   readonly machine: { readonly title: string; readonly rows: readonly LabelValue[] } | null;
@@ -476,6 +486,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
 
   const chargeRows: ChargeRow[] = [
     ...job.labour.map((entry, index) => ({
+      date: formatDate(entry.date),
       description: labourRateLabel(entry.rateType),
       detail: entry.description,
       quantity: `${entry.hours.toFixed(2)} hrs`,
@@ -485,6 +496,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
     ...(job.calloutApplied
       ? [
           {
+            date: '',
             description: 'Call-out',
             detail: 'fixed call-out fee',
             quantity: '1',
@@ -497,6 +509,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
     ...(job.testBenchApplied
       ? [
           {
+            date: '',
             description: 'Test bench fee',
             detail: 'test bench fee',
             quantity: String(totals.testBenchLines[0]?.quantity ?? 1),
@@ -506,6 +519,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
         ]
       : []),
     ...job.travel.map((entry, index) => ({
+      date: formatDate(entry.date),
       description: 'Travel',
       detail: entry.description,
       quantity: `${entry.kilometres.toFixed(1)} km`,
@@ -513,6 +527,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
       amount: formatCurrency(totals.travelLines[index]?.total ?? 0),
     })),
     ...job.parts.map((entry, index) => ({
+      date: '',
       description: entry.partNumber,
       detail: entry.description,
       quantity: String(entry.quantity),
@@ -529,6 +544,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
      * document that say nothing.
      */
     ...job.additionalCharges.map((entry) => ({
+      date: '',
       description: 'Additional charge',
       detail: entry.description,
       quantity: '',
@@ -570,6 +586,8 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
               name: contactFullName(contact),
               position: contact.position,
               contactLine: `${contact.phone} · ${contact.email}`,
+              phone: contact.phone,
+              email: contact.email,
             },
     },
     machine:

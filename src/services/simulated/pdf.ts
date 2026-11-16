@@ -1,5 +1,6 @@
 import type { Job } from '@/domain';
 import { renderJobCardPdf } from './job-card-pdf';
+import { renderJobCardPdfV5 } from './job-card-pdf-v5';
 import { renderCorrectionPdf } from './correction-pdf';
 import {
   installationDeliveryNoteFileName,
@@ -88,7 +89,9 @@ export class SimulatedPdfService implements PdfService {
       source.job.jobType === 'parts'
         ? this.partsDescriptor(source.job, variant)
         : this.jobCardDescriptor(source.job, variant);
-    return Promise.resolve(renderJobCardPdf(source, descriptor.fileName, generatedAt));
+    // JOB-CARD-2: history keeps the layout it was issued in (`FinalDocumentSource.layout`).
+    const render = source.layout === 'v5' ? renderJobCardPdfV5 : renderJobCardPdf;
+    return Promise.resolve(render(source, descriptor.fileName, generatedAt));
   }
 
   generatePartsNote(job: Job, variant: PdfVariant = 'preview'): Promise<GeneratedPdf> {

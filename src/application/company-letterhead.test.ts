@@ -26,7 +26,8 @@ import { loadCorrectionDocument, raiseJobCorrection } from './job-corrections';
 import { RENDERER_VERSION, loadFinalDocumentFile, storeFinalDocument } from './final-document';
 import { generateDeliveryNote } from './delivery-note';
 import { loadJobView } from './job-view';
-import { EJE_MASTER_LETTERHEAD, MASTER_LETTERHEAD_RENDERER, showsMasterLetterhead } from '@/lib/branding/eje-letterhead';
+import { EJE_MASTER_LETTERHEAD, showsMasterLetterhead } from '@/lib/branding/eje-letterhead';
+import { JOB_CARD_LAYOUT_RENDERER, showsCurrentJobCardLayout } from '@/lib/job-card/layout-version';
 import {
   defaultCompanyLetterhead,
   downloadCompanyLetterheadFile,
@@ -141,11 +142,12 @@ describe('each job document on its own company’s letterhead', () => {
     expect(embedsImageData(card.bytes, eje)).toBe(false);
     expect(embedsImageData(card.bytes, wd)).toBe(false);
     expect(pdfPlainText(card.bytes)).toContain(issued.jobNumber);
-    // LETTERHEAD-2: the issue is MARKED as drawn with the master (file and record), so the screen shows the master too.
-    expect(card.renderer).toBe(MASTER_LETTERHEAD_RENDERER);
+    // JOB-CARD-2: the issue is MARKED as drawn in the redesigned layout (file and record), so the screen
+    // shows that layout — on the master letterhead — beside it.
+    expect(card.renderer).toBe(JOB_CARD_LAYOUT_RENDERER);
     expect(card.backfilled).toBe(false);
-    expect(issued.finalDocument?.renderer).toBe(MASTER_LETTERHEAD_RENDERER);
-    expect(showsMasterLetterhead(issued.finalDocument)).toBe(true);
+    expect(issued.finalDocument?.renderer).toBe(JOB_CARD_LAYOUT_RENDERER);
+    expect(showsCurrentJobCardLayout(issued.finalDocument)).toBe(true);
     // An issued file is never re-rendered: read again, the same bytes.
     expect((await loadFinalDocumentFile(harness.as(master), issued.jobNumber)).bytes).toEqual(card.bytes);
 
@@ -185,8 +187,8 @@ describe('each job document on its own company’s letterhead', () => {
     expect(embedsImageData(stored.bytes, wd)).toBe(true);
     expect(embedsImageData(stored.bytes, eje)).toBe(false);
     expect(imageObjectCount(stored.bytes)).toBe(1);
-    // Not the master: the renderer recorded exactly as before LETTERHEAD-2.
-    expect(stored.renderer).toBe(RENDERER_VERSION);
+    // JOB-CARD-2: every issue now records the redesigned layout — WD Hearn's on its own letterhead, never EJE's.
+    expect(stored.renderer).toBe(JOB_CARD_LAYOUT_RENDERER);
   });
 
   it('history rendered for a job issued before letterheads keeps its text header', async () => {
