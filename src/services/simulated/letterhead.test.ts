@@ -1,4 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+/*
+ * The seed's dates are relative to today, and some of them are taken when its modules are IMPORTED —
+ * before `beforeAll` runs. So the clock is frozen here, before any import, as well as in `beforeAll`:
+ * without it the hashes below held only on the day they were taken (they failed from 16 November).
+ * The same instant as FROZEN_AT (src/test/letterhead-documents.ts), checked below.
+ */
+vi.hoisted(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-15T08:00:00.000Z'));
+});
 import type { PdfImage } from '@/lib/pdf/image';
 import { A4_HEIGHT, A4_WIDTH } from '@/lib/pdf/writer';
 import { inspectPdf, pdfPlainText } from '@/lib/pdf/inspect';
@@ -63,6 +73,14 @@ const BEFORE_LETTERHEADS = {
   installationDeliveryNote: 'a6c9de88632d8ec1cdfad7fb801b1d861da0244e529e3c6938159fe8859a8515',
   correction: 'a754046bf3e32aabdf3241e1bbe058617feba07223f7c99bfd8e9316084c0037',
   deliveryNote: '5a9a532e888e609ac84823d137ee11d9780c18714b0eae2de023816cb503e8ef',
+} as const;
+
+/**
+ * FORMS-INTERNAL-1 (the owner, 16 November 2026): attendance forms and timesheets are INTERNAL
+ * documents and carry NO letterhead — exactly the forms as they were before letterheads existed.
+ * sha256 of each rendered by the code before LETTERHEAD-1 (the same hashes this file has held since).
+ */
+const FORMS_BEFORE_LETTERHEADS = {
   timesheetOnePage: 'cacff5bd8bdf505aa66ebc8ed5e50d9910c241814088492051aa8c3be4bf559f',
   timesheetMultiPage: '59379314b7a0fd668b2ee1a223cba07550c1b035e25cbb06bc541c0be4b17225',
   attendance: '3452105ec7d2df679d22f6e0bd27f5d4d2a4ea3c738a8854a22a58a7d34e7a66',
@@ -120,31 +138,6 @@ const GENERATORS: readonly Generator[] = [
     header: ['DELIVERY NOTE', 'EJE-9001'],
     render: async (letterhead, omit) =>
       (omit === true ? renderDeliveryNotePdf(deliveryNoteModel) : renderDeliveryNotePdf(deliveryNoteModel, letterhead)).bytes,
-  },
-  {
-    name: 'timesheetMultiPage',
-    band: { bottom: 789, left: 40, right: 555.28 },
-    masterBandDrop: 28,
-    multiPage: true,
-    header: ['TIME SHEET'],
-    render: async (letterhead, omit) =>
-      renderTimesheetPdf(timesheet(400), omit === true ? { generatedAt: GENERATED_AT } : { generatedAt: GENERATED_AT, letterhead }).bytes,
-  },
-  {
-    name: 'timesheetOnePage',
-    band: { bottom: 794, left: 28, right: A4_WIDTH - 28 },
-    masterBandDrop: 32,
-    header: ['TIME SHEET'],
-    render: async (letterhead, omit) =>
-      renderTimesheetPdf(timesheet(10), omit === true ? { generatedAt: GENERATED_AT } : { generatedAt: GENERATED_AT, letterhead }).bytes,
-  },
-  {
-    name: 'attendance',
-    band: { bottom: 794, left: 28, right: A4_WIDTH - 28 },
-    masterBandDrop: 32,
-    header: ['ATTENDANCE'],
-    render: async (letterhead, omit) =>
-      renderAttendancePdf(attendance(), omit === true ? { generatedAt: GENERATED_AT } : { generatedAt: GENERATED_AT, letterhead }).bytes,
   },
 ];
 
@@ -401,10 +394,31 @@ describe.each(GENERATORS)('$name with the EJE master letterhead', (generator) =>
   });
 });
 
-describe('one-page forms stay one page with the master letterhead', () => {
-  it('the one-page timesheet and the attendance form', () => {
-    expect(renderTimesheetPdf(timesheet(10), { generatedAt: GENERATED_AT, letterhead: EJE_MASTER_LETTERHEAD }).pageCount).toBe(1);
-    expect(renderAttendancePdf(attendance(), { generatedAt: GENERATED_AT, letterhead: EJE_MASTER_LETTERHEAD }).pageCount).toBe(1);
+describe('FORMS-INTERNAL-1 — attendance and timesheets are the original internal forms, with no letterhead', () => {
+  it('render to exactly the bytes they had before letterheads existed', () => {
+    const now = {
+      timesheetOnePage: sha256(renderTimesheetPdf(timesheet(10), { generatedAt: GENERATED_AT }).bytes),
+      timesheetMultiPage: sha256(renderTimesheetPdf(timesheet(400), { generatedAt: GENERATED_AT }).bytes),
+      attendance: sha256(renderAttendancePdf(attendance(), { generatedAt: GENERATED_AT }).bytes),
+    };
+    expect(now).toEqual(FORMS_BEFORE_LETTERHEADS);
+  });
+
+  it('carry no letterhead of any kind: no image, no filled mark, none of the letterhead lines', () => {
+    for (const bytes of [
+      renderTimesheetPdf(timesheet(10), { generatedAt: GENERATED_AT }).bytes,
+      renderTimesheetPdf(timesheet(400), { generatedAt: GENERATED_AT }).bytes,
+      renderAttendancePdf(attendance(), { generatedAt: GENERATED_AT }).bytes,
+    ]) {
+      expect(imageObjectCount(bytes)).toBe(0);
+      expect(filledPaths(bytes)).toEqual([]);
+      const values = textRuns(bytes).map((run) => run.value);
+      for (const line of MASTER_TEXT) expect(values).not.toContain(line);
+    }
+  });
+
+  it('the clock frozen before the imports is the same instant as FROZEN_AT', () => {
+    expect(FROZEN_AT.toISOString()).toBe('2026-11-15T08:00:00.000Z');
   });
 });
 
@@ -424,9 +438,6 @@ const WD_HEARN_BEFORE_MASTER = {
   'correction:image': '294041142df7c740bdbb682d156e39ce35b145ca26eee0f01c3ad1c8f1e8870b',
   'deliveryNote:none': '019acc64b3255899c1467109c397e29a2c78d0d0d7702518091805b77dc5590b',
   'deliveryNote:image': 'd20f8ccca38ac8d1b3c178fb1bf1faf5879a2b54f3f3aa5c5a3f277141a761fb',
-  'timesheetOnePage:image': 'f9a60dc9e315e9e1228255b470af78ffe538e3ad0417341dbdb45ac90fe85b91',
-  'timesheetMultiPage:image': '7e127ef2285a8e24492b8df8d2645d21c6a8e21edafd061744b158813c1862bf',
-  'attendance:image': '9cae1f013246b637781c26e42670619d87d9ad58bb17ab90b32afe1f59589c02',
 } as const;
 
 describe('WD Hearn JHB, with and without its uploaded letterhead', () => {
@@ -459,9 +470,6 @@ describe('WD Hearn JHB, with and without its uploaded letterhead', () => {
     const wdNote = { ...deliveryNoteModel, company: { name: 'WD Hearn JHB', address: '12 Hearn Street', contactLine: '' } };
     now['deliveryNote:none'] = sha256(renderDeliveryNotePdf(wdNote).bytes);
     now['deliveryNote:image'] = sha256(renderDeliveryNotePdf(wdNote, image).bytes);
-    now['timesheetOnePage:image'] = sha256(renderTimesheetPdf(timesheet(10), { generatedAt: GENERATED_AT, letterhead: image }).bytes);
-    now['timesheetMultiPage:image'] = sha256(renderTimesheetPdf(timesheet(400), { generatedAt: GENERATED_AT, letterhead: image }).bytes);
-    now['attendance:image'] = sha256(renderAttendancePdf(attendance(), { generatedAt: GENERATED_AT, letterhead: image }).bytes);
     expect(now).toEqual(WD_HEARN_BEFORE_MASTER);
   });
 });

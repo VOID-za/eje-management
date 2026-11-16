@@ -3,7 +3,6 @@ import { FINANCE_PACKAGE_MAX_BYTES, asUserId, type User } from '@/domain';
 import { businessToday } from '@/lib/business-time';
 import { sha256Hex } from '@/lib/job-card/document-identity';
 import { pdfPageTexts } from '@/lib/pdf/inspect';
-import { defaultCompanyLetterhead } from './company-letterhead';
 import {
   attendanceMonthFileName,
   correctedFileName,
@@ -353,11 +352,7 @@ describe('PAY-05…08 — the Finance package: both PDFs per selected technician
     const prepared = await prepareFinancePackage(harness.as(master), MONTH, [SIPHO]);
     const timesheet = prepared.attachments.find((attachment) => attachment.kind === 'timesheet')!;
     const stored = await harness.services.storage.getDocument(timesheet.storageKey);
-    // As the download route draws it: on EJE's letterhead — the master letterhead (LETTERHEAD-2).
-    const own = renderTimesheetPdf(await loadTimesheetDocument(harness.as(sipho), SIPHO, FROM, TO), {
-      generatedAt: '2026-10-29T08:00:00.000Z',
-      letterhead: await defaultCompanyLetterhead(harness.as(sipho)),
-    });
+    const own = renderTimesheetPdf(await loadTimesheetDocument(harness.as(sipho), SIPHO, FROM, TO), { generatedAt: '2026-10-29T08:00:00.000Z' });
     const strip = (text: string) => text.replace(/Generated .*/u, '');
     expect(strip(pdfPageTexts(stored!.bytes)[0]!)).toBe(strip(pdfPageTexts(own.bytes)[0]!));
   });

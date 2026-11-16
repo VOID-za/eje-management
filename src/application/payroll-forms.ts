@@ -30,7 +30,6 @@ import {
 import { normalisePdfFileName, sameFileName } from '@/lib/pdf-file-name';
 import { formatDayAndDate, formatPeriod, isTimesheetDay } from '@/lib/timesheet-dates';
 import { isBlankTimesheetLine } from '@/lib/timesheet-line';
-import { defaultCompanyLetterhead } from './company-letterhead';
 import { renderAttendancePdf } from '@/services/simulated/attendance-pdf';
 import { OnePageOverflow } from '@/services/simulated/one-page-form';
 import { renderTimesheetPdf } from '@/services/simulated/timesheet-pdf';
@@ -576,10 +575,10 @@ export const submitPayrollForms = async (
     changedAfterSubmission: [],
     period: { from, to },
   });
-  // LETTERHEAD-1, -2: EJE's own paperwork, on EJE's master letterhead.
-  const letterhead = await defaultCompanyLetterhead(context);
+  // FORMS-INTERNAL-1 (the owner, 16 November 2026): attendance and timesheets are INTERNAL
+  // documents — no letterhead, the original text heading.
   // Rendered once BEFORE anything is written: a form that cannot be printed is refused, not half-submitted.
-  oneFormPage('attendance form', () => renderAttendancePdf(attendanceDocumentAt(null), { generatedAt: context.services.clock.now(), letterhead }));
+  oneFormPage('attendance form', () => renderAttendancePdf(attendanceDocumentAt(null), { generatedAt: context.services.clock.now() }));
 
   const now = context.services.clock.now();
   const submissionId = context.services.ids.next('psb');
@@ -606,9 +605,9 @@ export const submitPayrollForms = async (
     if (period !== null) {
       // This very submission's timesheet — another one may have the same dates (REPEAT-DATES-1).
       const sheet = await loadTimesheetDocument(context, person.id, from, to, 'current', period);
-      await store('timesheet', fileNames.timesheet, renderTimesheetPdf({ ...sheet, fileName: fileNames.timesheet }, { generatedAt: now, letterhead }));
+      await store('timesheet', fileNames.timesheet, renderTimesheetPdf({ ...sheet, fileName: fileNames.timesheet }, { generatedAt: now }));
     }
-    await store('attendance', fileNames.attendance, oneFormPage('attendance form', () => renderAttendancePdf(attendanceDocumentAt(now), { generatedAt: now, letterhead })));
+    await store('attendance', fileNames.attendance, oneFormPage('attendance form', () => renderAttendancePdf(attendanceDocumentAt(now), { generatedAt: now })));
 
     const saved = await context.repos.payroll.createPayrollSubmission({
       id: submissionId,

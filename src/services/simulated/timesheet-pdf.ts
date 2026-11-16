@@ -3,16 +3,7 @@ import { formatCurrency, formatDateTime } from '@/lib/format';
 import { formatDayAndDate } from '@/lib/timesheet-dates';
 import { PdfBuilder, textWidth } from '@/lib/pdf/writer';
 import { OnePageOverflow, renderOnePageForm, type FormLayout, type FormRow } from './one-page-form';
-import { BAND, BODY, CONTENT_WIDTH, GAP, INK, LETTERHEAD_TOP, MARGIN, MUTED, RIGHT, RULE, RULE_SOFT, Sheet, SIZE, TRACK_TITLE, drawLetterhead } from './pdf-sheet';
-import { isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
-
-/**
- * LETTERHEAD-2: how much taller the multi-page timesheet's header band is for the EJE master letterhead. In the
- * strip the company's name had (~38 pt) its serif lines came out ~2.9 pt; this makes the band ~66 pt and the lines
- * ~5 pt, as on the job card. The title and everything below it on the FIRST page move down by exactly this much;
- * the following pages are untouched, and any other company's timesheet is laid out exactly as before.
- */
-export const MULTI_PAGE_MASTER_EXTRA = 28;
+import { BAND, BODY, CONTENT_WIDTH, GAP, INK, MARGIN, MUTED, RIGHT, RULE, RULE_SOFT, Sheet, SIZE, TRACK_TITLE } from './pdf-sheet';
 
 /**
  * THE TIMESHEET PDF LAYOUT. PDF-01 … PDF-04 (the real-world reviewer, and the
@@ -103,8 +94,6 @@ export const timesheetRecordedOnlyNote = (doc: Pick<TimesheetDocument, 'rows' | 
 
 export interface TimesheetPdfOptions {
   readonly generatedAt: string;
-  /** LETTERHEAD-1: the default company's uploaded letterhead, prepared; absent, the text header. */
-  readonly letterhead?: DocumentLetterhead;
 }
 
 export interface RenderedTimesheet {
@@ -179,7 +168,6 @@ export const renderTimesheetPdf = (doc: TimesheetDocument, options: TimesheetPdf
     notes,
     comment: { title: 'Comments', text: doc.comment },
     footer,
-    letterhead: options.letterhead,
     });
   } catch (cause) {
     if (!(cause instanceof OnePageOverflow)) throw cause;
@@ -187,7 +175,7 @@ export const renderTimesheetPdf = (doc: TimesheetDocument, options: TimesheetPdf
   if (onePage !== null && onePage.layout.bodyPt >= READABLE_BODY_PT - 1e-9) {
     return { fileName: doc.fileName, bytes: onePage.bytes, pageCount: onePage.pageCount, layout: onePage.layout };
   }
-  const multi = renderMultiPageTimesheet(doc, fields, notes, footer, options.letterhead);
+  const multi = renderMultiPageTimesheet(doc, fields, notes, footer);
   return { fileName: doc.fileName, bytes: multi.bytes, pageCount: multi.pageCount, layout: null };
 };
 
@@ -202,24 +190,11 @@ const renderMultiPageTimesheet = (
   fields: readonly (readonly [string, string])[],
   notes: readonly string[],
   footer: string,
-  letterhead: DocumentLetterhead | undefined,
 ): { bytes: Uint8Array; pageCount: number } => {
   const sheet = new Sheet();
+  sheet.text(MARGIN, doc.companyName, { font: 'bold', size: SIZE.companyName, colour: INK });
   const title = 'TIME SHEET';
-  const titleWidth = textWidth(title, SIZE.jobNumber, 'bold', TRACK_TITLE);
-  /*
-   * LETTERHEAD-1: the default company's uploaded letterhead in place of its
-   * name, in the space left of the title and above the first field (whose
-   * 9pt capitals reach about 786). The title stays exactly where it is —
-   * except under the EJE master letterhead (LETTERHEAD-2), whose taller band
-   * moves the title and the whole first page down by MULTI_PAGE_MASTER_EXTRA.
-   */
-  if (isMasterLetterhead(letterhead)) sheet.move(MULTI_PAGE_MASTER_EXTRA);
-  const bandBottom = sheet.cursor - 12;
-  if (!drawLetterhead(sheet.pdf, letterhead, { x: MARGIN, y: bandBottom, width: CONTENT_WIDTH - titleWidth - 12, height: LETTERHEAD_TOP - bandBottom })) {
-    sheet.text(MARGIN, doc.companyName, { font: 'bold', size: SIZE.companyName, colour: INK });
-  }
-  sheet.pdf.text(RIGHT - titleWidth, sheet.cursor, title, { font: 'bold', size: SIZE.jobNumber, colour: INK, tracking: TRACK_TITLE });
+  sheet.pdf.text(RIGHT - textWidth(title, SIZE.jobNumber, 'bold', TRACK_TITLE), sheet.cursor, title, { font: 'bold', size: SIZE.jobNumber, colour: INK, tracking: TRACK_TITLE });
   sheet.move(GAP.sectionLarge);
   for (const [label, value] of fields) {
     const lines = PdfBuilder.wrap(value, CONTENT_WIDTH - 110, SIZE.body);

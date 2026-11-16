@@ -1,6 +1,4 @@
 import type { AttendanceDocument } from '@/application/attendance-document';
-import { DEFAULT_COMPANY_ID } from '@/domain';
-import { DocumentLetterhead } from '@/components/documents/EjeLetterhead';
 import { formatDateTime } from '@/lib/format';
 import { formatDayAndDate } from '@/lib/timesheet-dates';
 import { ATTENDANCE_PDF_COLUMNS, attendanceSummaryLine } from '@/services/simulated/attendance-pdf';
@@ -18,19 +16,8 @@ export const AttendanceDocumentView = ({ document }: { readonly document: Attend
     className="eje-document mx-auto max-w-[210mm] bg-white p-6 text-[12px] text-steel-900 shadow-sm"
     data-testid="attendance-document"
   >
-    <header className="flex flex-wrap items-start justify-between gap-4 sm:flex-nowrap">
-      {/*
-        LETTERHEAD-2: the default company's (EJE's) letterhead, as the PDF has it — the PDF routes draw
-        this form on `defaultCompanyLetterhead`, the EJE master letterhead — so the screen, the print and
-        the PDF carry the same header. The company's name in text stays the fallback, as before.
-      */}
-      <DocumentLetterhead
-        companyId={DEFAULT_COMPANY_ID}
-        companyName={document.companyName}
-        className="min-w-0 flex-1"
-        masterClassName="-mx-4 min-w-0 basis-[calc(100%+2rem)] sm:mx-0 sm:flex-1"
-        fallback={<p className="text-base font-bold">{document.companyName}</p>}
-      />
+    <header className="flex items-start justify-between gap-4">
+      <p className="text-base font-bold">{document.companyName}</p>
       <p className="text-xl font-bold tracking-[0.15em]">ATTENDANCE</p>
     </header>
     <dl className="mt-4 grid grid-cols-[8rem_1fr] gap-y-1">

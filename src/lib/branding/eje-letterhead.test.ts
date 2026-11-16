@@ -329,14 +329,15 @@ describe('which header a document carries', () => {
     }
   });
 
-  it('the timesheet and the attendance form on screen carry the master letterhead, as their PDFs do', () => {
+  // FORMS-INTERNAL-1 (the owner, 16 November 2026): attendance and timesheets are internal — no letterhead.
+  it('the timesheet and the attendance form on screen carry NO letterhead, as their PDFs carry none', () => {
     for (const markup of [
       renderToStaticMarkup(createElement(TimesheetDocumentView, { document: timesheet(3) })),
       renderToStaticMarkup(createElement(AttendanceDocumentView, { document: attendance() })),
     ]) {
-      expect(markup).toContain('data-letterhead="eje-master"');
+      expect(markup).not.toContain('data-letterhead');
       expect(markup).not.toContain('<img');
-      expect(markup).toContain('basis-[calc(100%+2rem)]');
+      expect(markup).not.toContain('<svg');
     }
   });
 

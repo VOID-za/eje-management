@@ -2,7 +2,6 @@ import type { AttendanceDocument } from '@/application/attendance-document';
 import { formatDateTime } from '@/lib/format';
 import { formatDayAndDate } from '@/lib/timesheet-dates';
 import { renderOnePageForm, type FormLayout } from './one-page-form';
-import type { DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 
 /**
  * THE MONTHLY ATTENDANCE PDF. PAY-01, PAY-04 (29 October 2026).
@@ -50,11 +49,7 @@ export const attendanceSummaryLine = (doc: Pick<AttendanceDocument, 'summary' | 
   return `Present ${present} · Absent ${absent}${reasons} · Only recorded days are listed; a day not recorded is left out.`;
 };
 
-export const renderAttendancePdf = (
-  doc: AttendanceDocument,
-  /** LETTERHEAD-1: `letterhead` is the default company's uploaded letterhead, prepared; absent, the text header. */
-  options: { readonly generatedAt: string; readonly letterhead?: DocumentLetterhead },
-): RenderedAttendance => {
+export const renderAttendancePdf = (doc: AttendanceDocument, options: { readonly generatedAt: string }): RenderedAttendance => {
   const rendered = renderOnePageForm({
     companyName: doc.companyName,
     title: 'ATTENDANCE',
@@ -75,7 +70,6 @@ export const renderAttendancePdf = (
       muted: !row.recorded,
     })),
     notes: [attendanceSummaryLine(doc)],
-    letterhead: options.letterhead,
     footer: `${doc.companyName} · Attendance · ${doc.technicianName} · ${doc.monthLabel} · Generated ${formatDateTime(options.generatedAt)}`,
   });
   return { fileName: doc.fileName, bytes: rendered.bytes, pageCount: rendered.pageCount, layout: rendered.layout };
