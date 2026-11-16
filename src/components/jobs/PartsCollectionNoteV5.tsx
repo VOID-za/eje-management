@@ -7,7 +7,7 @@ import { buildJobCardModel } from '@/lib/job-card/model';
 import { DEFAULT_COMPANY_ID } from '@/domain';
 import type { JobView } from '@/application/job-view';
 import { SignatureDisplay } from './SignaturePad';
-import { DocumentLetterhead } from '@/components/documents/EjeLetterhead';
+import { DocumentLetterheadV5 as DocumentLetterhead } from '@/components/documents/EjeLetterheadV5';
 import { showsMasterLetterhead } from '@/lib/branding/eje-letterhead';
 
 /**

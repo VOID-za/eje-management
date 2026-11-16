@@ -268,3 +268,34 @@ describe('JOB-CARD-2 — which layout a document is shown in', () => {
     for (const renderer of [1, 2, 3, 4, 5, null]) expect(showsCurrentJobCardLayout({ renderer })).toBe(false);
   });
 });
+
+describe('JOB-CARD-2 — the independent review', () => {
+  it('never leaves WORK CARRIED OUT alone at the foot of a page, however long the write-up', async () => {
+    const sentence = 'Measured the supply, traced the interlock chain and replaced the worn contactor on the main drive. ';
+    for (let length = 1; length <= 16; length += 1) {
+      for (const fault of ['Short fault.', `${sentence.repeat(6)}`]) {
+        const job = breakdown.job;
+        const source = {
+          ...breakdown,
+          job: {
+            ...job,
+            faultDescription: fault,
+            completionReport: { ...job.completionReport, faultFindings: sentence.repeat(length), workPerformed: sentence.repeat(length + 2) },
+          },
+        };
+        const runs = textRuns(await render(source));
+        const heading = runs.find((run) => run.value === 'WORK CARRIED OUT')!;
+        const first = runs.find((run) => run.value === 'FAULT FINDINGS')!;
+        expect(first.page, `${length} sentences`).toBe(heading.page);
+        expect(heading.y - first.y, `${length} sentences`).toBeLessThan(30);
+      }
+    }
+  });
+
+  it('prints a long discount reason in full, inside the page', async () => {
+    const reason = 'Agreed with the customer because the second visit was needed only to fetch a part we had not brought on the first visit, so the travel and the call-out of that visit are not charged';
+    const bytes = await render(withWork(breakdown, { labour: [L('2026-11-14', 'normal', 5, 'Fault finding')], discount: { amountCents: 50000, reason } }));
+    expect(pdfPlainText(bytes).replace(/\s+/gu, ' ')).toContain(reason.split(' ').slice(-6).join(' '));
+    expect(inspectPdf(bytes, { margin: MARGIN, edge: 14 }).problems).toEqual([]);
+  });
+});

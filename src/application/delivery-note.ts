@@ -18,14 +18,17 @@ import { audit } from './audit';
 import { WorkflowError } from './errors';
 import { loadJobView } from './job-view';
 import { loadCompanyLetterhead } from './company-letterhead';
-import { MASTER_LETTERHEAD_RENDERER, isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+import { isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+import { JOB_CARD_LAYOUT_RENDERER } from '@/lib/job-card/layout-version';
 
 /**
  * LETTERHEAD-2: the renderer number a Delivery Note's stored file records — 1 as always, or
  * MASTER_LETTERHEAD_RENDERER when it was drawn with the EJE master letterhead, so the screen shows
  * the header the issued file has. Nothing is ever re-rendered by it.
  */
-const rendererFor = (letterhead: DocumentLetterhead | undefined): number => (isMasterLetterhead(letterhead) ? MASTER_LETTERHEAD_RENDERER : 1);
+// LETTERHEAD-4: drawn now with the master letterhead in the paper's own typefaces — 6, like the job
+// card issued with it; 5 marks the v1.13.0 artwork, which nothing draws any more.
+const rendererFor = (letterhead: DocumentLetterhead | undefined): number => (isMasterLetterhead(letterhead) ? JOB_CARD_LAYOUT_RENDERER : 1);
 
 /**
  * THE COURIER'S DELIVERY NOTE. PARTS-03, PARTS-04, PARTS-05, and the owner's

@@ -12,7 +12,7 @@ import {
 } from "@/lib/job-card/model";
 import { SignatureDisplay } from "./SignaturePad";
 import { DocumentPhoto } from "./DocumentPhoto";
-import { DocumentLetterhead } from "@/components/documents/EjeLetterhead";
+import { DocumentLetterheadV5 as DocumentLetterhead } from "@/components/documents/EjeLetterheadV5";
 import { showsMasterLetterhead } from "@/lib/branding/eje-letterhead";
 
 /**

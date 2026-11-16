@@ -292,8 +292,11 @@ const LEFT_WRITE_UP = new Set(['Fault findings', 'Diagnosis']);
 
 type WorkBlock = JobCardModel['workBlocks'][number];
 
-const mainHeading = (sheet: Sheet, label: string): void => {
-  sheet.need(GAP.line * 3);
+const MAIN_HEADING_HEIGHT = GAP.line + 4;
+
+/** The main heading, on the same page as the `keepWith` points of content that follow it. */
+const mainHeading = (sheet: Sheet, label: string, keepWith: number): void => {
+  sheet.need(MAIN_HEADING_HEIGHT + keepWith);
   sheet.pdf.text(MARGIN, sheet.cursor, label.toUpperCase(), {
     font: 'bold',
     size: MAIN_HEADING,
@@ -328,20 +331,29 @@ const drawBlocks = (sheet: Sheet, blocks: readonly WorkBlock[], x: number, width
 
 const work = (sheet: Sheet, model: JobCardModel): void => {
   if (model.workBlocks.length === 0) return;
-  mainHeading(sheet, 'Work carried out');
   // As in `JobCardDocument`: an unwritten field is not a block at all (DOC-1).
   const left = model.workBlocks.filter((block) => LEFT_WRITE_UP.has(block.label));
   const right = model.workBlocks.filter((block) => !LEFT_WRITE_UP.has(block.label));
   const columnWidth = (CONTENT_WIDTH - 24) / 2;
   const tallest = Math.max(blocksHeight(left, columnWidth), blocksHeight(right, columnWidth));
-  const pageRoom = A4_HEIGHT - MARGIN * 2 - FOOTER_SPACE - GAP.line * 4;
-  if (left.length > 0 && right.length > 0 && tallest <= pageRoom) {
-    sheet.need(tallest);
+  const pageRoom = A4_HEIGHT - MARGIN * 2 - FOOTER_SPACE - MAIN_HEADING_HEIGHT;
+  const remaining = sheet.cursor - (MARGIN + FOOTER_SPACE) - MAIN_HEADING_HEIGHT;
+  /*
+   * The heading is never left on its own (the independent review): it is kept with what follows it.
+   * The two columns are drawn where they fit; when they do not, they go to the next page WITH the
+   * heading — but only if little of this page would be lost. Otherwise the write-up runs down the page
+   * in one column, so a long write-up leaves neither a lone heading nor half a page blank.
+   */
+  const twoColumns = left.length > 0 && right.length > 0 && tallest <= pageRoom && (tallest <= remaining || remaining < pageRoom * 0.4);
+  if (twoColumns) {
+    mainHeading(sheet, 'Work carried out', tallest);
     const top = sheet.cursor;
     const leftEnd = drawBlocks(sheet, left, MARGIN, columnWidth, top);
     const rightEnd = drawBlocks(sheet, right, MARGIN + columnWidth + 24, columnWidth, top);
     sheet.setCursor(Math.min(leftEnd, rightEnd));
   } else {
+    // The heading with the first block's subheading and its first two lines.
+    mainHeading(sheet, 'Work carried out', GAP.line + WRITE_UP_LEADING * 2);
     for (const block of model.workBlocks) {
       sheet.need(GAP.line * 2 + WRITE_UP_LEADING);
       subheading(sheet, MARGIN, sheet.cursor, block.label);
@@ -462,8 +474,13 @@ const totalsLines = (charges: Charges): readonly (readonly [label: string, value
   [charges.vatLabel, charges.vat, ''],
 ];
 
+/** A discount's reason, wrapped in full beside its row (never cut: the screen shows all of it too). */
+const noteLines = (note: string): readonly string[] =>
+  note.length === 0 ? [] : PdfBuilder.wrap(note, TABLE_QTY - DESCRIPTION_X, SIZE.body, 'italic');
+
 /** The height of the totals, as `charges` draws them. */
-const totalsHeight = (charges: Charges): number => 4 + totalsLines(charges).length * (GAP.line + 2) + GAP.line + 2 + SIZE.total;
+const totalsHeight = (charges: Charges): number =>
+  4 + totalsLines(charges).reduce((sum, [, , note]) => sum + GAP.line + 2 + Math.max(0, noteLines(note).length - 1) * GAP.line, 0) + GAP.line + 2 + SIZE.total;
 
 const charges = (sheet: Sheet, model: JobCardModel): void => {
   if (model.charges === null && model.received === null) return;
@@ -494,12 +511,12 @@ const charges = (sheet: Sheet, model: JobCardModel): void => {
   sheet.need(totalsHeight(model.charges) + 8 + acceptanceHeight(model));
   sheet.move(4);
   for (const [label, value, note] of totalsLines(model.charges)) {
-    if (note.length > 0) {
-      const [first] = PdfBuilder.wrap(note, TABLE_QTY - DESCRIPTION_X, SIZE.body, 'italic');
-      sheet.pdf.text(DESCRIPTION_X, sheet.cursor, first ?? '', { size: SIZE.body, font: 'italic', colour: MUTED });
-    }
     rightAligned(sheet, TABLE_RATE, sheet.cursor, label, SIZE.body, 'regular', MUTED);
     rightAligned(sheet, TABLE_AMOUNT, sheet.cursor, value, SIZE.body, 'regular', BODY);
+    noteLines(note).forEach((line, index) => {
+      if (index > 0) sheet.move(GAP.line);
+      sheet.pdf.text(DESCRIPTION_X, sheet.cursor, line, { size: SIZE.body, font: 'italic', colour: MUTED });
+    });
     sheet.move(GAP.line + 2);
   }
 

@@ -376,12 +376,12 @@ const CurrentJobCard = ({ view }: { readonly view: JobView }) => {
                   {model.charges.vat}
                 </td>
               </tr>
-              <tr className="border-t-2 border-steel-900">
+              <tr>
                 <td colSpan={3} />
-                <td className="py-2 text-right font-bold text-steel-900">
+                <td className="border-t-2 border-steel-900 py-2 text-right font-bold text-steel-900">
                   Total
                 </td>
-                <td className="tabular py-2 text-right text-base font-bold text-steel-900">
+                <td className="tabular border-t-2 border-steel-900 py-2 text-right text-base font-bold text-steel-900">
                   {model.charges.total}
                 </td>
               </tr>

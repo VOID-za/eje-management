@@ -250,7 +250,9 @@ export const MASTER_LETTERHEAD_RENDERER = 5;
 
 /**
  * Whether a job's document on screen shows the master header: while nothing is issued (it is a
- * preview of what will be), or when what was issued was drawn with it.
+ * preview of what will be), or when what was issued was drawn with it: renderer 5, or any later one —
+ * JOB-CARD-2 records 6 on every job card issued since, all of them on the master letterhead (the
+ * independent review: a Delivery Note beside a renderer-6 job card showed the text header).
  */
 export const showsMasterLetterhead = (finalDocument: { readonly renderer: number | null } | null): boolean =>
-  finalDocument === null || finalDocument.renderer === MASTER_LETTERHEAD_RENDERER;
+  finalDocument === null || (finalDocument.renderer !== null && finalDocument.renderer >= MASTER_LETTERHEAD_RENDERER);

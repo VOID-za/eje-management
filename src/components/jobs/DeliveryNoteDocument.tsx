@@ -1,7 +1,9 @@
 import type { DeliveryNoteModel } from '@/lib/job-card/delivery-note';
 import type { LetterheadReference } from '@/domain';
+import type { ComponentProps } from 'react';
 import { DocumentLetterhead } from '@/components/documents/EjeLetterhead';
-import { showsMasterLetterhead } from '@/lib/branding/eje-letterhead';
+import { DocumentLetterheadV5 } from '@/components/documents/EjeLetterheadV5';
+import { MASTER_LETTERHEAD_RENDERER, showsMasterLetterhead } from '@/lib/branding/eje-letterhead';
 import { SignatureDisplay } from './SignaturePad';
 
 /**
@@ -34,7 +36,8 @@ export const DeliveryNoteDocument = ({
 }) => (
   <article className="eje-document mx-auto max-w-[210mm] bg-white p-6 text-[12px] text-steel-900 shadow-sm" data-testid="delivery-note-document">
     <header className="flex flex-wrap items-start justify-between gap-4 sm:flex-nowrap">
-      <DocumentLetterhead
+      <IssuedLetterhead
+        renderer={finalDocument?.renderer ?? null}
         companyId={companyId}
         companyName={model.company.name}
         letterhead={letterhead}
@@ -122,3 +125,11 @@ export const DeliveryNoteDocument = ({
     )}
   </article>
 );
+
+/**
+ * LETTERHEAD-4: a note issued with the v1.13.0 letterhead artwork (renderer 5) is shown with that
+ * artwork; one issued since (renderer 6) or not yet issued, with the letterhead in the paper's own
+ * typefaces — the header its stored PDF has, either way.
+ */
+const IssuedLetterhead = ({ renderer, ...props }: { readonly renderer: number | null } & ComponentProps<typeof DocumentLetterhead>) =>
+  renderer === MASTER_LETTERHEAD_RENDERER ? <DocumentLetterheadV5 {...props} /> : <DocumentLetterhead {...props} />;

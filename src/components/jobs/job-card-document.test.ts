@@ -90,3 +90,24 @@ describe('JOB-CARD-2 — the on-screen job card', () => {
     expect(markup).toMatch(/class="[^"]*sm:ml-auto[^"]*" data-testid="parts-note-acceptance"/u);
   });
 });
+
+describe('the Delivery Note on screen, by when it was issued (the independent review)', () => {
+  it('renderer 6 or not yet issued: the master letterhead in the paper’s typefaces; renderer 5: the v1.13.0 artwork', async () => {
+    const { DeliveryNoteDocument } = await import('./DeliveryNoteDocument');
+    const { buildDeliveryNoteModel } = await import('@/lib/job-card/delivery-note');
+    const view = breakdown;
+    const model = buildDeliveryNoteModel(view, '2026-11-15T08:00:00.000Z');
+    const draw = (renderer: number | null) =>
+      renderToStaticMarkup(createElement(DeliveryNoteDocument, { model, companyId: view.job.companyId, letterhead: null, finalDocument: renderer === null ? null : { renderer } }));
+    for (const markup of [draw(null), draw(JOB_CARD_LAYOUT_RENDERER)]) {
+      expect(markup).toContain('data-letterhead="eje-master"');
+      expect(markup).toContain('<use');
+      expect(markup).not.toContain('<text');
+    }
+    const historic = draw(5);
+    expect(historic).toContain('data-letterhead="eje-master"');
+    expect(historic).toContain('<text');
+    // Issued before the master letterhead (renderer 4): the text header, as its file has.
+    expect(draw(4)).not.toContain('data-letterhead="eje-master"');
+  });
+});

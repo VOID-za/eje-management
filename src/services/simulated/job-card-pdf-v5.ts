@@ -43,8 +43,19 @@ import {
   SIZE,
   TRACK_HEADING,
   TRACK_TITLE,
-  drawLetterheadOverTitle,
+  LETTERHEAD_TOP,
+  fitLetterhead,
+  type LetterheadBox,
 } from './pdf-sheet';
+import { A4_HEIGHT } from '@/lib/pdf/writer';
+import { isMasterLetterhead } from '@/lib/branding/eje-letterhead';
+import {
+  LETTERHEAD_INK_V5,
+  LETTERHEAD_PDF_FONT_V5,
+  layoutLetterheadV5,
+  letterheadLineWidthV5,
+  type LetterheadAreaV5,
+} from '@/lib/branding/eje-letterhead-v5';
 import type { DocumentLetterhead } from '@/lib/branding/eje-letterhead';
 
 
@@ -1099,4 +1110,98 @@ export const renderJobCardPdfV5 = (
   footers(sheet, model, fileName, source.job.finalDocument?.provenance === 'simulated');
 
   return { bytes: sheet.pdf.toBytes(), pageCount: sheet.pdf.pageCount };
+};
+
+/*
+ * The letterhead drawing EXACTLY as v1.13.0 and v1.14.0 had it (LETTERHEAD-4 froze it here): the master
+ * letterhead in base-14 type from eje-letterhead-v5.ts, or a company's uploaded image as before.
+ */
+const areaOfV5 = (box: LetterheadBox): LetterheadAreaV5 => ({
+  left: box.x,
+  top: A4_HEIGHT - (box.y + box.height),
+  width: box.width,
+  height: box.height,
+});
+
+/**
+ * THE EJE MASTER LETTERHEAD, DRAWN INTO A BOX. LETTERHEAD-2 (15 November 2026).
+ *
+ * The owner: the official letterhead recreated as a header — crisp vector text and a clean
+ * logo, not a pasted image — the same on every EJE document and on the screen. So this draws
+ * `layoutLetterhead` (lib/branding/eje-letterhead.ts), the one description both renderers
+ * use: every line as real, searchable text in the paper's faces (Helvetica-BoldOblique,
+ * Times-Bold, Times-BoldItalic), centred on its own x by its metric width, and the EJE mark
+ * as its traced outline, filled even-odd. Fitted exactly as an uploaded image is: uniformly,
+ * against the box's left edge, centred top to bottom. Nothing outside the box moves.
+ */
+const drawEjeLetterheadV5 = (pdf: PdfBuilder, box: LetterheadBox): void => {
+  const placed = layoutLetterheadV5(areaOfV5(box));
+  const mark = placed.mark;
+  pdf.fillPolygons(
+    placed.markPolygons,
+    { x: mark.left, y: A4_HEIGHT - (mark.top + mark.height), width: mark.width, height: mark.height },
+    LETTERHEAD_INK_V5,
+  );
+  for (const line of placed.lines) {
+    const font = LETTERHEAD_PDF_FONT_V5[line.role];
+    // Centred by its metric width — the same width the screen sets the line to (`letterheadLineWidth`).
+    const x = line.x - letterheadLineWidthV5(line) / 2;
+    const y = A4_HEIGHT - line.baseline;
+    const [only] = line.runs;
+    if (line.runs.length === 1 && only !== undefined) {
+      pdf.text(x, y, only.text, { font, size: only.size, colour: line.ink });
+    } else {
+      pdf.textLine(x, y, line.runs.map((part) => ({ value: part.text, size: part.size })), { font, colour: line.ink });
+    }
+  }
+};
+
+/**
+ * Draws the document's letterhead into its header box — the EJE master header
+ * (LETTERHEAD-2), or a company's uploaded image (LETTERHEAD-1) — and says whether
+ * it drew one.
+ */
+const drawLetterheadV5 = (
+  pdf: PdfBuilder,
+  letterhead: DocumentLetterhead | undefined,
+  box: LetterheadBox,
+): boolean => {
+  if (letterhead === undefined || box.width <= 0 || box.height <= 0) return false;
+  if (isMasterLetterhead(letterhead)) {
+    drawEjeLetterheadV5(pdf, box);
+    return true;
+  }
+  const fitted = fitLetterhead(letterhead, box);
+  pdf.image(letterhead, fitted.x, fitted.y, fitted.width, fitted.height);
+  return true;
+};
+
+/**
+ * THE JOB CARD'S AND THE ADDENDUM'S HEADER WITH A LETTERHEAD: the image above,
+ * and the document's name and number on ONE line, right-aligned, just above the
+ * rule that closes the header — so somebody filing paper still reads "JOB CARD
+ * EJE-1044" in the corner, and the letterhead has the band to itself.
+ *
+ * `ruleY` is where that rule is drawn today; the caller still draws it, and
+ * moves its cursor exactly as before.
+ */
+const drawLetterheadOverTitle = (
+  pdf: PdfBuilder,
+  letterhead: DocumentLetterhead,
+  ruleY: number,
+  title: string,
+  number: string,
+): void => {
+  const baseline = ruleY + 6;
+  const numberWidth = textWidth(number, SIZE.jobNumber, 'bold');
+  pdf.text(RIGHT - numberWidth, baseline, number, { font: 'bold', size: SIZE.jobNumber, colour: INK });
+  pdf.text(
+    RIGHT - numberWidth - 8 - textWidth(title, SIZE.small, 'bold', TRACK_TITLE),
+    baseline,
+    title,
+    { font: 'bold', size: SIZE.small, colour: MUTED, tracking: TRACK_TITLE },
+  );
+  // Clear of the number's capitals (about 0.72 of its size) by a few points.
+  const bottom = baseline + SIZE.jobNumber * 0.72 + 4;
+  drawLetterheadV5(pdf, letterhead, { x: MARGIN, y: bottom, width: CONTENT_WIDTH, height: LETTERHEAD_TOP - bottom });
 };

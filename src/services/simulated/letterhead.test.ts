@@ -513,3 +513,22 @@ describe('WD Hearn JHB, with and without its uploaded letterhead', () => {
     }
   });
 });
+
+/**
+ * JOB-CARD-2 / LETTERHEAD-4: a job card, Parts Collection Note or Installation Delivery Note ISSUED in
+ * v1.13.0 or v1.14.0 (renderer 5) is previewed by the frozen renderer, which draws it — letterhead
+ * artwork included — to exactly the bytes a7e2a31 drew (hashes taken from a7e2a31 on these inputs).
+ */
+describe('history issued with the v1.13.0 master letterhead', () => {
+  it('is drawn by the frozen renderer to the very bytes v1.13.0 and v1.14.0 drew', async () => {
+    const now: Record<string, string> = {};
+    for (const [name, number] of Object.entries(JOB_DOCUMENTS)) {
+      now[name] = sha256(renderJobCardPdfV5({ ...sources.get(number)!, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes);
+    }
+    expect(now).toEqual({
+      jobCard: 'd0156a7bb91418d9cd19267ac06e74e49630062f935e545562434819e5879c15',
+      partsCollectionNote: 'efb1fa327dbad3c03aac6eff34b6d88db4ebe5f09a682add6a11882a20cb4ef9',
+      installationDeliveryNote: 'a616c02a2a9f16a6037bd9ae3ca874932ab5515e40859ac8b041da4c8889d8b1',
+    });
+  });
+});
