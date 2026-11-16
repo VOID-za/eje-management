@@ -53,7 +53,7 @@ export const EjeLetterhead = ({ className, fit = 'sheet' }: { readonly className
       role="img"
       aria-label={placed.lines.map(letterheadLineText).join(', ')}
       data-letterhead="eje-master"
-      data-letterhead-fit={fit}
+      data-letterhead-fit={fit === 'ink' ? 'ink' : undefined}
       overflow={fit === 'ink' ? 'visible' : undefined}
       className={className ?? 'block h-auto w-full'}
     >

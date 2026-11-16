@@ -582,3 +582,9 @@ describe('LETTERHEAD-3 leaves every approved master header as v1.13.0 drew it', 
     expect(now).toEqual(APPROVED_MASTER_DOCUMENTS);
   });
 });
+
+describe('the clock frozen before the imports', () => {
+  it('is the same instant as FROZEN_AT, so the two cannot drift apart', () => {
+    expect(FROZEN_AT.toISOString()).toBe('2026-11-15T08:00:00.000Z');
+  });
+});

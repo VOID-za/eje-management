@@ -172,6 +172,7 @@ export const renderTimesheetPdf = (doc: TimesheetDocument, options: TimesheetPdf
     comment: { title: 'Comments', text: doc.comment },
     footer,
     letterhead: options.letterhead,
+    readableBodyPt: READABLE_BODY_PT,
     });
   } catch (cause) {
     if (!(cause instanceof OnePageOverflow)) throw cause;

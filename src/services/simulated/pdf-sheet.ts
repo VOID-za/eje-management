@@ -311,17 +311,36 @@ export const drawLetterheadOverTitle = (
  * The title's room is ATTENDANCE's, whichever form it is, so the timesheet and the attendance
  * form carry the letterhead at the same size. The screen (`FORM_LETTERHEAD_SHARE`) gives the
  * letterhead the same share of the width, so the preview, the PDF and the print match.
+ *
+ * ONE PAGE STAYS ONE PAGE: a one-page form whose month is tight may be given a COMPACT header
+ * (`compactFormHeader`) — the letterhead a little smaller, the gaps tighter — never smaller than
+ * the letterhead v1.13.0 printed. See `one-page-form.ts`.
  */
 export const FORM_TITLE_SIZE = 13;
 const FORM_TITLE_GAP = 16;
-/** The rule under the header: this far below the letterhead's ink. */
-const FORM_RULE_GAP = 8;
-/** How far below the rule the first field's baseline is (its capitals ~6pt tall: an ~11pt gap). */
-export const FORM_FIELDS_GAP = 17;
-/** The letterhead may start this far above the form's top margin (still 20pt clear of the paper's edge). */
-export const FORM_LETTERHEAD_RISE = 8;
 
-/** The width the master letterhead takes in a form header `contentWidth` wide. */
+/** A form header's geometry, in points. `height` is how far below the form's top margin the first field's baseline is. */
+export interface FormHeaderLayout {
+  /** The letterhead's ink height (its width follows, at the ink's proportions). */
+  readonly inkHeight: number;
+  /** How far above the top margin the letterhead starts. */
+  readonly rise: number;
+  /** The rule: this far below the letterhead's ink. */
+  readonly ruleGap: number;
+  /** The first field's baseline: this far below the rule. */
+  readonly fieldsGap: number;
+  readonly height: number;
+}
+
+const formHeaderLayout = (inkHeight: number, rise: number, ruleGap: number, fieldsGap: number): FormHeaderLayout => ({
+  inkHeight,
+  rise,
+  ruleGap,
+  fieldsGap,
+  height: inkHeight - rise + ruleGap + fieldsGap,
+});
+
+/** The width the master letterhead may take in a form header `contentWidth` wide. */
 export const formLetterheadWidth = (contentWidth: number): number =>
   contentWidth - textWidth('ATTENDANCE', FORM_TITLE_SIZE, 'bold', TRACK_TITLE) - FORM_TITLE_GAP;
 
@@ -329,26 +348,50 @@ export const formLetterheadWidth = (contentWidth: number): number =>
 export const FORM_LETTERHEAD_SHARE = formLetterheadWidth(A4_WIDTH - 56) / (A4_WIDTH - 56);
 
 /**
- * How far below `top` (the form's top margin) the first field's baseline is: the header's
- * whole height. The letterhead rises FORM_LETTERHEAD_RISE above `top`.
+ * The full header: the letterhead as wide as the title leaves room for, starting 8pt above the top
+ * margin (still 20pt clear of the paper's edge on a one-page form), the rule 8pt below its ink and
+ * the first field 17pt below the rule (its ~6pt capitals ~11pt clear).
  */
-export const formHeaderHeight = (contentWidth: number): number =>
-  formLetterheadWidth(contentWidth) / LETTERHEAD_INK_ASPECT - FORM_LETTERHEAD_RISE + FORM_RULE_GAP + FORM_FIELDS_GAP;
+export const fullFormHeader = (contentWidth: number): FormHeaderLayout =>
+  formHeaderLayout(formLetterheadWidth(contentWidth) / LETTERHEAD_INK_ASPECT, 8, 8, 17);
 
 /**
- * Draws the header: the letterhead from `top + FORM_LETTERHEAD_RISE` down, the title on the
- * right, the rule. Returns the first field's baseline (`top - formHeaderHeight`).
+ * A compact header `height` tall, for a tight one-page month: the letterhead reaching up to
+ * LETTERHEAD_TOP (14pt below the paper's edge — the one-page form's margin is 28), the rule 3pt
+ * below it and the first field 10pt below the rule; the letterhead takes the rest, up to the full
+ * header's. At the height the v1.13.0 heading reserved it is at least the size v1.13.0 printed.
  */
-export const drawFormHeader = (pdf: PdfBuilder, left: number, top: number, contentWidth: number, title: string): number => {
-  const width = formLetterheadWidth(contentWidth);
-  const height = width / LETTERHEAD_INK_ASPECT;
-  const inkTop = top + FORM_LETTERHEAD_RISE;
+export const compactFormHeader = (contentWidth: number, height: number): FormHeaderLayout => {
+  const rise = 14;
+  const ruleGap = 3;
+  const fieldsGap = 10;
+  return formHeaderLayout(Math.min(fullFormHeader(contentWidth).inkHeight, height + rise - ruleGap - fieldsGap), rise, ruleGap, fieldsGap);
+};
+
+/** How far below `top` (the form's top margin) the full header puts the first field's baseline. */
+export const formHeaderHeight = (contentWidth: number): number => fullFormHeader(contentWidth).height;
+
+/**
+ * Draws the header: the letterhead from `top + rise` down, the title on the right, centred on the
+ * letterhead's height, and the rule. Returns the first field's baseline (`top - layout.height`).
+ */
+export const drawFormHeader = (
+  pdf: PdfBuilder,
+  left: number,
+  top: number,
+  contentWidth: number,
+  title: string,
+  layout: FormHeaderLayout = fullFormHeader(contentWidth),
+): number => {
+  const height = layout.inkHeight;
+  const width = height * LETTERHEAD_INK_ASPECT;
+  const inkTop = top + layout.rise;
   drawEjeLetterhead(pdf, { x: left, y: inkTop - height, width, height }, 'ink');
   const titleWidth = textWidth(title, FORM_TITLE_SIZE, 'bold', TRACK_TITLE);
   // Centred on the letterhead's height: the capitals (~0.72 of the size) straddle its middle.
   const baseline = inkTop - height / 2 - FORM_TITLE_SIZE * 0.36;
   pdf.text(left + contentWidth - titleWidth, baseline, title, { font: 'bold', size: FORM_TITLE_SIZE, colour: INK, tracking: TRACK_TITLE });
-  const rule = inkTop - height - FORM_RULE_GAP;
+  const rule = inkTop - height - layout.ruleGap;
   pdf.line(left, rule, left + contentWidth, rule, 0.8, RULE);
-  return rule - FORM_FIELDS_GAP;
+  return rule - layout.fieldsGap;
 };
