@@ -191,6 +191,12 @@ await check('checklist answers tapped in quick succession are all saved, one at 
   return `${sent} requests for 10 taps, never more than ${most} at once`;
 });
 
+await check('a failed item is named as needing a note at once, while its answer is still being saved', async () => {
+  await press(page.getByRole('button', { name: 'Fail', exact: true }).nth(12));
+  await page.getByText('needs a note explaining what was found', { exact: false }).first().waitFor({ timeout: 3000 });
+  await page.locator('[data-testid="checklist-save-state"][data-state="saved"]').first().waitFor({ timeout: 30000 });
+});
+
 await check('an answer the server refuses is set aside with its reason; the answers after it are still saved', async () => {
   let refusedOnce = false;
   await page.route('**/answer_checklist', async (route) => {

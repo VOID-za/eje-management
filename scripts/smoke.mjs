@@ -1298,7 +1298,9 @@ await step('job card preview renders real data', async () => {
   // for reading rather than for reviewing (CR-07).
   await page.getByRole('heading', { name: 'Job card', exact: true }).waitFor({ timeout: 8000 });
   await page.getByText('ABC Engineering (Pty) Ltd').first().waitFor({ timeout: 8000 });
-  await page.getByText('LW-V40-70214').first().waitFor({ timeout: 8000 });
+  // JOB-CARD-3: a job card issued now names its machine by name and number (the serial stays on the record).
+  await page.getByText('Leadwell V-40').first().waitFor({ timeout: 8000 });
+  await page.getByText('Machine number').first().waitFor({ timeout: 8000 });
   await page.getByText('Replaced the seized spindle drive cooling fan', { exact: false })
     .first().waitFor({ timeout: 8000 });
   await page.screenshot({ path: `${shots}/04-jobcard.png`, fullPage: false });

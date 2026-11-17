@@ -119,11 +119,10 @@ describeDb('checklist answers saved together, on PostgreSQL', () => {
       ITEMS.map((itemId) => tech.post<JobBody>(`/api/jobs/${jobId}/answer_checklist`, { itemId, choice: 'pass' })),
     );
     expect(responses.map((response) => response.status)).toEqual(ITEMS.map(() => 200));
-    const answers = await db.select().from(schema.checklistAnswers);
-    expect(answers.filter((answer) => ITEMS.includes(answer.questionId))).toHaveLength(ITEMS.length);
-    const job = (await tech.get<JobBody>(`/api/jobs/${jobId}`)).data as unknown as { view: { job: JobBody } };
-    const stored = job.view.job.checklist!.responses;
-    for (const itemId of ITEMS) expect(stored.find((response) => response.itemId === itemId)?.choice).toBe('pass');
+    // Each answer stored exactly once, and each one Pass.
+    const answers = (await db.select().from(schema.checklistAnswers)).filter((answer) => ITEMS.includes(answer.questionId));
+    expect(answers).toHaveLength(ITEMS.length);
+    for (const itemId of ITEMS) expect(answers.find((answer) => answer.questionId === itemId)?.choice).toBe('pass');
   });
 
   it('one item changed twice in a row keeps the second answer', async () => {

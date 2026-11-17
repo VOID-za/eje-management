@@ -290,7 +290,6 @@ const ChecklistForm = ({
     return map;
   }, [job.checklist]);
 
-  const progress = evaluateChecklist(template, job.checklist);
   const started = job.checklist !== null;
   const completed = job.checklist?.completedAt !== null && job.checklist !== null;
 
@@ -384,6 +383,25 @@ const ChecklistForm = ({
     const local = unsaved.get(itemId);
     return local === undefined ? stored : withAnswer(itemId, stored, local);
   };
+
+  /*
+   * Progress and what is outstanding are counted from what the screen SHOWS — the stored answers with
+   * this screen's saved and queued answers over them — so the row and the list above it never disagree
+   * while an answer is on its way. Completing the checklist still waits for the queue (below), and the
+   * server checks it against what it holds.
+   */
+  const shownChecklist =
+    job.checklist === null
+      ? null
+      : {
+          ...job.checklist,
+          responses: [
+            ...new Set([...job.checklist.responses.map((response) => response.itemId), ...returned.keys(), ...unsaved.keys()]),
+          ]
+            .map((itemId) => shownResponse(itemId))
+            .filter((response): response is ChecklistResponse => response !== undefined),
+        };
+  const progress = evaluateChecklist(template, shownChecklist);
 
   /*
    * ANSWERING WITH NO SIGNAL. OFF-CHK-1.
