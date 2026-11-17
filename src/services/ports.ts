@@ -283,9 +283,10 @@ export interface FinalDocumentSource {
   /**
    * JOB-CARD-2: 'v5' draws the job card in the layout it had up to v1.14.0 — for the backfill of
    * history and for previewing a job ISSUED in that layout, so neither shows a document that differs
-   * from the one that was issued. Absent: the current layout.
+   * from the one that was issued. JOB-CARD-3: 6 draws the JOB-CARD-2 edition exactly as issued with
+   * renderer 6 (v1.15.0), for previewing a job issued in it. Absent: the current layout (7).
    */
-  readonly layout?: 'v5';
+  readonly layout?: 'v5' | 6;
   /**
    * LETTERHEAD-1: the job company's uploaded letterhead, prepared, printed
    * across the top of the document in place of the text header. Absent — no

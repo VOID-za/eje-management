@@ -1403,6 +1403,8 @@ await step('STEP 3 — Collection is where the courier question is asked, and on
   });
   await page.getByRole('button', { name: /Customer collection/ }).waitFor({ timeout: 8000 });
   await page.getByRole('button', { name: /Courier collection/ }).waitFor({ timeout: 8000 });
+  // JOB-CARD-3: who is releasing the parts, chosen here.
+  await page.getByLabel('Parts released by').selectOption({ index: 1 });
 });
 
 await step('STEP 4 — the collector signs, on a collection declaration', async () => {

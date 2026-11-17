@@ -37,9 +37,11 @@ import {
   SIZE,
   TRACK_HEADING,
   TRACK_TITLE,
+  drawFullWidthLetterhead,
   drawLetterheadOverTitle,
 } from './pdf-sheet';
-import type { DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+import { isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
+import { JOB_CARD_2_RENDERER, JOB_CARD_LAYOUT_RENDERER, type JobCardEdition } from '@/lib/job-card/layout-version';
 
 
 const labelValueRows = (
@@ -80,8 +82,26 @@ const labelValueRows = (
   }
 };
 
-const header = (sheet: Sheet, model: JobCardModel, letterhead: DocumentLetterhead | undefined): void => {
+const header = (
+  sheet: Sheet,
+  model: JobCardModel,
+  letterhead: DocumentLetterhead | undefined,
+  edition: JobCardEdition,
+): void => {
   const top = sheet.cursor;
+
+  /*
+   * JOB-CARD-3: the EJE letterhead across the page's full width, the document's name and number in its
+   * top-right corner (`drawFullWidthLetterhead`). The page below starts under its rule. An uploaded
+   * letterhead (another company's) and the text header are unchanged.
+   */
+  if (edition === JOB_CARD_LAYOUT_RENDERER && letterhead !== undefined && isMasterLetterhead(letterhead)) {
+    const ruleY = drawFullWidthLetterhead(sheet.pdf, model.documentTitle.toUpperCase(), model.jobNumber);
+    sheet.move(top - ruleY);
+    sheet.rule(INK, 1.4);
+    sheet.move(GAP.section);
+    return;
+  }
 
   /*
    * LETTERHEAD-1: the company's uploaded letterhead in place of the text
@@ -212,13 +232,16 @@ const parties = (sheet: Sheet, model: JobCardModel): void => {
       tracking: TRACK_HEADING,
     });
     sheet.move(GAP.line);
-    sheet.paragraph(model.machine.title, {
-      font: 'bold',
-      colour: INK,
-      width: columnWidth,
-      x: rightX,
-      leading: GAP.line,
-    });
+    // JOB-CARD-3: the machine's name is a labelled row of its own; the bold title line is not drawn.
+    if (model.machine.title.length > 0) {
+      sheet.paragraph(model.machine.title, {
+        font: 'bold',
+        colour: INK,
+        width: columnWidth,
+        x: rightX,
+        leading: GAP.line,
+      });
+    }
     labelValueRows(sheet, model.machine.rows, rightX, columnWidth);
     sheet.move(6);
   }
@@ -1173,7 +1196,9 @@ export const renderJobCardPdf = (
   fileName: string,
   generatedAt: string,
 ): RenderedPdf => {
-  const model = buildJobCardModel({ ...source, generatedAt });
+  // JOB-CARD-3: edition 6 redraws a job card issued in v1.15.0 exactly as it was; anything else is 7.
+  const edition: JobCardEdition = source.layout === JOB_CARD_2_RENDERER ? JOB_CARD_2_RENDERER : JOB_CARD_LAYOUT_RENDERER;
+  const model = buildJobCardModel({ ...source, generatedAt, edition });
   const sheet = new Sheet();
 
   if (model.installation !== undefined) {
@@ -1184,7 +1209,7 @@ export const renderJobCardPdf = (
      * was installed, the work, the labour, the checklist, the photographs,
      * the sign-off — and with no charges block, because the model has none.
      */
-    header(sheet, model, source.letterhead);
+    header(sheet, model, source.letterhead, edition);
     parties(sheet, model);
     installationDelivered(sheet, model);
     work(sheet, model);
@@ -1198,7 +1223,7 @@ export const renderJobCardPdf = (
     return { bytes: sheet.pdf.toBytes(), pageCount: sheet.pdf.pageCount };
   }
 
-  header(sheet, model, source.letterhead);
+  header(sheet, model, source.letterhead, edition);
   parties(sheet, model);
   fault(sheet, model);
   partsReceived(sheet, model);

@@ -7,6 +7,7 @@ import {
   isIssuedStatus,
   asAttachmentId,
   asLineItemId,
+  asUserId,
   canTransition,
   emptyDelivery,
   checkCollectionDetails,
@@ -3166,6 +3167,13 @@ export interface CollectionInput {
   readonly courier: boolean;
   /** The courier's waybill number. Required for a courier collection. */
   readonly waybillNumber: string;
+  /**
+   * JOB-CARD-3: who is releasing the parts — a Parts Collection Note only. Chosen explicitly on the
+   * collection step (never defaulted to whoever is signed in). Optional on the wire so that a screen
+   * from before it still records the method; `checkReadyForSignature` refuses the collector's
+   * signature until somebody has been recorded.
+   */
+  readonly partsReleasedBy?: string | null;
 }
 
 /**
@@ -3251,19 +3259,43 @@ export const setCollectionMethod = async (
     throw new WorkflowError(`${job.jobNumber} needs a waybill number.`, check.violations);
   }
 
+  /*
+   * WHO IS RELEASING THE PARTS. JOB-CARD-3. A member of staff who can sign in today — the person
+   * handing the goods over — recorded by their id, so the document prints their name as it stands on
+   * the register and the audit line below says who chose them.
+   */
+  let partsReleasedBy = job.partsReleasedBy ?? null;
+  let releaserName: string | null = null;
+  if (job.jobType === 'parts' && input.partsReleasedBy !== undefined && input.partsReleasedBy !== null) {
+    const releaser = await context.repos.users.findById(asUserId(input.partsReleasedBy));
+    if (releaser === null || !releaser.active) {
+      throw new WorkflowError(`${job.jobNumber} cannot record that person as releasing the parts.`, [
+        {
+          code: 'parts_releaser_unknown',
+          message: 'Choose a member of staff who can sign in to the system as the person releasing the parts.',
+        },
+      ]);
+    }
+    partsReleasedBy = releaser.id;
+    releaserName = userFullName(releaser);
+  }
+
   const saved = await context.repos.jobs.save({
     ...job,
     courierCollection: input.courier,
     waybillNumber,
+    partsReleasedBy,
   });
 
   await audit(context, {
     jobId: job.id,
     type: 'collection_method_set',
     summary: input.courier ? 'Courier collection' : 'Customer collection',
-    detail: input.courier
-      ? `Collected by courier on waybill ${waybillNumber}. Prices are withheld from the courier's copy.`
-      : 'Collected by the customer. The collection document shows the prices.',
+    detail:
+      (input.courier
+        ? `Collected by courier on waybill ${waybillNumber}. Prices are withheld from the courier's copy.`
+        : 'Collected by the customer. The collection document shows the prices.') +
+      (releaserName === null ? '' : ` Parts released by ${releaserName}.`),
   });
 
   return saved;

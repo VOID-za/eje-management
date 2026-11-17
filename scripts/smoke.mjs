@@ -2646,6 +2646,14 @@ await step('the collector, not the customer, signs for parts', async () => {
   if ((await page.getByLabel('Waybill number').count()) !== 0) {
     throw new Error('a customer collection was asked for a waybill');
   }
+  // JOB-CARD-3: who is releasing the parts is chosen here — never preselected, and required.
+  const releaser = page.getByLabel('Parts released by');
+  await releaser.waitFor({ timeout: 8000 });
+  if ((await releaser.inputValue()) !== '') throw new Error('who released the parts was preselected');
+  if (!(await page.getByRole('button', { name: 'Continue' }).isDisabled())) {
+    throw new Error('the collection continued without who released the parts');
+  }
+  await releaser.selectOption({ index: 1 });
   await page.screenshot({ path: `${shots}/25-collection-type.png`, fullPage: false });
 
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -2908,6 +2916,9 @@ await step('a courier collection will not continue without a waybill', async () 
     throw new Error('whitespace was accepted as a waybill number');
   }
 
+  // JOB-CARD-3: a parts collection also names who is releasing the parts.
+  const releaser = page.getByLabel('Parts released by');
+  if ((await releaser.count()) > 0 && (await releaser.inputValue()) === '') await releaser.selectOption({ index: 1 });
   await page.getByLabel('Waybill number').fill('DAW-4471');
   if (await cont.isDisabled()) throw new Error('a valid waybill was still refused');
   await page.screenshot({ path: `${shots}/28-courier-collection.png`, fullPage: false });

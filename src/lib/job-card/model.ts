@@ -37,6 +37,8 @@ import {
   type User,
 } from '@/domain';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/format';
+import { businessDateOf } from '@/lib/business-time';
+import { JOB_CARD_2_RENDERER, JOB_CARD_LAYOUT_RENDERER, type JobCardEdition } from './layout-version';
 import { courierSignatureReference } from './delivery-note';
 import { INSTALLATION_DELIVERY_NOTE_TITLE, presentsAsInstallationDeliveryNote } from './installation-note';
 
@@ -314,6 +316,13 @@ export interface JobCardModelInput {
    * it would also make the stored PDF different on every render.
    */
   readonly generatedAt: IsoDateTime;
+  /**
+   * JOB-CARD-3: which edition of the current layout to build for. 7 — today's: the machine by its
+   * name and number only; on a Parts Collection Note the parts dated with the day the note was raised
+   * and "Released by" in place of the technician. Absent: 6, the JOB-CARD-2 model exactly as issued
+   * in v1.15.0 — which is also what every older renderer (V5) reads, so none of them changes.
+   */
+  readonly edition?: JobCardEdition;
 }
 
 /**
@@ -464,6 +473,21 @@ export const documentPhotos = (job: Job): Job['photos'] =>
 
 export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
   const { job, customer, site, contact, machine, settings, checklistTemplate, users } = input;
+  const edition: JobCardEdition = input.edition ?? JOB_CARD_2_RENDERER;
+  /*
+   * JOB-CARD-3. A Parts Collection Note is a receipt raised and handed over at the counter: its lines
+   * are dated with the day the note was RAISED (`job.createdAt`, in the business zone) — never the day
+   * the PDF happens to be drawn — and it names who RELEASED the parts (`job.partsReleasedBy`, chosen at
+   * the collection step), not the job's assigned technician.
+   */
+  const collectionNote = edition === JOB_CARD_LAYOUT_RENDERER && job.jobType === 'parts';
+  const raisedOn = businessDateOf(job.createdAt);
+  const partDate = collectionNote && raisedOn !== null ? formatDate(raisedOn) : '';
+  const releasedBy = (() => {
+    const id = job.partsReleasedBy ?? null;
+    const user = id === null ? undefined : users.find((candidate) => candidate.id === id);
+    return user === undefined ? 'Not recorded' : userFullName(user);
+  })();
   const totals = calculateJobTotals(job, settings);
   // MULTI-CO-1: the letterhead is the JOB'S company, from the one builder every document uses.
   const companyDetails = input.company ?? companyDetailsFromSettings(settings);
@@ -527,7 +551,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
       amount: formatCurrency(totals.travelLines[index]?.total ?? 0),
     })),
     ...job.parts.map((entry, index) => ({
-      date: '',
+      date: partDate,
       description: entry.partNumber,
       detail: entry.description,
       quantity: String(entry.quantity),
@@ -594,6 +618,22 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
       machine === null
         ? null
         : {
+            ...(edition === JOB_CARD_LAYOUT_RENDERER && !presentsAsInstallationDeliveryNote(job)
+              ? {
+                  /*
+                   * JOB-CARD-3 (the owner): the customer's JOB CARD names the machine and its number,
+                   * nothing else. (An Installation Delivery Note keeps the full description: it is the
+                   * receipt for the machine that was installed, and its serial number is what identifies it.)
+                   * Serial number, type, control and year stay on the machine record and in the application —
+                   * they are only no longer printed here.
+                   */
+                  title: '',
+                  rows: [
+                    { label: 'Machine name', value: machineDisplayName(machine) },
+                    { label: 'Machine number', value: machine.machineNumber.trim().length > 0 ? machine.machineNumber.trim() : '—' },
+                  ],
+                }
+              : {
             title: machineDisplayName(machine),
             rows: [
               { label: 'Serial number', value: machine.serialNumber, mono: true },
@@ -606,6 +646,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
               { label: 'Control', value: machine.controlSystem },
               { label: 'Year', value: String(machine.year) },
             ],
+                }),
           },
     partsReceived: partsReceivedOf(job),
     received: receivedOf(job),
@@ -659,10 +700,12 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
         ? [{ label: 'Date received', value: job.dateReceived }]
         : []),
       // The parts booked in and the collection: see `received` (PDF-RECV-1).
-      {
-        label: 'Technician',
-        value: technician === null ? 'Unassigned' : userFullName(technician),
-      },
+      collectionNote
+        ? { label: 'Released by', value: releasedBy }
+        : {
+            label: 'Technician',
+            value: technician === null ? 'Unassigned' : userFullName(technician),
+          },
     ],
 
     /*

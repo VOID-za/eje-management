@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { JOB_CARD_2_RENDERER } from '@/lib/job-card/layout-version';
 import { asCompanyId, DEFAULT_COMPANY_ID, WD_HEARN_JHB_COMPANY_ID } from '@/domain';
 import { companies } from '@/api/endpoints';
 import { A4_HEIGHT, PdfBuilder } from '@/lib/pdf/writer';
@@ -356,8 +357,14 @@ describe('which header a document carries', () => {
       const preview = { ...view, job: { ...view.job, finalDocument: null } };
       const markup = renderToStaticMarkup(createElement(Document, { view: preview }));
       expect(markup, jobNumber).toContain('data-letterhead="eje-master"');
-      // On a phone the master takes the document's whole width (the title below it); from sm up, as before.
-      expect(markup).toContain('-mx-6 min-w-0 basis-[calc(100%+3rem)] sm:mx-0 sm:flex-1 sm:basis-[22rem]');
+      // JOB-CARD-3: not issued yet — the full-width letterhead, its name and number in the top-right corner.
+      expect(markup).toContain('data-header="full-width"');
+      expect(markup).toContain('data-testid="letterhead-title-overlay"');
+      // Issued in v1.15.0 (renderer 6): the JOB-CARD-2 header, exactly as its stored PDF has it.
+      const issuedSix = { ...view, job: { ...view.job, finalDocument: { ...view.job.finalDocument!, renderer: JOB_CARD_2_RENDERER } } };
+      const six = renderToStaticMarkup(createElement(Document, { view: issuedSix }));
+      expect(six).not.toContain('data-header="full-width"');
+      expect(six).toContain('-mx-6 min-w-0 basis-[calc(100%+3rem)] sm:mx-0 sm:flex-1 sm:basis-[22rem]');
       // Chosen by the job's company, as the PDF is: a WD Hearn job is not on the master, whatever view.company says.
       const wd = { ...preview, job: { ...preview.job, companyId: WD_HEARN_JHB_COMPANY_ID }, companyLetterhead: null };
       expect(renderToStaticMarkup(createElement(Document, { view: wd }))).not.toContain('data-letterhead');

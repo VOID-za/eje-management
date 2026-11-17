@@ -989,6 +989,19 @@ export const checkReadyForSignature = (job: Job): TransitionCheck => {
    */
   violations.push(...checkCollectionDetails(job).violations);
 
+  /*
+   * JOB-CARD-3: a Parts Collection Note names who released the parts, so the collector does not sign
+   * until somebody has been recorded at the collection step. Only BEFORE the signature: a collection
+   * signed before this existed is not held back from submission for a name nobody was asked for — its
+   * document says "Not recorded".
+   */
+  if (job.jobType === 'parts' && job.signature === null && (job.partsReleasedBy ?? null) === null) {
+    violations.push({
+      code: 'parts_releaser_required',
+      message: 'Choose who is releasing the parts.',
+    });
+  }
+
   // A parts collection records no work and no hours: it is a receipt for goods.
   if (!definition.capturesLabourAndTravel) {
     if (job.parts.length === 0) {

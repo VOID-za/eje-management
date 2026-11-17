@@ -21,6 +21,7 @@ import {
   CardHeader,
   ConfirmDialog,
   Icon,
+  SelectField,
   TextAreaField,
   TextField,
 } from '@/components/ui';
@@ -296,6 +297,21 @@ export const CompleteJobWizard = ({
 
   const [courier, setCourier] = useState(job.courierCollection);
   const [waybill, setWaybill] = useState(job.waybillNumber);
+  /*
+   * JOB-CARD-3: who is releasing the parts — asked on a Parts Collection Note's collection step, and
+   * printed on it as "Released by". Never preselected: the person handing the goods over chooses
+   * themselves, so the document cannot say a name nobody confirmed.
+   */
+  const recordsReleaser = job.jobType === 'parts';
+  const [releasedBy, setReleasedBy] = useState<string>(job.partsReleasedBy ?? '');
+  const releaserOptions = useMemo(
+    () =>
+      view.users
+        .filter((user) => user.active || user.id === job.partsReleasedBy)
+        .map((user) => ({ value: user.id, label: `${user.firstName} ${user.lastName}`.trim() }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [view.users, job.partsReleasedBy],
+  );
 
   const chooseRefusal = (next: boolean): void => {
     setRefusing(next);
@@ -323,9 +339,14 @@ export const CompleteJobWizard = ({
    * operation that eventually runs are held to the same rule, so a technician
    * is never allowed forward into a step that will refuse them at the end.
    */
+  /*
+   * JOB-CARD-3: who released the parts is ASKED on the collection step (below), so the steps before it
+   * are not held back by it; the server still refuses the signature without it.
+   */
+  const beforeCollection = readiness.violations.filter((violation) => violation.code !== 'parts_releaser_required');
   const blockedBy = (): readonly string[] => {
     if (step.id === 'completion') {
-      return readiness.violations
+      return beforeCollection
         .filter((violation) => !violation.code.startsWith('checklist'))
         .map((violation) => violation.message);
     }
@@ -334,13 +355,16 @@ export const CompleteJobWizard = ({
         .filter((violation) => violation.code.startsWith('checklist'))
         .map((violation) => violation.message);
     }
-    if (step.id === 'review') return readiness.violations.map((violation) => violation.message);
+    if (step.id === 'review') return beforeCollection.map((violation) => violation.message);
     if (step.id === 'collection') {
-      return checkCollectionDetails({
-        jobType: job.jobType,
-        courierCollection: courier,
-        waybillNumber: waybill,
-      }).violations.map((violation) => violation.message);
+      return [
+        ...checkCollectionDetails({
+          jobType: job.jobType,
+          courierCollection: courier,
+          waybillNumber: waybill,
+        }).violations.map((violation) => violation.message),
+        ...(recordsReleaser && releasedBy.length === 0 ? ['Choose who is releasing the parts.'] : []),
+      ];
     }
     return [];
   };
@@ -379,7 +403,7 @@ export const CompleteJobWizard = ({
     // drawn from the record rather than from a screen's memory.
     if (step.id === 'collection') {
       const ok = await operation.runFor(() =>
-        api.setCollection(job.id, courier, waybill),
+        api.setCollection(job.id, courier, waybill, recordsReleaser ? releasedBy : undefined),
       );
       if (ok === null) return;
       onChanged();
@@ -934,6 +958,20 @@ export const CompleteJobWizard = ({
                 error={errors.waybill}
                 onChange={(event) => setWaybill(event.target.value)}
                 hint="The courier’s own consignment number. It is what ties this document to the parcel."
+              />
+            </div>
+          )}
+
+          {recordsReleaser && (
+            <div className="mt-5" data-testid="parts-released-by">
+              <SelectField
+                label="Parts released by"
+                required
+                placeholder="Choose who is handing the parts over"
+                options={releaserOptions}
+                value={releasedBy}
+                onChange={(event) => setReleasedBy(event.target.value)}
+                hint="The member of staff handing the goods over. Printed on the Parts Collection Note as “Released by”."
               />
             </div>
           )}

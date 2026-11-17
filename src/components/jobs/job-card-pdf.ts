@@ -1,4 +1,10 @@
-import { showsCurrentJobCardLayout } from '@/lib/job-card/layout-version';
+import { jobCardLayoutOf } from '@/lib/job-card/layout-version';
+
+/** The layout a preview is drawn in: absent for today's, else the one the job was issued in. */
+const layoutSourceOf = (finalDocument: { readonly renderer: number | null } | null): { readonly layout?: 'v5' | 6 } => {
+  const layout = jobCardLayoutOf(finalDocument);
+  return layout === 7 ? {} : { layout };
+};
 import type { JobView } from '@/application/job-view';
 import type { Clock } from '@/services/ports';
 import type { SimulatedPdfService } from '@/services/simulated/pdf';
@@ -120,8 +126,8 @@ export const renderJobCardPdf = async (
       users: view.users,
       photoImages: photoImages ?? (await loadPreviewPhotos(view)),
       letterhead: letterhead ?? (await loadPreviewLetterhead(view)),
-      // JOB-CARD-2: a job issued before the redesign previews in the layout it was issued in.
-      ...(showsCurrentJobCardLayout(view.job.finalDocument) ? {} : { layout: 'v5' as const }),
+      // JOB-CARD-2/3: a job issued in an earlier layout previews in the layout it was issued in.
+      ...layoutSourceOf(view.job.finalDocument),
     },
     'preview',
     clock.now(),

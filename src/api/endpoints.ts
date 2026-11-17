@@ -761,8 +761,12 @@ export const jobs = {
       options.idempotencyKey,
     ),
   completeChecklist: (jobId: string) => jobAction(jobId, 'complete_checklist'),
-  setCollection: (jobId: string, courier: boolean, waybillNumber: string) =>
-    jobAction(jobId, 'set_collection', { courier, waybillNumber }),
+  setCollection: (jobId: string, courier: boolean, waybillNumber: string, partsReleasedBy?: string | null) =>
+    jobAction(jobId, 'set_collection', {
+      courier,
+      waybillNumber,
+      ...(partsReleasedBy === undefined ? {} : { partsReleasedBy }),
+    }),
   startSignature: (jobId: string) => jobAction(jobId, 'start_signature'),
   captureSignature: (jobId: string, input: unknown) =>
     jobAction(jobId, 'capture_signature', input),

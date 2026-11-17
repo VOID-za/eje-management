@@ -237,6 +237,8 @@ export const JobListTable = ({
       columns={columns}
       rows={rows}
       rowKey={(row) => row.job.id}
+      // MOBILE-TABLES-1: a card per job on a phone, nothing to swipe sideways for.
+      phoneCards
       onRowClick={(row) => router.push(`/jobs/${row.job.jobNumber}`)}
       emptyTitle={emptyTitle ?? 'No jobs found'}
       emptyDescription={

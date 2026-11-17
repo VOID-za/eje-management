@@ -3,6 +3,7 @@ import { companies } from '@/api/endpoints';
 import type { LetterheadReference } from '@/domain';
 import {
   LETTERHEAD_REFERENCE,
+  LETTERHEAD_TITLE_SLOT,
   carriesMasterLetterhead,
   layoutLetterhead,
   letterheadLineGlyphs,
@@ -72,6 +73,47 @@ export const EjeLetterhead = ({ className }: { readonly className?: string }) =>
         </g>
       ))}
     </svg>
+  );
+};
+
+/**
+ * THE EJE LETTERHEAD ACROSS THE DOCUMENT'S FULL WIDTH, ITS NAME AND NUMBER IN THE TOP-RIGHT CORNER.
+ * JOB-CARD-3 (the owner, 17 November 2026) — the screen's copy of `drawFullWidthLetterhead`.
+ *
+ * The letterhead takes the document's whole width and the label and number are drawn over it in the
+ * letterhead's own coordinates (`LETTERHEAD_TITLE_SLOT`), so they sit exactly where the PDF puts them
+ * and scale with the artwork. On a phone the whole document is a few hundred pixels wide and that
+ * corner would be unreadably small, so there the title is set under the letterhead at a readable size
+ * instead; on a wider screen the same words stay in the page for a screen reader.
+ */
+export const FullWidthLetterheadHeader = ({ title, number }: { readonly title: string; readonly number: string }) => {
+  const slot = LETTERHEAD_TITLE_SLOT;
+  const text = { fontFamily: 'Helvetica, Arial, sans-serif', fontWeight: 700 } as const;
+  return (
+    <header className="border-b-2 border-steel-900 pb-4" data-testid="document-header" data-header="full-width">
+      <div className="relative -mx-6 sm:mx-0">
+        <EjeLetterhead />
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox={`0 0 ${LETTERHEAD_REFERENCE.width} ${LETTERHEAD_REFERENCE.height}`}
+          preserveAspectRatio="xMinYMid meet"
+          aria-hidden="true"
+          data-testid="letterhead-title-overlay"
+          className="pointer-events-none absolute inset-0 hidden h-full w-full sm:block"
+        >
+          <text x={slot.right} y={slot.labelBaseline} textAnchor="end" fontSize={slot.labelSize} letterSpacing={slot.labelTracking} fill="#6b7481" {...text}>
+            {title.toUpperCase()}
+          </text>
+          <text x={slot.right} y={slot.numberBaseline} textAnchor="end" fontSize={slot.numberSize} fill="#1b2434" {...text}>
+            {number}
+          </text>
+        </svg>
+      </div>
+      <div className="mt-3 text-right sm:sr-only" data-testid="document-title">
+        <p className="text-xs font-semibold tracking-[0.18em] text-steel-500 uppercase">{title}</p>
+        <p className="font-mono text-xl font-bold text-steel-900">{number}</p>
+      </div>
+    </header>
   );
 };
 

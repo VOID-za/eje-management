@@ -32,7 +32,7 @@ import { createJob, releaseDraft } from '@/application/job-creation';
 import { handleJobCard, recordInvoiceNumber, recordPurchaseOrder } from '@/application/office-lifecycle';
 import { editJobDetails } from '@/application/job-details';
 import { setRepairItems } from '@/application/repair-items';
-import { forbidden, notFound } from '../errors';
+import { forbidden, isConcurrencyError, notFound } from '../errors';
 import { command, type CommandContext, type CommandRegistry, type ErasedCommand } from './types';
 
 /**
@@ -114,6 +114,36 @@ const withInput = <T>(
       return result !== null && typeof result === 'object' && 'jobNumber' in result
         ? respond(result as Job, context.actor)
         : result;
+    },
+  });
+
+/**
+ * A COMMAND THAT IS RE-RUN WHEN IT LOSES A RACE. CHK-RACE-1 (17 November 2026).
+ *
+ * Two checklist answers saved at the same moment both load the job at the same version; the second
+ * write finds it moved on and is refused (`ConcurrencyError`). For an answer that refusal is not the
+ * technician's problem: their answer touches ONE item and is as legal against the newer job as it
+ * was against the older one — so the whole operation is run again, from a fresh load, with every one
+ * of its rules (an item answered elsewhere since a capture expected it is still refused by
+ * `assertChecklistUnchanged`). Nothing was written by the losing attempt: the version check is the
+ * repository's first write. After three losses in a row the refusal reaches the caller as a 409.
+ */
+const RACE_ATTEMPTS = 3;
+const withInputRetryingRaces = <T>(
+  schema: z.ZodType<T>,
+  run: (context: CommandContext, job: Job, input: T) => Promise<Job>,
+): ErasedCommand =>
+  command({
+    schema,
+    async run(context, input, target) {
+      for (let attempt = 1; ; attempt += 1) {
+        const job = await loadVisibleJob(context, target);
+        try {
+          return respond(await run(context, job, input), context.actor);
+        } catch (error) {
+          if (!isConcurrencyError(error) || attempt >= RACE_ATTEMPTS) throw error;
+        }
+      }
     },
   });
 
@@ -677,7 +707,7 @@ export const JOB_COMMANDS: CommandRegistry = {
    * sends them gets a refusal rather than overwriting somebody else's answer
    * or being moved onto a different version of the document.
    */
-  answer_checklist: withInput(
+  answer_checklist: withInputRetryingRaces(
     z
       .object({
         itemId: z.string().min(1).max(100),
@@ -781,7 +811,9 @@ export const JOB_COMMANDS: CommandRegistry = {
   ),
 
   set_collection: withInput(
-    z.object({ courier: z.boolean(), waybillNumber: text(120) }).strict(),
+    z
+      .object({ courier: z.boolean(), waybillNumber: text(120), partsReleasedBy: userId.nullable().optional() })
+      .strict(),
     (context, job, input) => jobs.setCollectionMethod(context.operation, job, input),
   ),
 

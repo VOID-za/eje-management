@@ -32,6 +32,15 @@ release is bigger than its commits say, `stage-release.ps1 -Bump minor` (or
 `major`) raises the step. The commit remains what identifies a deployment;
 `/api/health` reports both.
 
+## CANDIDATE — JOB-CARD-3, CUST-ACCT-1, CHK-RACE-1, MOBILE-TABLES-1 (17 November 2026), on `claude/followup-pdf-fixes`
+
+**One migration: `0059_account_numbers_and_parts_releaser`** — the account-number index made partial (no row rewritten) and `jobs.parts_released_by` added (nullable). Release with `-ExpectPending 0059_account_numbers_and_parts_releaser`. Rollback to `dcdcb84` needs nothing undone: the live code never reads the new column, and its customer insert only succeeds more often under the partial index. Not deployed until the owner approves the migration.
+
+## RELEASED — `dcdcb84` = v1.15.0, the PDF correction and job-card redesign (FORMS-INTERNAL-1, JOB-CARD-2, LETTERHEAD-4, 17 November 2026)
+
+- **Release:** owner-approved. CI on `dcdcb84`: 3/3 jobs green. Pre-deployment backup `/var/backups/eje/eje-eje_production-2026-11-17T04-01-18Z` verified, key matched, RESTORE-TESTED into a scratch database and dropped (jobs 128, final documents 71, 322 files). `stage-release.ps1 -CheckOnly` passed; `-ExpectPending none`; the release's own backup `…T04-04-18Z` restore-tested; switched 04:04:37 UTC, healthy 04:04:40. 59 migrations. Rollback target `/opt/eje/releases/f98a0aa`.
+- **After:** 28-table fingerprint identical; 56/56 historical stored PDFs with a checksum unchanged; device testing on production (Playwright, Chromium and Edge) at 1920×1080, 1366×768, 800×1280, 1280×800, 1024×768, 390×844, 360×800; one full workflow per device on test jobs EJE-2129/2130/2131 (customer "ZZ DEVICE TEST 2026-11-17 (TEST - not a customer)", kept). No physical device.
+
 ## RELEASED — `f98a0aa` = v1.14.0, the attendance and timesheet header (LETTERHEAD-3, 16 November 2026)
 
 - **Candidate:** `d0b0f66` (feature) + `b97a144` (independent review: a full header tipped ~two-lines-a-day timesheets onto two pages — one-page forms now take the largest header that lands the month as v1.13.0 did; title overflow at 640–700 px; test clock) + `f98a0aa` (CI forms regression: the 13 pt title's letter-spacing read as "A T T E N D A N C E" — now proportional; re-review: the multi-page timesheet keeps v1.13.0's page count). CI run 43922548956 green on `f98a0aa`: lint/types/tests/build 12/12, PostgreSQL 13/13, routes/workflow/smoke 67/67. Local: 4 376 unit tests; forms regression 47/47 at desktop, tablet and phone; payroll views 15/15 (desktop and phone), payroll forms 14/14, tablet PDF 19/19, tester fixes 12/12; Chrome and Edge print 2/1/1 sheets.

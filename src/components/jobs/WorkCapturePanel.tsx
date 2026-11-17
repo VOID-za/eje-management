@@ -33,6 +33,7 @@ import {
 import { formatCurrency, formatDate } from '@/lib/format';
 import { jobs } from '@/api/endpoints';
 import { useOperation } from '@/hooks/useOperation';
+import { useNarrowScreen } from '@/hooks/useNarrowScreen';
 import { useOfflineCapture } from '@/hooks/useOfflineCapture';
 import { cn } from '@/lib/cn';
 import { businessToday } from '@/lib/business-time';
@@ -69,6 +70,7 @@ export const WorkCapturePanel = ({
   // DELIVERY-NOTE-1: a Delivery Note prices nothing and records a comment on each part line.
   const priced = getJobTypeDefinition(job.jobType).priced;
   const partComments = getJobTypeDefinition(job.jobType).capturesPartComments;
+  const narrow = useNarrowScreen();
   const [dialog, setDialog] = useState<
     'labour' | 'travel' | 'part' | 'additional_charge' | null
   >(null);
@@ -339,7 +341,78 @@ export const WorkCapturePanel = ({
           </p>
         )}
 
-        {job.parts.length === 0 ? null : (
+        {job.parts.length === 0 ? null : narrow ? (
+          /*
+            MOBILE-TABLES-1: on a phone each part is a card — what it is, how many, the price — with
+            Edit and Remove as full-size buttons on the card itself, never behind a sideways swipe.
+          */
+          <ul className="divide-y divide-steel-100" data-testid="part-cards">
+            {job.parts.map((entry, index) => (
+              <li key={entry.id} className="px-5 py-4" data-testid="part-card">
+                <p className="font-mono text-sm font-medium break-all text-steel-900">{entry.partNumber}</p>
+                <p className="mt-0.5 text-sm break-words text-steel-600">{entry.description}</p>
+                <dl className="mt-2.5 grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <dt className="text-xs font-semibold tracking-wide text-steel-500 uppercase">Qty</dt>
+                    <dd className="tabular text-steel-800">{entry.quantity}</dd>
+                  </div>
+                  {priced && (
+                    <div>
+                      <dt className="text-xs font-semibold tracking-wide text-steel-500 uppercase">Unit</dt>
+                      <dd className="tabular text-steel-600">{formatCurrency(entry.unitPrice)}</dd>
+                    </div>
+                  )}
+                  {priced && (
+                    <div>
+                      <dt className="text-xs font-semibold tracking-wide text-steel-500 uppercase">Total</dt>
+                      <dd className="tabular font-semibold text-steel-900">
+                        {formatCurrency(totals.partLines[index]?.total ?? 0)}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+                {partComments && (entry.comment ?? '').length > 0 && (
+                  <p className="mt-2 text-sm break-words text-steel-600" data-testid="part-comment">
+                    {entry.comment}
+                  </p>
+                )}
+                {partsEditable && (
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="min-h-11 flex-1"
+                      leadingIcon={<Icon name="wrench" className="size-4" />}
+                      aria-label="Edit line"
+                      onClick={() => {
+                        setEditingId(entry.id);
+                        setDialog('part');
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="min-h-11 flex-1 text-signal-600"
+                      leadingIcon={<Icon name="trash" className="size-4" />}
+                      aria-label="Remove line"
+                      onClick={() =>
+                        setPendingRemoval({
+                          kind: 'part',
+                          id: entry.id,
+                          label: `${entry.partNumber} — ${entry.description}`,
+                        })
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
           <div className="eje-scrollbar overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

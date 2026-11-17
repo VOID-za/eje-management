@@ -250,6 +250,7 @@ describe('the counter journey, start to finish', () => {
     job = await setCollectionMethod(harness.as(actor), job, {
       courier,
       waybillNumber: courier ? 'DSV-4471882' : '',
+      partsReleasedBy: actor.id,
     });
     job = await startSignature(harness.as(actor), job);
     return captureSignature(harness.as(actor), job, {
@@ -424,5 +425,77 @@ describe('field service is untouched', () => {
 
     const withCallout = await setCalloutApplied(harness.as(technician), withTravel, true);
     expect(withCallout.calloutApplied).toBe(true);
+  });
+});
+
+/**
+ * JOB-CARD-3 (the owner, 17 November 2026): a Parts Collection Note names who RELEASED the parts. It is
+ * chosen explicitly at the collection step, recorded on the job and in the audit trail, and the
+ * collector does not sign until somebody has been recorded.
+ */
+describe('who released the parts', () => {
+  let harness: Harness;
+  beforeEach(() => {
+    harness = buildHarness();
+  });
+
+  const atCollection = async (actor: User) => withParts(harness, actor, await raise(harness, actor));
+  const codes = async (work: Promise<unknown>): Promise<string[]> => {
+    try {
+      await work;
+      return [];
+    } catch (error) {
+      if (!(error instanceof WorkflowError)) throw error;
+      return error.violations.map((violation) => violation.code);
+    }
+  };
+
+  it('is recorded with the collection method, and the audit line says who', async () => {
+    const job = await setCollectionMethod(harness.as(master), await atCollection(master), {
+      courier: false,
+      waybillNumber: '',
+      partsReleasedBy: coordinator.id,
+    });
+    expect(job.partsReleasedBy).toBe(coordinator.id);
+    expect((await harness.repos.jobs.findById(job.id))!.partsReleasedBy).toBe(coordinator.id);
+    const events = await harness.repos.activity.list(job.id);
+    const event = events.find((entry) => entry.type === 'collection_method_set')!;
+    expect(event.detail).toContain(`Parts released by ${coordinator.firstName} ${coordinator.lastName}.`);
+  });
+
+  it('is never whoever happens to be signed in: nothing is recorded unless somebody is chosen', async () => {
+    const job = await setCollectionMethod(harness.as(master), await atCollection(master), { courier: false, waybillNumber: '' });
+    expect(job.partsReleasedBy ?? null).toBeNull();
+  });
+
+  it('holds back the collector’s signature until somebody has been recorded', async () => {
+    const job = await setCollectionMethod(harness.as(master), await atCollection(master), { courier: false, waybillNumber: '' });
+    expect(checkReadyForSignature(job).violations.map((violation) => violation.code)).toContain('parts_releaser_required');
+    expect(await codes(startSignature(harness.as(master), job))).toContain('parts_releaser_required');
+    const recorded = await setCollectionMethod(harness.as(master), job, { courier: false, waybillNumber: '', partsReleasedBy: master.id });
+    expect(checkReadyForSignature(recorded).allowed).toBe(true);
+  });
+
+  it('refuses somebody who cannot sign in, or nobody on the register', async () => {
+    const job = await atCollection(master);
+    const disabled = await harness.repos.users.save({ ...technician, active: false });
+    expect(await codes(setCollectionMethod(harness.as(master), job, { courier: false, waybillNumber: '', partsReleasedBy: disabled.id }))).toEqual(['parts_releaser_unknown']);
+    expect(await codes(setCollectionMethod(harness.as(master), job, { courier: false, waybillNumber: '', partsReleasedBy: 'nobody' }))).toEqual(['parts_releaser_unknown']);
+  });
+
+  it('does not hold back a collection signed before it existed', () => {
+    const signedBefore = {
+      jobType: 'parts',
+      signature: { customerName: 'A', customerSurname: 'B', strokeData: 'M0 0', signedAt: '2026-11-16T10:00:00.000Z', declaration: '' },
+      partsReleasedBy: null,
+    } as unknown as Job;
+    const violations = checkReadyForSignature({ ...signedBefore, parts: [{}], courierCollection: false, waybillNumber: '' } as unknown as Job).violations;
+    expect(violations.map((violation) => violation.code)).not.toContain('parts_releaser_required');
+  });
+
+  it('asks nothing of a job that is not a parts collection', async () => {
+    const breakdown = (await harness.repos.jobs.list()).find((candidate) => candidate.jobType === 'breakdown' && candidate.signature === null)!;
+    expect(breakdown.partsReleasedBy ?? null).toBeNull();
+    expect(checkReadyForSignature(breakdown).violations.map((violation) => violation.code)).not.toContain('parts_releaser_required');
   });
 });

@@ -66,7 +66,8 @@ const call = (method, path, body) =>
 /** The job as the SERVER holds it — never what the screen says. */
 const server = async () => (await call('GET', `/api/jobs/${JOB}`)).json?.data?.view?.job;
 const partsOnServer = async () => (await server())?.parts.map((part) => `${part.partNumber}×${part.quantity}`) ?? [];
-const partRow = (partNumber) => page.locator('tr', { hasText: partNumber }).first();
+// MOBILE-TABLES-1: a table row, or on a phone the part's card.
+const partRow = (partNumber) => page.locator('tr, [data-testid="part-card"]', { hasText: partNumber }).first();
 const dialog = () => page.getByRole('dialog');
 
 console.log(`BD-PARTS-1 check at ${label} against ${BASE} — ${JOB}`);
@@ -152,7 +153,7 @@ await check('removes a part in completion — gone on the server', async () => {
 await check('a reload and reopening bring the parts back exactly', async () => {
   await go(`/jobs/${JOB}?continue=1`);
   await partRow('BRG-6205').waitFor({ timeout: 20000 });
-  if ((await page.locator('tr', { hasText: 'FUSE-10A' }).count()) !== 0) fail('the removed part came back');
+  if ((await page.locator('tr, [data-testid="part-card"]', { hasText: 'FUSE-10A' }).count()) !== 0) fail('the removed part came back');
   if (!/3/u.test(await partRow('BRG-6205').innerText())) fail('the changed quantity did not come back');
   if ((await server()).status !== 'completion') fail('the job is no longer in completion');
 });

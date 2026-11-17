@@ -454,6 +454,7 @@ export const toDomainJob = (rows: JobRowSet): Job => {
     testBenchQuantity: rows.job.testBenchQuantity,
     courierCollection: rows.job.courierCollection,
     waybillNumber: rows.job.waybillNumber,
+    partsReleasedBy: rows.job.partsReleasedBy === null ? null : asUserId(rows.job.partsReleasedBy),
     deliveryNote: rows.job.deliveryNote,
 
     pricingSnapshot: rows.snapshot === null ? null : snapshotFrom(rows.snapshot),
@@ -512,6 +513,7 @@ export const toJobRow = (
   testBenchQuantity: job.testBenchQuantity,
   courierCollection: job.courierCollection,
   waybillNumber: job.waybillNumber,
+  partsReleasedBy: job.partsReleasedBy ?? null,
   deliveryNote: job.deliveryNote,
   awaitingSparesReason: job.sparesRequest?.description ?? '',
   awaitingSparesNotes: job.sparesRequest?.notes ?? '',

@@ -10,7 +10,7 @@ vi.hoisted(() => {
   vi.setSystemTime(new Date('2026-11-15T08:00:00.000Z'));
 });
 import type { PdfImage } from '@/lib/pdf/image';
-import { A4_HEIGHT } from '@/lib/pdf/writer';
+import { A4_HEIGHT, textWidth } from '@/lib/pdf/writer';
 import { inspectPdf, pdfPlainText } from '@/lib/pdf/inspect';
 import { SUBSTITUTION_ALLOWANCE } from '@/lib/pdf/metrics';
 import { WD_HEARN_JHB_COMPANY_ID, type CompanyDetails } from '@/domain';
@@ -29,7 +29,8 @@ import { renderCorrectionPdf } from './correction-pdf';
 import { DELIVERY_NOTE_MASTER_EXTRA, renderDeliveryNotePdf } from './delivery-note-pdf';
 import { renderTimesheetPdf } from './timesheet-pdf';
 import { renderAttendancePdf } from './attendance-pdf';
-import { LETTERHEAD_TOP, drawLetterhead, fitLetterhead } from './pdf-sheet';
+import { CONTENT_WIDTH, LETTERHEAD_FULL_HEIGHT, LETTERHEAD_TOP, MARGIN, drawLetterhead, fitLetterhead } from './pdf-sheet';
+import { LETTERHEAD_TITLE_SLOT } from '@/lib/branding/eje-letterhead';
 import { PdfBuilder } from '@/lib/pdf/writer';
 import {
   FROZEN_AT,
@@ -106,8 +107,13 @@ interface Generator {
 }
 
 const sources = new Map<string, FinalDocumentSource>();
+/*
+ * JOB-CARD-3: the band geometry below is the JOB-CARD-2 header — edition 6, which a job card issued in
+ * v1.15.0 is still drawn in (and which "edition 6 is v1.15.0, to the byte" below holds to its bytes).
+ * Today's full-width header (edition 7) has its own tests further down.
+ */
 const job = (number: string) => async (letterhead: DocumentLetterhead | undefined, omit = false) => {
-  const source = sources.get(number)!;
+  const source = { ...sources.get(number)!, layout: 6 as const };
   const given = omit ? source : { ...source, letterhead };
   return renderJobCardPdf(given, `${number}.pdf`, GENERATED_AT).bytes;
 };
@@ -511,6 +517,112 @@ describe('WD Hearn JHB, with and without its uploaded letterhead', () => {
       expect(imageObjectCount(plain)).toBe(0);
       expect(embedsImageData(withOwn, image)).toBe(true);
     }
+  });
+});
+
+/**
+ * JOB-CARD-3: a job card ISSUED in v1.15.0 (renderer 6) is previewed as edition 6 of today's renderer,
+ * which draws it to exactly the bytes dcdcb84 drew (hashes taken by running this very rendering on
+ * dcdcb84's source, 17 November 2026) — with the master letterhead and without.
+ */
+describe('edition 6 is v1.15.0, to the byte', () => {
+  it('draws what dcdcb84 drew', async () => {
+    const now: Record<string, string> = {};
+    for (const [name, number] of Object.entries(JOB_DOCUMENTS)) {
+      const source = { ...sources.get(number)!, layout: 6 as const };
+      now[`${name}:master`] = sha256(renderJobCardPdf({ ...source, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes);
+      now[`${name}:none`] = sha256(renderJobCardPdf(source, `${number}.pdf`, GENERATED_AT).bytes);
+    }
+    expect(now).toEqual({
+      'jobCard:master': '00f572a1845e5c9884aa225f10f509c38466185259d8ae2c6abbcde8a9b1777a',
+      'jobCard:none': '38f172b4ebdad8421f153f90c9434a3e0e81acf88ac9aab85cd47fd6a633d0a0',
+      'partsCollectionNote:master': '6974aebd345e693cc973cff25a9ff90dbbfe5ca865d6ba3747c6504f7a1e3f7b',
+      'partsCollectionNote:none': '9b0db127cbaafc602ff4c0950bfa86403d58b83598b0bd4e10d7d7edaa5576c1',
+      'installationDeliveryNote:master': '8bc5ddfe7a37b1e5abcc7862e061b40b5e2fab121049b644610a87cc8b783f17',
+      'installationDeliveryNote:none': '689ea49dd141ca49309cbaed8fc2c951766abbe7ac6212f904d612ffd962775d',
+    });
+  });
+});
+
+/**
+ * JOB-CARD-3 (the owner, 17 November 2026): the EJE letterhead across the page's full printable width,
+ * readable, with the document's name and number neatly in its top-right corner.
+ */
+describe.each([
+  ['jobCard', 'JOB CARD'],
+  ['partsCollectionNote', 'PARTS COLLECTION NOTE'],
+  ['installationDeliveryNote', 'DELIVERY NOTE — INSTALLATION'],
+] as const)('%s — the full-width letterhead (edition 7)', (name, label) => {
+  const number = JOB_DOCUMENTS[name];
+  const render = () => renderJobCardPdf({ ...sources.get(number)!, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes;
+  const bandBottom = LETTERHEAD_TOP - LETTERHEAD_FULL_HEIGHT;
+
+  it('spans the printable width, uniformly scaled, its lines readable', () => {
+    const runs = textRuns(render()).filter((run) => run.page === 1);
+    const lines = MASTER_TEXT.map((line) => runs.find((run) => run.value === line)!);
+    lines.forEach((run, index) => {
+      expect(run, MASTER_TEXT[index]).toBeDefined();
+      expect(run.y).toBeGreaterThan(bandBottom);
+      expect(run.y).toBeLessThan(LETTERHEAD_TOP);
+      expect(run.x).toBeGreaterThanOrEqual(MARGIN - 0.01);
+      expect(run.x + run.width / SUBSTITUTION_ALLOWANCE).toBeLessThanOrEqual(MARGIN + CONTENT_WIDTH + 0.01);
+    });
+    // The whole width: the mark at the left margin, the P.O. Box block reaching towards the right one.
+    const mark = filledPaths(render())[0]!.points;
+    expect(Math.min(...mark.map((point) => point.x)) - MARGIN).toBeLessThan(5);
+    const atlasville = runs.find((run) => run.value === 'Atlasville')!;
+    expect(atlasville.x + atlasville.width / SUBSTITUTION_ALLOWANCE).toBeGreaterThan(MARGIN + CONTENT_WIDTH - 60);
+    // Readable at print size: the name about 20pt, the address and contact lines about 8pt, Reg and VAT about 7pt.
+    expect(runs.find((run) => run.value === 'EJE Industrial Electronics cc')!.size).toBeGreaterThanOrEqual(19);
+    for (const line of ['Bonfoi Office Park', 'Tel: 083 285 1644/011 979 5080', 'Email: sales@ejeie.co.za or peetb@ejeie.co.za']) {
+      expect(runs.find((run) => run.value === line)!.size, line).toBeGreaterThanOrEqual(7.9);
+    }
+    expect(runs.find((run) => run.value === 'VAT NO: 4950134991')!.size).toBeGreaterThanOrEqual(6.9);
+  });
+
+  it('puts the document name and number in the top-right corner, clear of every line of the letterhead', () => {
+    const runs = textRuns(render()).filter((run) => run.page === 1);
+    const title = runs.find((run) => run.value === label)!;
+    const jobNumber = runs.find((run) => run.value === number && run.y > bandBottom)!;
+    expect(title).toBeDefined();
+    expect(jobNumber).toBeDefined();
+    // Against the right edge, the label above the number, the number restrained (12pt, not 17).
+    const scale = CONTENT_WIDTH / LETTERHEAD_REFERENCE.width;
+    const labelWidth = textWidth(label, title.size, 'bold', LETTERHEAD_TITLE_SLOT.labelTracking * scale);
+    expect(title.x + labelWidth).toBeCloseTo(MARGIN + CONTENT_WIDTH, 1);
+    expect(jobNumber.x + textWidth(number, jobNumber.size, 'bold')).toBeCloseTo(MARGIN + CONTENT_WIDTH, 1);
+    expect(title.y).toBeGreaterThan(jobNumber.y);
+    expect(jobNumber.size).toBeGreaterThanOrEqual(11.5);
+    expect(jobNumber.size).toBeLessThanOrEqual(12.5);
+    expect(title.y + title.size * 0.75).toBeLessThanOrEqual(LETTERHEAD_TOP + 0.01);
+    // No overlap with any letterhead line's box (cap height above the baseline, descender below).
+    const box = (run: { x: number; y: number; width: number; size: number }) => ({
+      left: run.x,
+      right: run.x + (run === title ? textWidth(label, title.size, 'bold', LETTERHEAD_TITLE_SLOT.labelTracking * (CONTENT_WIDTH / LETTERHEAD_REFERENCE.width)) : run === jobNumber ? textWidth(number, run.size, 'bold') : run.width / SUBSTITUTION_ALLOWANCE),
+      top: run.y + run.size * 0.75,
+      bottom: run.y - run.size * 0.22,
+    });
+    for (const line of MASTER_TEXT) {
+      const lineBox = box(runs.find((run) => run.value === line)!);
+      for (const own of [title, jobNumber]) {
+        const ownBox = box(own);
+        const apart = ownBox.right <= lineBox.left || ownBox.left >= lineBox.right || ownBox.top <= lineBox.bottom || ownBox.bottom >= lineBox.top;
+        expect(apart, `${own.value} overlaps "${line}"`).toBe(true);
+      }
+    }
+  });
+
+  it('starts the page below the header, with nothing colliding or off the page', () => {
+    const bytes = render();
+    const below = textRuns(bytes).filter((run) => run.page === 1 && !MASTER_TEXT.includes(run.value) && run.value !== label && run.value !== number);
+    for (const run of below) expect(run.y + run.size, run.value).toBeLessThan(bandBottom);
+    expect(inspectPdf(bytes, { margin: MARGIN, edge: A4_HEIGHT - LETTERHEAD_TOP }).problems).toEqual([]);
+  });
+});
+
+describe('the title slot', () => {
+  it('fits the longest document title the job-card renderer draws inside the letterhead', () => {
+    expect(LETTERHEAD_TITLE_SLOT.right).toBe(LETTERHEAD_REFERENCE.width);
   });
 });
 

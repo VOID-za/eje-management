@@ -3,6 +3,8 @@ import { displaySize, type PdfImage } from '@/lib/pdf/image';
 import { parseSvgPath, pathBounds, pathOperators } from '@/lib/pdf/path';
 import {
   LETTERHEAD_INK,
+  LETTERHEAD_REFERENCE,
+  LETTERHEAD_TITLE_SLOT,
   isMasterLetterhead,
   layoutLetterhead,
   letterheadLineGlyphs,
@@ -291,6 +293,43 @@ export const drawLetterhead = (
   const fitted = fitLetterhead(letterhead, box);
   pdf.image(letterhead, fitted.x, fitted.y, fitted.width, fitted.height);
   return true;
+};
+
+/**
+ * THE JOB CARD'S HEADER ON THE EJE LETTERHEAD, ACROSS THE FULL PAGE. JOB-CARD-3 (the owner,
+ * 17 November 2026).
+ *
+ * The header was the letterhead fitted into the 60pt band above the old rule — about 300pt of the
+ * page's 515pt, its address and telephone lines under 5pt: squeezed, and too small to read. Now it is
+ * the whole printable width (CONTENT_WIDTH, 515pt, so 103pt tall — scaled uniformly, never stretched):
+ * the company name about 20pt, the address, cell, telephone, fax and email lines about 8pt, Reg and
+ * VAT about 7pt. The document's name and number stand in the letterhead's own empty top-right corner
+ * (`LETTERHEAD_TITLE_SLOT`): the label letter-spaced at 7.5pt, the number 12pt bold. Returns the y of
+ * the rule that closes the header, a few points under the letterhead's lowest ink.
+ */
+export const LETTERHEAD_FULL_HEIGHT = (CONTENT_WIDTH * LETTERHEAD_REFERENCE.height) / LETTERHEAD_REFERENCE.width;
+
+export const drawFullWidthLetterhead = (pdf: PdfBuilder, title: string, number: string): number => {
+  const top = LETTERHEAD_TOP;
+  const scale = CONTENT_WIDTH / LETTERHEAD_REFERENCE.width;
+  drawEjeLetterhead(pdf, { x: MARGIN, y: top - LETTERHEAD_FULL_HEIGHT, width: CONTENT_WIDTH, height: LETTERHEAD_FULL_HEIGHT });
+  const slot = LETTERHEAD_TITLE_SLOT;
+  const right = MARGIN + slot.right * scale;
+  const labelSize = slot.labelSize * scale;
+  const tracking = slot.labelTracking * scale;
+  pdf.text(right - textWidth(title, labelSize, 'bold', tracking), top - slot.labelBaseline * scale, title, {
+    font: 'bold',
+    size: labelSize,
+    colour: MUTED,
+    tracking,
+  });
+  const numberSize = slot.numberSize * scale;
+  pdf.text(right - textWidth(number, numberSize, 'bold'), top - slot.numberBaseline * scale, number, {
+    font: 'bold',
+    size: numberSize,
+    colour: INK,
+  });
+  return top - LETTERHEAD_FULL_HEIGHT - 5;
 };
 
 /**

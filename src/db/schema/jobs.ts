@@ -176,6 +176,8 @@ export const jobs = pgTable(
      */
     courierCollection: boolean('courier_collection').notNull().default(false),
     waybillNumber: text('waybill_number').notNull().default(''),
+    /** JOB-CARD-3, 0059: who released the parts at the counter (a Parts Collection Note). */
+    partsReleasedBy: uuid('parts_released_by').references(() => users.id),
     /** The customer's own delivery note reference, where they work by one. */
     deliveryNote: text('delivery_note').notNull().default(''),
 

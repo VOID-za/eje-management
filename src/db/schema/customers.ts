@@ -73,7 +73,12 @@ export const customers = pgTable(
     version: rowVersion(),
   },
   (table) => [
-    uniqueIndex('customers_account_number_key').on(table.accountNumber),
+    /*
+     * CUST-ACCT-1 (0059): an account number is unique WHEN THERE IS ONE. A customer may be created
+     * without one (stored as ''), and any number of customers may have none; two customers may never
+     * share a real number.
+     */
+    uniqueIndex('customers_account_number_key').on(table.accountNumber).where(sql`btrim(${table.accountNumber}) <> ''`),
     check('customers_rate_mode_known', sql`${table.rateMode} in ('default', 'custom')`),
     // Search and the customer picker both look the customer up by name.
     index('customers_name_idx').on(sql`lower(${table.name})`),

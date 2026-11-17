@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { EmptyState } from './States';
+import { useNarrowScreen } from '@/hooks/useNarrowScreen';
 
 export interface Column<T> {
   readonly key: string;
@@ -28,6 +29,11 @@ export interface DataTableProps<T> {
   readonly emptyTitle?: string;
   readonly emptyDescription?: string;
   readonly className?: string;
+  /**
+   * MOBILE-TABLES-1: on a phone (below `sm`) draw each row as a card — the first column on top, every
+   * other column under it with its heading — instead of a table that scrolls sideways. Opt-in, per list.
+   */
+  readonly phoneCards?: boolean;
 }
 
 const ALIGN = {
@@ -44,9 +50,14 @@ export const DataTable = <T,>({
   emptyTitle = 'Nothing to show',
   emptyDescription = 'There are no records matching the current filters.',
   className,
+  phoneCards = false,
 }: DataTableProps<T>) => {
+  const narrow = useNarrowScreen();
   if (rows.length === 0) {
     return <EmptyState title={emptyTitle} description={emptyDescription} />;
+  }
+  if (phoneCards && narrow) {
+    return <DataCards columns={columns} rows={rows} rowKey={rowKey} onRowClick={onRowClick} className={className} />;
   }
 
   const folded = columns.filter((column, index) => index > 0 && column.secondary === true);
@@ -121,5 +132,74 @@ export const DataTable = <T,>({
         </tbody>
       </table>
     </div>
+  );
+};
+
+/**
+ * THE SAME ROWS AS CARDS, FOR A PHONE. MOBILE-TABLES-1 (17 November 2026).
+ *
+ * Nothing is dropped: the first column heads the card and every other column with a heading follows
+ * it, labelled, two to a line where the phone is wide enough. Long values wrap rather than being cut
+ * short, and the whole card is the target the row was — a finger-sized one.
+ */
+const DataCards = <T,>({
+  columns,
+  rows,
+  rowKey,
+  onRowClick,
+  className,
+}: Pick<DataTableProps<T>, 'columns' | 'rows' | 'rowKey' | 'onRowClick' | 'className'>) => {
+  const [first, ...rest] = columns;
+  const labelled = rest.filter((column) => column.header.length > 0);
+  return (
+    <ul
+      data-testid="data-cards"
+      className={cn(
+        'divide-y divide-steel-100 overflow-hidden rounded-[var(--radius-card)] border border-steel-200 bg-surface shadow-[var(--shadow-card)]',
+        className,
+      )}
+    >
+      {rows.map((row) => (
+        <li
+          key={rowKey(row)}
+          data-testid="data-card"
+          {...(onRowClick === undefined
+            ? {}
+            : {
+                role: 'link',
+                tabIndex: 0,
+                onClick: () => onRowClick(row),
+                onKeyDown: (event: React.KeyboardEvent) => {
+                  if (event.key === 'Enter') onRowClick(row);
+                },
+              })}
+          className={cn(
+            'min-h-11 px-4 py-3.5 text-sm text-steel-700',
+            onRowClick !== undefined && 'cursor-pointer transition-colors active:bg-eje-50/60',
+          )}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">{first?.render(row)}</div>
+            {onRowClick !== undefined && (
+              <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-0.5 size-4 shrink-0 text-steel-300" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M7.5 5l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </div>
+          {labelled.length > 0 && (
+            <dl className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-2 min-[380px]:grid-cols-2">
+              {labelled.map((column) => (
+                <div key={column.key} className="min-w-0">
+                  <dt className="text-xs font-semibold tracking-wide text-steel-500 uppercase">{column.header}</dt>
+                  <dd className="mt-0.5 min-w-0 break-words text-steel-700 [&_.truncate]:overflow-visible [&_.truncate]:break-words [&_.truncate]:whitespace-normal [&_.whitespace-nowrap]:whitespace-normal">
+                    {column.render(row)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 };

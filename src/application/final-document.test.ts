@@ -141,11 +141,17 @@ describe('a closed job has a downloadable final document', () => {
       'EJE Industrial Electronics',
       'ABC Engineering (Pty) Ltd',
       'Johannesburg',
-      'LW-V40-70214',
+      // JOB-CARD-3: the machine by its name (and number); its serial number stays on the record only.
+      'Machine name',
+      'Leadwell V-40',
+      'Machine number',
       'Replaced the spindle drive cooling fan.',
       'Pieter Nel',
     ]) {
       expect(plain, `the PDF does not carry ${value}`).toContain(value);
+    }
+    for (const value of ['LW-V40-70214', 'Serial number', 'CNC Milling Machine', 'Fanuc 0i-MF']) {
+      expect(plain, `the job card still prints ${value}`).not.toContain(value);
     }
     expect(text.startsWith('%PDF-')).toBe(true);
   });

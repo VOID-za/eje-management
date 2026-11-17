@@ -398,6 +398,24 @@ jobs:
           EJE_FORMS_VIEWPORT: 390x844:touch
         run: npm run breakdown-parts-check
 
+      # JOB-CARD-3, CHK-RACE-1, MOBILE-TABLES-1 (17 November 2026): the full-width letterhead header on screen,
+      # checklist answers tapped in quick succession all saved one at a time (the last one winning), and the
+      # Jobs list as cards on a phone.
+      - name: Follow-up — header, checklist answers, phone lists — desktop
+        env:
+          EJE_FORMS_VIEWPORT: 1440x900
+        run: npm run followup-check
+
+      - name: Follow-up — header, checklist answers, phone lists — tablet portrait, by touch
+        env:
+          EJE_FORMS_VIEWPORT: 768x1024:touch
+        run: npm run followup-check
+
+      - name: Follow-up — header, checklist answers, phone lists — phone, by touch
+        env:
+          EJE_FORMS_VIEWPORT: 390x844:touch
+        run: npm run followup-check
+
       # MULTI-CO-1 (the owner, 15 November 2026): "Job for Which Company?" on New Job (WD Hearn JHB → WDJ-0001,
       # only its customers), the EJE / WD Hearn customer tabs and default, and per-company details, numbering
       # and rates in Administration with an overlapping prefix and a rewinding start refused (server too).

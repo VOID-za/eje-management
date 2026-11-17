@@ -185,6 +185,8 @@ describe('collecting parts', () => {
       quantity: 1,
       unitPrice: 48500,
     });
+    // JOB-CARD-3: who released the parts is recorded before the collector signs.
+    job = await harness.repos.jobs.save({ ...job, partsReleasedBy: master.id });
     job = await startSignature(harness.master, job);
     const signed = await captureSignature(harness.master, job, {
       customerName: 'Johan',

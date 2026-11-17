@@ -153,10 +153,55 @@ const fromWorkflowError = (error: WorkflowError): ApiError =>
  * says. A driver error that quotes the failing SQL — which `postgres` does —
  * would otherwise hand the client the schema.
  */
+/**
+ * A LOST RACE, RECOGNISED BY WHAT IT IS AND NOT BY `instanceof`. CHK-RACE-1 (17 November 2026).
+ *
+ * The production build bundles `ConcurrencyError` into more than one chunk (as it did
+ * CompanyRuleError — see isCompanyRuleError), so `instanceof` was false there and two checklist
+ * answers tapped close together answered 500 "Something went wrong" instead of 409. Unit tests share
+ * one module graph and could not see it. Recognised by its name and the fields only it carries.
+ */
+export const isConcurrencyError = (cause: unknown): cause is ConcurrencyError =>
+  cause instanceof ConcurrencyError ||
+  (cause instanceof Error &&
+    cause.name === 'ConcurrencyError' &&
+    typeof (cause as { entity?: unknown }).entity === 'string' &&
+    typeof (cause as { expectedVersion?: unknown }).expectedVersion === 'number');
+
+/** The same, for the domain's refusal — a 422 must never become a 500 for the same reason. */
+const isWorkflowError = (cause: unknown): cause is WorkflowError =>
+  cause instanceof WorkflowError ||
+  (cause instanceof Error &&
+    cause.name === 'WorkflowError' &&
+    Array.isArray((cause as { violations?: unknown }).violations));
+
+/**
+ * CUST-ACCT-1: the database's unique index on a real account number, reached by two customers being
+ * saved with the same number at the same moment (the application refuses it first in every other
+ * case). A 409 with a sentence, never the driver's text.
+ */
+const takenAccountNumber = (cause: unknown): boolean => {
+  let current: unknown = cause;
+  for (let depth = 0; depth < 5 && current !== null && typeof current === 'object'; depth += 1) {
+    const candidate = current as { code?: unknown; constraint_name?: unknown; cause?: unknown };
+    if (candidate.code === '23505' && candidate.constraint_name === 'customers_account_number_key') return true;
+    current = candidate.cause;
+  }
+  return false;
+};
+
 export const toApiError = (cause: unknown): ApiError => {
   if (cause instanceof ApiError) return cause;
-  if (cause instanceof WorkflowError) return fromWorkflowError(cause);
-  if (cause instanceof ConcurrencyError) {
+  if (isWorkflowError(cause)) return fromWorkflowError(cause);
+  if (takenAccountNumber(cause)) {
+    return new ApiError('conflict', 'That account number is already in use.', [
+      {
+        code: 'duplicate_account_number',
+        message: 'Another customer already has that account number. Use a different account number, or leave it blank.',
+      },
+    ]);
+  }
+  if (isConcurrencyError(cause)) {
     return new ApiError(
       'version_conflict',
       'Somebody else changed this while you were working on it. Reload and try again.',
@@ -236,7 +281,7 @@ export const errorResponse = (error: ApiError): NextResponse =>
  * password and a job body contains a customer's details.
  */
 export const logUnexpected = (route: string, cause: unknown): void => {
-  if (!(cause instanceof ApiError) && !(cause instanceof WorkflowError)) {
+  if (!(cause instanceof ApiError) && !isWorkflowError(cause)) {
     console.error(`[api] ${route} failed`, cause);
   }
 };

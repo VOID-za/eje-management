@@ -194,6 +194,34 @@ export const layoutLetterhead = (
   };
 };
 
+/**
+ * THE DOCUMENT'S NAME AND NUMBER, IN THE LETTERHEAD'S TOP-RIGHT CORNER. JOB-CARD-3 (the owner,
+ * 17 November 2026).
+ *
+ * With the letterhead across the page's full width, the paper's own top-right corner — above the
+ * P.O. Box block and to the right of the company name — is empty, and that is where the document says
+ * what it is: "JOB CARD" (or "PARTS COLLECTION NOTE") on one line, its number under it, both against
+ * the right edge. In the letterhead's reference units (3300 x 660, y down), so the PDF and the screen
+ * place them from the same numbers and they scale with the artwork:
+ *
+ *   - the label: about 7.5pt on the page, letter-spaced, its baseline level with the top of the "Reg:"
+ *     line and clear of the company name below it;
+ *   - the number: about 12pt bold — restrained beside the 20pt company name — its baseline above the
+ *     P.O. Box block's first line by more than a line's height.
+ *
+ * `letterhead-title.test.ts` holds every document title clear of every line of the letterhead.
+ */
+export const LETTERHEAD_TITLE_SLOT = {
+  /** Both lines end here: the letterhead's right edge. */
+  right: LETTERHEAD_REFERENCE.width,
+  labelBaseline: 52,
+  labelSize: 48,
+  /** Extra space after each character of the label (TRACK_TITLE at the label's size, x 1/scale). */
+  labelTracking: 8.65,
+  numberBaseline: 162,
+  numberSize: 77,
+} as const;
+
 /** The mark's outlines as an SVG path `d`, in the mark box's units (for an even-odd fill). */
 export const markPathData = (mark: LetterheadArea, polygons: readonly (readonly number[])[] = EJE_MARK_POLYGONS): string =>
   polygons

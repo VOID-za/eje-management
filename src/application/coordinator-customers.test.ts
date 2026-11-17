@@ -350,3 +350,54 @@ describe('a Coordinator files a customer document', () => {
     ).rejects.toThrow(WorkflowError);
   });
 });
+
+/**
+ * CUST-ACCT-1 (17 November 2026): a customer may be registered without an account number, and any
+ * number of them may have none; a real account number still belongs to one customer only, and taking
+ * one that is in use is refused in words rather than as "Something went wrong".
+ */
+describe('account numbers', () => {
+  const named = (name: string, accountNumber: string) => ({ ...newCustomerInput, name, accountNumber });
+  const codesOf = async (work: Promise<unknown>): Promise<string[]> => {
+    try {
+      await work;
+      return [];
+    } catch (error) {
+      if (!(error instanceof WorkflowError)) throw error;
+      return error.violations.map((violation) => violation.code);
+    }
+  };
+
+  it('need not be given — and several customers may have none', async () => {
+    const harness = build();
+    const first = await createCustomer(harness.as(coordinator), named('No Account One', ''));
+    const second = await createCustomer(harness.as(coordinator), named('No Account Two', '   '));
+    expect(first.customer.accountNumber).toBe('');
+    expect(second.customer.accountNumber).toBe('');
+  });
+
+  it('a real one already in use is refused, naming the customer that holds it', async () => {
+    const harness = build();
+    await createCustomer(harness.as(coordinator), named('Holder', 'ACC-777'));
+    try {
+      await createCustomer(harness.as(coordinator), named('Newcomer', ' ACC-777 '));
+      expect.unreachable('a second customer took ACC-777');
+    } catch (error) {
+      expect(error).toBeInstanceOf(WorkflowError);
+      const violation = (error as WorkflowError).violations[0]!;
+      expect(violation.code).toBe('duplicate_account_number');
+      expect(violation.message).toContain('Holder');
+    }
+  });
+
+  it('editing a customer keeps its own number, and cannot take another’s', async () => {
+    const harness = build();
+    const holder = await createCustomer(harness.as(coordinator), named('Holder', 'ACC-1'));
+    const other = await createCustomer(harness.as(coordinator), named('Other', 'ACC-2'));
+    await expect(updateCustomer(harness.as(coordinator), { ...holder.customer, industry: 'Edited' })).resolves.toBeDefined();
+    expect(await codesOf(updateCustomer(harness.as(coordinator), { ...other.customer, accountNumber: 'ACC-1' }))).toEqual(['duplicate_account_number']);
+    // Clearing it is allowed, even with other customers already blank.
+    await createCustomer(harness.as(coordinator), named('Blank', ''));
+    await expect(updateCustomer(harness.as(coordinator), { ...other.customer, accountNumber: '' })).resolves.toBeDefined();
+  });
+});

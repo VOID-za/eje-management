@@ -190,6 +190,31 @@ const refuseRemovingCompanyInUse = async (
   ]);
 };
 
+/**
+ * ACCOUNT NUMBERS ARE UNIQUE WHEN THERE IS ONE. CUST-ACCT-1 (17 November 2026).
+ *
+ * A customer may be registered without an account number — it is stored as '' — and any number of
+ * customers may have none (0059 made the database's index partial). Two customers may never share a
+ * real number: that is refused HERE, with a sentence naming the customer that holds it, rather than left
+ * to the database's index, whose refusal reached the office as "Something went wrong".
+ */
+const refuseTakenAccountNumber = (
+  existing: readonly Customer[],
+  accountNumber: string,
+  self: CustomerId | null,
+): void => {
+  const wanted = accountNumber.trim();
+  if (wanted.length === 0) return;
+  const holder = existing.find((customer) => customer.id !== self && customer.accountNumber.trim() === wanted);
+  if (holder === undefined) return;
+  throw new WorkflowError(`Account number ${wanted} is already in use.`, [
+    {
+      code: 'duplicate_account_number',
+      message: `Account number ${wanted} belongs to ${holder.name}. Use a different account number, or leave it blank.`,
+    },
+  ]);
+};
+
 export const createCustomer = async (
   context: OperationContext,
   input: NewCustomerInput,
@@ -208,6 +233,8 @@ export const createCustomer = async (
       },
     ]);
   }
+
+  refuseTakenAccountNumber(existing, input.accountNumber, null);
 
   const companyIds = await resolveCustomerCompanies(context, input.companyIds ?? [DEFAULT_COMPANY_ID]);
 
@@ -256,6 +283,7 @@ export const updateCustomer = async (
   customer: Customer,
 ): Promise<Customer> => {
   assertManages(context);
+  refuseTakenAccountNumber(await context.repos.customers.list(), customer.accountNumber, customer.id);
   // MULTI-CO-1: the company links are held to the same rule as on creation.
   const companyIds = await resolveCustomerCompanies(context, customer.companyIds);
   await refuseRemovingCompanyInUse(context, customer, companyIds);

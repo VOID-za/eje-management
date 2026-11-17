@@ -107,6 +107,8 @@ describe('the Coordinator is an office role, not a field one', () => {
       quantity: 1,
       unitPrice: 48500,
     });
+    // JOB-CARD-3: the Coordinator records herself as releasing the parts.
+    job = await harness.repos.jobs.save({ ...job, partsReleasedBy: coordinator.id });
     job = await startSignature(harness.as(coordinator), job);
     const signed = await captureSignature(harness.as(coordinator), job, {
       customerName: 'Pieter',

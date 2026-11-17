@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   checklistChoiceLabel,
   checklistChoiceRequired,
@@ -204,6 +204,65 @@ const ChecklistChoice = ({
   );
 };
 
+/** Two changes to one item, the later winning field by field (blanks merged, not replaced). */
+const mergeAnswer = (earlier: ChecklistAnswer | undefined, later: ChecklistAnswer | undefined): ChecklistAnswer => {
+  if (earlier === undefined) return later ?? {};
+  if (later === undefined) return earlier;
+  return {
+    ...earlier,
+    ...later,
+    ...(earlier.fieldValues === undefined && later.fieldValues === undefined
+      ? {}
+      : { fieldValues: { ...(earlier.fieldValues ?? {}), ...(later.fieldValues ?? {}) } }),
+  };
+};
+
+/** The response as the technician last set it: the stored one with their queued or just-saved answer over it. */
+const withAnswer = (itemId: string, response: ChecklistResponse | undefined, value: ChecklistAnswer): ChecklistResponse => ({
+  itemId,
+  choice: value.choice !== undefined ? value.choice : (response?.choice ?? null),
+  yesNo: value.yesNo !== undefined ? value.yesNo : (response?.yesNo ?? null),
+  measurement: value.measurement !== undefined ? value.measurement : (response?.measurement ?? null),
+  text: value.text !== undefined ? value.text : (response?.text ?? ''),
+  notes: value.notes !== undefined ? value.notes : (response?.notes ?? ''),
+  fieldValues: { ...(response?.fieldValues ?? {}), ...(value.fieldValues ?? {}) },
+  photos: response?.photos ?? [],
+  answeredAt: response?.answeredAt ?? null,
+  answeredBy: response?.answeredBy ?? null,
+});
+
+/** "Saving...", "All answers saved", or what was not saved and a way to send it again. */
+const ChecklistSaveState = ({
+  state,
+  unsaved,
+  error,
+  onRetry,
+}: {
+  readonly state: 'idle' | 'saving' | 'saved' | 'failed';
+  readonly unsaved: number;
+  readonly error: string | null;
+  readonly onRetry: () => void;
+}) => {
+  if (state === 'idle') return null;
+  if (state === 'failed') {
+    return (
+      <div role="alert" className="mt-1 flex flex-wrap items-center gap-2 text-sm font-medium text-signal-600" data-testid="checklist-save-state" data-state="failed">
+        <span>
+          {unsaved} {unsaved === 1 ? 'answer is' : 'answers are'} not saved{error === null ? '.' : ` — ${error}`}
+        </span>
+        <Button size="sm" variant="secondary" onClick={onRetry}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <p role="status" aria-live="polite" className="mt-1 text-sm text-steel-500" data-testid="checklist-save-state" data-state={state}>
+      {state === 'saving' ? 'Saving…' : 'All answers saved'}
+    </p>
+  );
+};
+
 /** True on the first row of a run the source labels once ("Check all oil levels:"). */
 const groupStarts = (items: readonly ChecklistItem[], index: number): boolean => {
   const group = items[index]?.group ?? '';
@@ -234,9 +293,66 @@ const ChecklistForm = ({
   const started = job.checklist !== null;
   const completed = job.checklist?.completedAt !== null && job.checklist !== null;
 
-  const answer = async (itemId: string, value: ChecklistAnswer) => {
-    const ok = await operation.run(() => jobs.answerChecklist(job.id, { itemId, ...value }));
-    if (ok) onChanged();
+  /*
+   * ANSWERS ARE SAVED ONE AT A TIME, THE LATEST WINNING. CHK-RACE-1 (17 November 2026).
+   *
+   * Each tap used to send its own request at once and lock every row until it came back, so taps
+   * made during a save were lost, and two saves in flight together raced on the job's version. Now
+   * a tap shows at once and joins a queue: one answer is on the wire at a time, a second change to
+   * the same item while it waits is MERGED into it (so "Pass, no - Fail" sends Fail, never Pass after
+   * Fail), and the screen says whether everything is saved. A failed save keeps its answer queued and
+   * on screen, marked unsaved, until it is sent again - nothing a technician tapped disappears
+   * silently. The server re-runs an answer that lost a race with another write (answer_checklist).
+   */
+  const answers = useOperation();
+  const queued = useRef(new Map<string, ChecklistAnswer>());
+  const sending = useRef(false);
+  const [unsaved, setUnsaved] = useState<ReadonlyMap<string, ChecklistAnswer>>(new Map());
+  /** Each item's response as the server returned it from this screen's last save of it. */
+  const [returned, setReturned] = useState<ReadonlyMap<string, ChecklistResponse>>(new Map());
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+
+  const flush = async (): Promise<void> => {
+    if (sending.current) return;
+    sending.current = true;
+    setSaveState('saving');
+    let failed = false;
+    while (queued.current.size > 0) {
+      const [itemId, value] = queued.current.entries().next().value as [string, ChecklistAnswer];
+      const saved = await answers.runFor(() => jobs.answerChecklist(job.id, { itemId, ...value }));
+      if (saved === null) {
+        failed = true;
+        break;
+      }
+      // Sent: off the queue unless a newer change to the same item arrived meanwhile (still queued, merged).
+      if (queued.current.get(itemId) === value) queued.current.delete(itemId);
+      const stored = saved.checklist?.responses.find((response) => response.itemId === itemId);
+      if (stored !== undefined) setReturned((current) => new Map(current).set(itemId, stored));
+      setUnsaved(new Map(queued.current));
+    }
+    sending.current = false;
+    setUnsaved(new Map(queued.current));
+    setSaveState(failed ? 'failed' : 'saved');
+    if (!failed) onChanged();
+  };
+
+  const answer = (itemId: string, value: ChecklistAnswer): void => {
+    queued.current.set(itemId, mergeAnswer(queued.current.get(itemId), value));
+    setUnsaved(new Map(queued.current));
+    void flush();
+  };
+
+  /*
+   * What a row shows: the newer of the screen's copy of the job and the response this screen's last
+   * save returned (the screen refetches after a save, and until it has, the save's own answer is the
+   * newer), with anything still queued over it. A later change by somebody else is newer still, and wins.
+   */
+  const shownResponse = (itemId: string): ChecklistResponse | undefined => {
+    const held = responses.get(itemId);
+    const mine = returned.get(itemId);
+    const stored = mine !== undefined && (held === undefined || (mine.answeredAt ?? '') > (held.answeredAt ?? '')) ? mine : held;
+    const local = unsaved.get(itemId);
+    return local === undefined ? stored : withAnswer(itemId, stored, local);
   };
 
   /*
@@ -444,6 +560,12 @@ const ChecklistForm = ({
                 {template.layout.title}
               </p>
             )}
+            <ChecklistSaveState
+              state={saveState}
+              unsaved={unsaved.size}
+              error={answers.error}
+              onRetry={() => void flush()}
+            />
             <p className="mt-1 text-sm text-steel-500">
               {progress.answered} of {progress.total} answered
               {progress.failedItems > 0 && (
@@ -527,9 +649,9 @@ const ChecklistForm = ({
                 key={item.id}
                 groupHeading={groupStarts(section.items, itemIndex)}
                 item={item}
-                response={responses.get(item.id)}
+                response={shownResponse(item.id)}
                 editable={editable && !completed}
-                busy={operation.running || capture.running}
+                busy={capture.running}
                 onAnswer={(value) => answer(item.id, value)}
                 offline={!online}
                 held={held.get(item.id)}
@@ -612,7 +734,8 @@ const ChecklistForm = ({
             <Button
               size="lg"
               variant="success"
-              disabled={!progress.complete || !online}
+              // Not while an answer is still on its way: the checklist is completed as the SERVER holds it.
+              disabled={!progress.complete || !online || unsaved.size > 0 || saveState === 'saving'}
               onClick={() => setConfirmComplete(true)}
             >
               Complete checklist

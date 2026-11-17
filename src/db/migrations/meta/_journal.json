@@ -414,6 +414,13 @@
       "when": 1795200000000,
       "tag": "0058_multi_company",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1795300000000,
+      "tag": "0059_account_numbers_and_parts_releaser",
+      "breakpoints": true
     }
   ]
 }

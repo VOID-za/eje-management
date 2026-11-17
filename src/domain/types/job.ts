@@ -800,6 +800,18 @@ export interface Job {
   readonly waybillNumber: string;
 
   /**
+   * WHO RELEASED THE PARTS. JOB-CARD-3 (the owner, 17 November 2026).
+   *
+   * A Parts Collection Note names the member of staff who handed the goods over at the counter — not
+   * the job's assigned technician (a collection usually has none, which printed "Unassigned"). Chosen
+   * explicitly at the collection step, with the collection method; never defaulted to whoever is
+   * signed in. Null until somebody has been recorded, and on every collection released before this
+   * existed: their document says "Not recorded" rather than guessing. Optional so that records and
+   * fixtures from before it read as null.
+   */
+  readonly partsReleasedBy?: UserId | null;
+
+  /**
    * The customer's own delivery note reference, if they work by one.
    *
    * Optional everywhere. Some customers reconcile parts and workshop repairs

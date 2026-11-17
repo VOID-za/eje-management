@@ -104,6 +104,8 @@ const partsJob = async (
   return setCollectionMethod(context, job, {
     courier: over.courier,
     waybillNumber: over.waybill ?? (over.courier ? WAYBILL : ''),
+    // JOB-CARD-3: who handed the parts over, recorded at the collection.
+    partsReleasedBy: master.id,
   });
 };
 

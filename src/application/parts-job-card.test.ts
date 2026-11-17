@@ -125,7 +125,7 @@ describe('a PARTS job, on the server', () => {
 
   it('refuses a signature refusal', async () => {
     // At the collector's signature, where a refusal would be recorded.
-    const atSignature = await startSignature(harness.as(master), job);
+    const atSignature = await startSignature(harness.as(master), await harness.repos.jobs.save({ ...job, partsReleasedBy: master.id }));
     expect(
       await codesOf(recordSignatureRefusal(harness.as(master), atSignature, { reason: 'Wrong part.' })),
     ).toContain('not_applicable_to_job_type');
@@ -188,7 +188,7 @@ describe('a PARTS job, on the server', () => {
   });
 
   it('a refusal recorded BEFORE this rule can still be resolved — no job is stranded', async () => {
-    const atSignature = await startSignature(harness.as(master), job);
+    const atSignature = await startSignature(harness.as(master), await harness.repos.jobs.save({ ...job, partsReleasedBy: master.id }));
     const legacy = await harness.repos.jobs.save({
       ...atSignature,
       status: 'review',

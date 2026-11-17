@@ -2,8 +2,9 @@ import { buildJobCardModel } from '@/lib/job-card/model';
 import { DEFAULT_COMPANY_ID } from '@/domain';
 import type { JobView } from '@/application/job-view';
 import { SignatureDisplay } from './SignaturePad';
-import { DocumentLetterhead } from '@/components/documents/EjeLetterhead';
-import { showsCurrentJobCardLayout } from '@/lib/job-card/layout-version';
+import { DocumentLetterhead, FullWidthLetterheadHeader } from '@/components/documents/EjeLetterhead';
+import { jobCardEditionOf, showsCurrentJobCardLayout, JOB_CARD_LAYOUT_RENDERER } from '@/lib/job-card/layout-version';
+import { carriesMasterLetterhead } from '@/lib/branding/eje-letterhead';
 import { PartsCollectionNoteV5 } from './PartsCollectionNoteV5';
 
 /**
@@ -31,7 +32,11 @@ export const PartsCollectionNote = ({ view }: { readonly view: JobView }) =>
   showsCurrentJobCardLayout(view.job.finalDocument) ? <CurrentPartsCollectionNote view={view} /> : <PartsCollectionNoteV5 view={view} />;
 
 const CurrentPartsCollectionNote = ({ view }: { readonly view: JobView }) => {
+  // JOB-CARD-3: the edition the document is (or will be) issued in — 6 only for one issued in v1.15.0.
+  const edition = jobCardEditionOf(view.job.finalDocument);
+  const fullWidthHeader = edition === JOB_CARD_LAYOUT_RENDERER && carriesMasterLetterhead(view.job.companyId);
   const model = buildJobCardModel({
+    edition,
     job: view.job,
     customer: view.customer,
     site: view.site,
@@ -56,6 +61,9 @@ const CurrentPartsCollectionNote = ({ view }: { readonly view: JobView }) => {
       data-theme="light"
       className="eje-document mx-auto max-w-[820px] bg-white p-8 text-[13px] leading-relaxed text-steel-800 shadow-[var(--shadow-card)] sm:p-10"
     >
+      {fullWidthHeader ? (
+        <FullWidthLetterheadHeader title={model.documentTitle} number={model.jobNumber} />
+      ) : (
       <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-steel-900 pb-5">
         {/*
           LETTERHEAD-2: the document's letterhead, chosen as the PDF chooses it — EJE's
@@ -110,6 +118,7 @@ const CurrentPartsCollectionNote = ({ view }: { readonly view: JobView }) => {
           <p className="font-mono text-2xl font-bold text-steel-900">{model.jobNumber}</p>
         </div>
       </header>
+      )}
 
       <section className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-[minmax(0,1fr)_21rem] sm:gap-8">
         <div className="min-w-0">
