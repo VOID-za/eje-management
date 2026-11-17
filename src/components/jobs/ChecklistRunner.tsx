@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   checklistChoiceLabel,
   checklistChoiceRequired,
@@ -23,7 +23,8 @@ import { useOperation } from '@/hooks/useOperation';
 import { usePendingWork } from '@/hooks/usePendingWork';
 import { holdMedia } from '@/lib/pwa/pending-media';
 import { supersedePendingAnswer, type PendingWork } from '@/lib/pwa/pending-work';
-import { useCurrentUser } from '@/providers/AppProvider';
+import { useApp, useCurrentUser } from '@/providers/AppProvider';
+import { ApiRequestError } from '@/api/client';
 import { usePhotoUpload } from '@/hooks/usePhotoUpload';
 import { PhotoCaptureButtons } from '@/components/media/PhotoCaptureButtons';
 import { UploadFailureNotice } from '@/components/media/UploadFailureNotice';
@@ -304,8 +305,11 @@ const ChecklistForm = ({
    * on screen, marked unsaved, until it is sent again - nothing a technician tapped disappears
    * silently. The server re-runs an answer that lost a race with another write (answer_checklist).
    */
-  const answers = useOperation();
+  const { invalidate } = useApp();
   const queued = useRef(new Map<string, ChecklistAnswer>());
+  /** Answers the server REFUSED (not a lost connection): set aside with its reason, never resent blindly. */
+  const [refused, setRefused] = useState<ReadonlyMap<string, string>>(new Map());
+  const [lastError, setLastError] = useState<string | null>(null);
   const sending = useRef(false);
   const [unsaved, setUnsaved] = useState<ReadonlyMap<string, ChecklistAnswer>>(new Map());
   /** Each item's response as the server returned it from this screen's last save of it. */
@@ -319,11 +323,36 @@ const ChecklistForm = ({
     let failed = false;
     while (queued.current.size > 0) {
       const [itemId, value] = queued.current.entries().next().value as [string, ChecklistAnswer];
-      const saved = await answers.runFor(() => jobs.answerChecklist(job.id, { itemId, ...value }));
-      if (saved === null) {
-        failed = true;
-        break;
+      let saved: Job;
+      try {
+        saved = await jobs.answerChecklist(job.id, { itemId, ...value });
+        invalidate();
+      } catch (error) {
+        const code = error instanceof ApiRequestError ? error.code : 'internal_error';
+        const message = error instanceof Error ? error.message : 'The answer could not be saved.';
+        /*
+         * A lost connection or a lost race is worth sending again, so the answer stays at the head of
+         * the queue and the screen offers "Try again". Anything else is the server's REFUSAL of that
+         * answer — sending it again would be refused again and would hold every later answer behind
+         * it — so it is set aside with its reason, its row shows the stored answer again, and the
+         * rest of the queue carries on.
+         */
+        if (code === 'network' || code === 'version_conflict' || code === 'internal_error') {
+          setLastError(message);
+          failed = true;
+          break;
+        }
+        if (queued.current.get(itemId) === value) queued.current.delete(itemId);
+        setRefused((current) => new Map(current).set(itemId, message));
+        setUnsaved(new Map(queued.current));
+        continue;
       }
+      setRefused((current) => {
+        if (!current.has(itemId)) return current;
+        const next = new Map(current);
+        next.delete(itemId);
+        return next;
+      });
       // Sent: off the queue unless a newer change to the same item arrived meanwhile (still queued, merged).
       if (queued.current.get(itemId) === value) queued.current.delete(itemId);
       const stored = saved.checklist?.responses.find((response) => response.itemId === itemId);
@@ -339,6 +368,7 @@ const ChecklistForm = ({
   const answer = (itemId: string, value: ChecklistAnswer): void => {
     queued.current.set(itemId, mergeAnswer(queued.current.get(itemId), value));
     setUnsaved(new Map(queued.current));
+    setLastError(null);
     void flush();
   };
 
@@ -374,6 +404,16 @@ const ChecklistForm = ({
   const currentUser = useCurrentUser();
   const capture = useOfflineCapture(job);
   const pending = usePendingWork();
+
+  /*
+   * Back online with answers still queued (the connection dropped mid-save): they are sent now, in
+   * order, rather than waiting for the next tap or for "Try again".
+   */
+  useEffect(() => {
+    if (online && queued.current.size > 0) void flush();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online]);
+
 
   const held = useMemo(() => {
     const map = new Map<string, PendingWork>();
@@ -416,6 +456,9 @@ const ChecklistForm = ({
     // One answer per item: the unsent one this replaces is the same answer,
     // corrected. Nothing that reached the server is touched — see the store.
     await supersedePendingAnswer(currentUser?.id ?? '', job.id, item.id).catch(() => 0);
+    // CHK-RACE-1: and an online answer to this item still queued from before the connection dropped is
+    // superseded too — it must never be sent later over the answer held now.
+    if (queued.current.delete(item.id)) setUnsaved(new Map(queued.current));
 
     const outcome = await capture.capture(
       'answer_checklist',
@@ -563,9 +606,18 @@ const ChecklistForm = ({
             <ChecklistSaveState
               state={saveState}
               unsaved={unsaved.size}
-              error={answers.error}
+              error={lastError}
               onRetry={() => void flush()}
             />
+            {refused.size > 0 && (
+              <ul role="alert" className="mt-1 space-y-0.5 text-sm font-medium text-signal-600" data-testid="checklist-refused">
+                {[...refused.entries()].map(([itemId, message]) => (
+                  <li key={itemId}>
+                    {template.sections.flatMap((section) => section.items).find((item) => item.id === itemId)?.text ?? 'An answer'}: not saved — {message}
+                  </li>
+                ))}
+              </ul>
+            )}
             <p className="mt-1 text-sm text-steel-500">
               {progress.answered} of {progress.total} answered
               {progress.failedItems > 0 && (

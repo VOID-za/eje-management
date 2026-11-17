@@ -133,8 +133,18 @@ await check('the Jobs list: on a phone a card per job, never a table to swipe', 
   return phone ? `${cards} cards` : 'table';
 });
 
-await check('checklist answers tapped in quick succession are all saved, one at a time, the last one winning', async () => {
+await check('the Jobs list: a technician can Accept from the list, on a phone card too', async () => {
   await signInAs(page, 'Sipho Mahlangu', { base: BASE });
+  await go('/jobs');
+  await page.getByTestId('jobs-count').waitFor({ timeout: 20000 });
+  const holder = phone ? page.getByTestId('data-card').filter({ hasText: job.jobNumber }) : page.locator('tr', { hasText: job.jobNumber });
+  await holder.first().waitFor({ timeout: 20000 });
+  const accept = holder.first().getByRole('button', { name: /Accept/u });
+  if ((await accept.count()) === 0) fail(`no Accept on ${job.jobNumber} in the list`);
+  if (!(await accept.first().isVisible())) fail('Accept is not visible');
+});
+
+await check('checklist answers tapped in quick succession are all saved, one at a time, the last one winning', async () => {
   const accepted = await call('POST', `/api/jobs/${job.id}/accept`, {});
   if (accepted.status !== 200) fail(`accept answered ${accepted.status}`);
   let inFlight = 0;
@@ -179,6 +189,31 @@ await check('checklist answers tapped in quick succession are all saved, one at 
   if (pressed !== 'true') fail('the screen does not show the last answer');
   await noPageOverflow('the checklist');
   return `${sent} requests for 10 taps, never more than ${most} at once`;
+});
+
+await check('an answer the server refuses is set aside with its reason; the answers after it are still saved', async () => {
+  let refusedOnce = false;
+  await page.route('**/answer_checklist', async (route) => {
+    if (refusedOnce) return route.continue();
+    refusedOnce = true;
+    return route.fulfill({
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'workflow_refused', message: 'That row does not have those blanks.', violations: [{ code: 'checklist_field_unknown', message: 'That row does not have those blanks.' }] } }),
+    });
+  });
+  const fail8 = page.getByRole('button', { name: 'Fail', exact: true });
+  await press(fail8.nth(9));
+  await press(page.getByRole('button', { name: 'Pass', exact: true }).nth(10));
+  await press(page.getByRole('button', { name: 'Pass', exact: true }).nth(11));
+  await page.getByTestId('checklist-refused').waitFor({ timeout: 20000 });
+  await page.locator('[data-testid="checklist-save-state"][data-state="saved"]').first().waitFor({ timeout: 30000 });
+  await page.unroute('**/answer_checklist');
+  const view = (await call('GET', `/api/jobs/${job.jobNumber}`)).json.data.view;
+  const items = view.checklistTemplate.sections.flatMap((section) => section.items);
+  const choice = (item) => view.job.checklist.responses.find((response) => response.itemId === item.id)?.choice ?? null;
+  if (choice(items[9]) === 'fail') fail('the refused answer was stored');
+  if (choice(items[10]) !== 'pass' || choice(items[11]) !== 'pass') fail('an answer after the refused one was not saved');
 });
 
 await check('no page error and no server error', async () => {

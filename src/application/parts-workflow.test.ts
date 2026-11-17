@@ -493,6 +493,16 @@ describe('who released the parts', () => {
     expect(violations.map((violation) => violation.code)).not.toContain('parts_releaser_required');
   });
 
+  it('does not strand a collection REFUSED before it existed (resolution, correction and resubmission ask no releaser)', async () => {
+    const job = await setCollectionMethod(harness.as(master), await atCollection(master), { courier: false, waybillNumber: '' });
+    const refusedBefore = {
+      ...job,
+      partsReleasedBy: null,
+      signatureRefusals: [{ refused: true, reason: 'Wrong part.', recordedBy: master.id, recordedAt: '2026-11-16T10:00:00.000Z', resolvedBy: null, resolvedAt: null, resolution: null, resolutionNote: '' }],
+    } as unknown as Job;
+    expect(checkReadyForSignature(refusedBefore).violations.map((violation) => violation.code)).not.toContain('parts_releaser_required');
+  });
+
   it('asks nothing of a job that is not a parts collection', async () => {
     const breakdown = (await harness.repos.jobs.list()).find((candidate) => candidate.jobType === 'breakdown' && candidate.signature === null)!;
     expect(breakdown.partsReleasedBy ?? null).toBeNull();

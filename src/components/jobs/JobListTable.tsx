@@ -202,6 +202,8 @@ export const JobListTable = ({
           {
             key: 'accept',
             header: '',
+            // MOBILE-TABLES-1: on a phone card, the card's action row.
+            phoneAction: true,
             align: 'right' as const,
             width: '120px',
             render: (row: JobListRow) =>

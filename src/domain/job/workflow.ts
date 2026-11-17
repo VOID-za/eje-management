@@ -991,11 +991,17 @@ export const checkReadyForSignature = (job: Job): TransitionCheck => {
 
   /*
    * JOB-CARD-3: a Parts Collection Note names who released the parts, so the collector does not sign
-   * until somebody has been recorded at the collection step. Only BEFORE the signature: a collection
-   * signed before this existed is not held back from submission for a name nobody was asked for — its
-   * document says "Not recorded".
+   * until somebody has been recorded at the collection step. Only BEFORE the collector's answer: a
+   * collection signed — or refused, on a release before parts refusals were closed — before this
+   * existed is not held back from submission or correction for a name nobody was asked for (no screen
+   * on those paths asks it); its document says "Not recorded".
    */
-  if (job.jobType === 'parts' && job.signature === null && (job.partsReleasedBy ?? null) === null) {
+  if (
+    job.jobType === 'parts' &&
+    job.signature === null &&
+    job.signatureRefusals.length === 0 &&
+    (job.partsReleasedBy ?? null) === null
+  ) {
     violations.push({
       code: 'parts_releaser_required',
       message: 'Choose who is releasing the parts.',

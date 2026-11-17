@@ -1,6 +1,7 @@
 import { requiresDeliveryNote, type Job } from '@/domain';
 import { buildDeliveryNoteModel, identifiedDeliveryNoteContent } from './delivery-note';
 import { buildJobCardModel, type JobCardModel, type JobCardModelInput } from './model';
+import { jobCardEditionOf } from './layout-version';
 
 /**
  * THE IDENTITY OF THE DOCUMENT A CUSTOMER WAS SHOWN. BD-23 (approved by the
@@ -151,7 +152,8 @@ export const documentIdentityFor = async (
     const canonical = canonicalJson(identifiedDeliveryNoteContent(note));
     return `${DELIVERY_NOTE_IDENTITY_VERSION}:${await sha256Hex(new TextEncoder().encode(canonical))}`;
   }
-  const model = buildJobCardModel({ ...input, generatedAt: '1970-01-01T00:00:00.000Z' });
+  // JOB-CARD-3: the identity of the document the tablet SHOWS — the edition it is (or will be) issued in.
+  const model = buildJobCardModel({ ...input, generatedAt: '1970-01-01T00:00:00.000Z', edition: jobCardEditionOf(input.job.finalDocument) });
   const canonical = canonicalJson(identifiedContent(model, input.job));
   const digest = await sha256Hex(new TextEncoder().encode(canonical));
   return `${DOCUMENT_IDENTITY_VERSION}:${digest}`;

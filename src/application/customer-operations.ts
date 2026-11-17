@@ -283,7 +283,12 @@ export const updateCustomer = async (
   customer: Customer,
 ): Promise<Customer> => {
   assertManages(context);
-  refuseTakenAccountNumber(await context.repos.customers.list(), customer.accountNumber, customer.id);
+  const stored = await context.repos.customers.findById(customer.id);
+  // Only a CHANGE is checked: a record that already sits beside a near-identical number (which the
+  // old index allowed) can still have its telephone number corrected.
+  if (stored === null || stored.accountNumber.trim() !== customer.accountNumber.trim()) {
+    refuseTakenAccountNumber(await context.repos.customers.list(), customer.accountNumber, customer.id);
+  }
   // MULTI-CO-1: the company links are held to the same rule as on creation.
   const companyIds = await resolveCustomerCompanies(context, customer.companyIds);
   await refuseRemovingCompanyInUse(context, customer, companyIds);

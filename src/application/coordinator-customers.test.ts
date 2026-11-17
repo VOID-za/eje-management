@@ -396,6 +396,10 @@ describe('account numbers', () => {
     const other = await createCustomer(harness.as(coordinator), named('Other', 'ACC-2'));
     await expect(updateCustomer(harness.as(coordinator), { ...holder.customer, industry: 'Edited' })).resolves.toBeDefined();
     expect(await codesOf(updateCustomer(harness.as(coordinator), { ...other.customer, accountNumber: 'ACC-1' }))).toEqual(['duplicate_account_number']);
+    // A record that already sits beside a near-identical number (the old index allowed "ACC-2 ") can
+    // still be edited, as long as its own number does not change.
+    const twin = await harness.repos.customers.save({ ...(await createCustomer(harness.as(coordinator), named('Twin', 'TWIN-1'))).customer, accountNumber: 'ACC-2 ' });
+    await expect(updateCustomer(harness.as(coordinator), { ...twin, phone: '011 000 0000' })).resolves.toBeDefined();
     // Clearing it is allowed, even with other customers already blank.
     await createCustomer(harness.as(coordinator), named('Blank', ''));
     await expect(updateCustomer(harness.as(coordinator), { ...other.customer, accountNumber: '' })).resolves.toBeDefined();

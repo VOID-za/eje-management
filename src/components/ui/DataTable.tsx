@@ -19,6 +19,11 @@ export interface Column<T> {
    */
   readonly secondary?: boolean;
   readonly width?: string;
+  /**
+   * MOBILE-TABLES-1: a column of controls with no heading (Accept): on a phone card it is drawn as the
+   * card's action row instead of being left out with the other headingless columns (the chevron).
+   */
+  readonly phoneAction?: boolean;
 }
 
 export interface DataTableProps<T> {
@@ -150,7 +155,8 @@ const DataCards = <T,>({
   className,
 }: Pick<DataTableProps<T>, 'columns' | 'rows' | 'rowKey' | 'onRowClick' | 'className'>) => {
   const [first, ...rest] = columns;
-  const labelled = rest.filter((column) => column.header.length > 0);
+  const labelled = rest.filter((column) => column.header.length > 0 && column.phoneAction !== true);
+  const actions = rest.filter((column) => column.phoneAction === true);
   return (
     <ul
       data-testid="data-cards"
@@ -170,7 +176,8 @@ const DataCards = <T,>({
                 tabIndex: 0,
                 onClick: () => onRowClick(row),
                 onKeyDown: (event: React.KeyboardEvent) => {
-                  if (event.key === 'Enter') onRowClick(row);
+                  // Only the card itself: Enter on a button inside it is that button's.
+                  if (event.key === 'Enter' && event.target === event.currentTarget) onRowClick(row);
                 },
               })}
           className={cn(
@@ -197,6 +204,13 @@ const DataCards = <T,>({
                 </div>
               ))}
             </dl>
+          )}
+          {actions.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 empty:hidden" data-testid="data-card-actions">
+              {actions.map((column) => (
+                <div key={column.key}>{column.render(row)}</div>
+              ))}
+            </div>
           )}
         </li>
       ))}
