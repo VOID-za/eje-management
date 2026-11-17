@@ -228,8 +228,8 @@ describePhase('rollback compatibility — phase 2: the live release (42e71fc) ag
 
     const rows = await db.execute<{ n: string }>(sql`select count(*)::text as n from drizzle.__drizzle_migrations`);
     const applied = Number(rows[0]?.n);
-    // 0058 applied beyond what the live release ships: the preflight warns, never fails.
-    expect(applied).toBe(59);
+    // 0058 and 0059 applied beyond what the live release ships: the preflight warns, never fails.
+    expect(applied).toBe(60);
 
     const checks = checkMigrations(shipped, { applied, schemaPresent: true });
     expect(checks.every((check) => check.verdict !== 'fail')).toBe(true);

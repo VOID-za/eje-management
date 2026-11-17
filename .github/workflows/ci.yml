@@ -189,6 +189,15 @@ jobs:
       - name: Rollback compatibility — the live release (8eb6aa4, v1.11.0) against this release's database (0058)
         run: bash scripts/release/rollback-compat.sh
 
+      # JOB-CARD-3 / CUST-ACCT-1 (0059): the release production actually runs (dcdcb84, v1.15.0) — the
+      # rollback target — against a database migrated to 0059: its preflight, its job saves leaving
+      # parts_released_by alone, and customers without an account number.
+      - name: Rollback compatibility — the live release (dcdcb84, v1.15.0) against this release's database (0059)
+        env:
+          LIVE_COMMIT: dcdcb84a8fdd468576120de3deccf876bf780664
+          PROBE: scripts/release/rollback-probe-0059.db.test.ts
+        run: bash scripts/release/rollback-compat.sh
+
   browser:
     name: Routes, workflow and smoke
     runs-on: ubuntu-latest

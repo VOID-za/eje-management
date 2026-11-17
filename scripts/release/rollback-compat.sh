@@ -53,6 +53,9 @@
 set -euo pipefail
 
 LIVE=${LIVE_COMMIT:-8eb6aa428ef9240c58698d6eddd6c605b831d1ec}
+# Which probe the live release runs (copied into its checkout). JOB-CARD-3: the release production runs
+# today (dcdcb84) has its own, for 0059 — see the CI step that sets LIVE_COMMIT and PROBE.
+PROBE=${PROBE:-scripts/release/rollback-probe.db.test.ts}
 : "${TEST_DATABASE_URL:?TEST_DATABASE_URL must name a disposable test database}"
 
 root=$(git rev-parse --show-toplevel)
@@ -107,8 +110,8 @@ run_phase "$root" prepare src/ops/release/rollback-prepare.db.test.ts
 echo
 echo "=== phase 2 — the LIVE release's own code reads, searches and writes it"
 mkdir -p "$live/src/release-probe"
-cp scripts/release/rollback-probe.db.test.ts "$live/src/release-probe/"
-run_phase "$live" probe src/release-probe/rollback-probe.db.test.ts
+cp "$PROBE" "$live/src/release-probe/"
+run_phase "$live" probe "src/release-probe/$(basename "$PROBE")"
 
 echo
 echo "ROLLBACK COMPATIBLE: the live release ($LIVE) works against a database at this release's newest migration."
