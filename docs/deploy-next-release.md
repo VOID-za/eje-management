@@ -32,9 +32,11 @@ release is bigger than its commits say, `stage-release.ps1 -Bump minor` (or
 `major`) raises the step. The commit remains what identifies a deployment;
 `/api/health` reports both.
 
-## CANDIDATE — JOB-CARD-5, the header correction (21 November 2026), on `claude/header-alignment`
+## RELEASED — `0cee570` = v1.16.2, the header correction (JOB-CARD-5, 21 November 2026)
 
-**No migration** (`-ExpectPending none`). Header only, Job Card and Parts Collection Note only (the Installation Delivery Note unchanged): the P.O. Box address moved down as one three-line block ("1465" still on the Email line); the document type and number one heading on one baseline in the top-right corner, on the "Reg:" line. New issues record renderer 9; renderer 8 (v1.16.1), 7 (v1.16.0) and 6 (v1.15.0) documents are still drawn in their own editions, byte-identical. Rollback to `0fa3d19` is a code switch, with one visible effect: that release does not know renderer 9 and shows a document issued in it ON SCREEN in its oldest (V5) layout — the stored PDF, which is what is downloaded, emailed and printed, is never re-rendered and stays exactly as issued. Not deployed until the owner approves.
+**No migration** (`-ExpectPending none`). Header only, Job Card and Parts Collection Note only (the Installation Delivery Note unchanged): the P.O. Box address moved down as one three-line block ("1465" still on the Email line); the document type and number one heading on one baseline in the top-right corner, on the "Reg:" line. New issues record renderer 9; renderer 8 (v1.16.1), 7 (v1.16.0) and 6 (v1.15.0) documents are still drawn in their own editions, byte-identical. Rollback to `0fa3d19` is a code switch, with one visible effect: that release does not know renderer 9 and shows a document issued in it ON SCREEN in its oldest (V5) layout — the stored PDF, which is what is downloaded, emailed and printed, is never re-rendered and stays exactly as issued.
+
+Released with the owner's approval: switched 15:27:32 UTC, healthy, no migration (60 applied). Pre-deploy backup `eje-eje_production-2026-11-21T15-25-12Z` and the release's own `…T15-27-13Z` restore-tested. All 31 tables, the 64 checksummed stored PDFs and the job-card and parts-note storage digest (168 files) identical before and after. Live: EJE-2048 and EJE-2128 previews in the corrected header; EJE-2108 (Installation Delivery Note) unchanged; EJE-2053, the one renderer-8 issue, still its v1.16.1 header, stored bytes matching. No 5xx; no app warnings. Accepted by the owner, 21 November 2026.
 
 ## RELEASED — `0fa3d19` = v1.16.1, the header alignment (JOB-CARD-4, 21 November 2026)
 
