@@ -653,12 +653,19 @@ describe('edition 7 is v1.16.0, to the byte', () => {
 /**
  * JOB-CARD-4 (the owner, 21 November 2026): two alignment corrections to the full-width header and
  * nothing else — "1465" on the Email line's baseline; the number smaller, inline with the company
- * name, against the right edge, its label above it.
+ * name, against the right edge, its label above it. The Job Card and the Parts Collection Note only.
  */
+describe('JOB-CARD-4 leaves the Installation Delivery Note as it was', () => {
+  it('draws it in edition 8 to the very bytes of edition 7 (v1.16.0)', () => {
+    const number = JOB_DOCUMENTS.installationDeliveryNote;
+    const bytes = renderJobCardPdf({ ...sources.get(number)!, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes;
+    expect(sha256(bytes)).toBe('bfa233d182537705e5636ad864d2136543a6a3da1f3e3bec6a1a1be1f89aa854');
+  });
+});
+
 describe.each([
   ['jobCard', 'JOB CARD'],
   ['partsCollectionNote', 'PARTS COLLECTION NOTE'],
-  ['installationDeliveryNote', 'DELIVERY NOTE — INSTALLATION'],
 ] as const)('%s — the aligned header (edition 8)', (name, label) => {
   const number = JOB_DOCUMENTS[name];
   const bandBottom = LETTERHEAD_TOP - LETTERHEAD_FULL_HEIGHT;

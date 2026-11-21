@@ -103,8 +103,10 @@ const header = (
    * letterhead (another company's) and the text header are unchanged.
    */
   if (hasJobCard3Layout(edition) && letterhead !== undefined && isMasterLetterhead(letterhead)) {
-    // JOB-CARD-4: edition 8 aligned ("1465" on the Email line, the number inline with the company name).
-    const ruleY = drawFullWidthLetterhead(sheet.pdf, model.documentTitle.toUpperCase(), model.jobNumber, hasAlignedHeader(edition));
+    // JOB-CARD-4: edition 8 aligned ("1465" on the Email line, the number inline with the company name) —
+    // the Job Card and the Parts Collection Note only; the owner kept the Installation Delivery Note as it was.
+    const aligned = hasAlignedHeader(edition) && model.installation === undefined;
+    const ruleY = drawFullWidthLetterhead(sheet.pdf, model.documentTitle.toUpperCase(), model.jobNumber, aligned);
     sheet.move(top - ruleY);
     sheet.rule(INK, 1.4);
     sheet.move(GAP.section);

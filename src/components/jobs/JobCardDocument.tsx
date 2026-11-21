@@ -58,7 +58,7 @@ const CurrentJobCard = ({ view }: { readonly view: JobView }) => {
       className="eje-document mx-auto max-w-[820px] bg-white p-8 text-[13px] leading-relaxed text-steel-800 shadow-[var(--shadow-card)] sm:p-10"
     >
       {fullWidthHeader ? (
-        <FullWidthLetterheadHeader title={model.documentTitle} number={model.jobNumber} aligned={hasAlignedHeader(edition)} />
+        <FullWidthLetterheadHeader title={model.documentTitle} number={model.jobNumber} aligned={hasAlignedHeader(edition) && model.installation === undefined} />
       ) : (
       <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-steel-900 pb-5">
         {/*

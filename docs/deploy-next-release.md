@@ -34,7 +34,7 @@ release is bigger than its commits say, `stage-release.ps1 -Bump minor` (or
 
 ## CANDIDATE — JOB-CARD-4, the header alignment (21 November 2026), on `claude/header-alignment`
 
-**No migration** (`-ExpectPending none`). Header only: "1465" on the Email line; the document number smaller and inline with the company name. New issues record renderer 8; renderer 7 (v1.16.0) and 6 (v1.15.0) documents are still drawn in their own editions, byte-identical. Rollback to `4ab6f13` is a code switch, with one visible effect: that release does not know renderer 8 and shows a document issued in it ON SCREEN in its oldest (V5) layout — the stored PDF, which is what is downloaded, emailed and printed, is never re-rendered and stays exactly as issued. Not deployed until the owner approves.
+**No migration** (`-ExpectPending none`). Header only, Job Card and Parts Collection Note only (the Installation Delivery Note unchanged, by the owner's decision): "1465" on the Email line; the document number smaller and inline with the company name. New issues record renderer 8; renderer 7 (v1.16.0) and 6 (v1.15.0) documents are still drawn in their own editions, byte-identical. Rollback to `4ab6f13` is a code switch, with one visible effect: that release does not know renderer 8 and shows a document issued in it ON SCREEN in its oldest (V5) layout — the stored PDF, which is what is downloaded, emailed and printed, is never re-rendered and stays exactly as issued. Not deployed until the owner approves.
 
 ## RELEASED — `4ab6f13` = v1.16.0, the job card corrections and follow-up fixes (JOB-CARD-3, CUST-ACCT-1, CHK-RACE-1, MOBILE-TABLES-1, 18 November 2026)
 
