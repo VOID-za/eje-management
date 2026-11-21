@@ -554,7 +554,8 @@ describe.each([
   ['installationDeliveryNote', 'DELIVERY NOTE — INSTALLATION'],
 ] as const)('%s — the full-width letterhead (edition 7)', (name, label) => {
   const number = JOB_DOCUMENTS[name];
-  const render = () => renderJobCardPdf({ ...sources.get(number)!, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes;
+  // JOB-CARD-4: edition 7 is what a document issued in v1.16.0 (renderer 7) is still drawn in.
+  const render = () => renderJobCardPdf({ ...sources.get(number)!, layout: 7, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes;
   const bandBottom = LETTERHEAD_TOP - LETTERHEAD_FULL_HEIGHT;
 
   it('spans the printable width, uniformly scaled, its lines readable', () => {
@@ -617,6 +618,121 @@ describe.each([
     const below = textRuns(bytes).filter((run) => run.page === 1 && !MASTER_TEXT.includes(run.value) && run.value !== label && run.value !== number);
     for (const run of below) expect(run.y + run.size, run.value).toBeLessThan(bandBottom);
     expect(inspectPdf(bytes, { margin: MARGIN, edge: A4_HEIGHT - LETTERHEAD_TOP }).problems).toEqual([]);
+  });
+});
+
+/**
+ * JOB-CARD-4: a job card, Parts Collection Note or Installation Delivery Note ISSUED in v1.16.0
+ * (renderer 7) is previewed as edition 7, which draws it to exactly the bytes 4ab6f13 drew (hashes
+ * taken by running this very rendering on 4ab6f13's source, 21 November 2026) — with the master
+ * letterhead and without. The correction and the delivery note are unchanged by edition 8.
+ */
+describe('edition 7 is v1.16.0, to the byte', () => {
+  it('draws what 4ab6f13 drew', async () => {
+    const now: Record<string, string> = {};
+    for (const [name, number] of Object.entries(JOB_DOCUMENTS)) {
+      const source = { ...sources.get(number)!, layout: 7 as const };
+      now[`${name}:master`] = sha256(renderJobCardPdf({ ...source, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes);
+      now[`${name}:none`] = sha256(renderJobCardPdf(source, `${number}.pdf`, GENERATED_AT).bytes);
+    }
+    now['correction:master'] = sha256(renderCorrectionPdf({ ...correctionSource, letterhead: EJE_MASTER_LETTERHEAD }, 'C.pdf').bytes);
+    now['deliveryNote:master'] = sha256(renderDeliveryNotePdf(deliveryNoteModel, EJE_MASTER_LETTERHEAD).bytes);
+    expect(now).toEqual({
+      'jobCard:master': '08f6ea69ad9dc1571bfa218ebf7c6e5a2c2266ae1c7a8988b96a423247dd2796',
+      'jobCard:none': 'a215cb43b75567e1022e26227c0bd549113515fec5c65e9d0d6305b7ef5afd5a',
+      'partsCollectionNote:master': '2448260cb3002a75c2a9e2c29ef32b83dabfd2f80d509df09b700ef790ab1918',
+      'partsCollectionNote:none': '5ccd7236d33cecea7dfb46493ddbea0c319f8f868f47d1fd224cc94ae014c86d',
+      'installationDeliveryNote:master': 'bfa233d182537705e5636ad864d2136543a6a3da1f3e3bec6a1a1be1f89aa854',
+      'installationDeliveryNote:none': '689ea49dd141ca49309cbaed8fc2c951766abbe7ac6212f904d612ffd962775d',
+      'correction:master': '2d8e544bfb480ca1ce7f981ba6012e5f1df9c1bd80265cad48c835bda02b23e9',
+      'deliveryNote:master': 'e6dca068bdeb36257833fc1e1baa767b727daeef6bcffaa67d980d3739104c70',
+    });
+  });
+});
+
+/**
+ * JOB-CARD-4 (the owner, 21 November 2026): two alignment corrections to the full-width header and
+ * nothing else — "1465" on the Email line's baseline; the number smaller, inline with the company
+ * name, against the right edge, its label above it.
+ */
+describe.each([
+  ['jobCard', 'JOB CARD'],
+  ['partsCollectionNote', 'PARTS COLLECTION NOTE'],
+  ['installationDeliveryNote', 'DELIVERY NOTE — INSTALLATION'],
+] as const)('%s — the aligned header (edition 8)', (name, label) => {
+  const number = JOB_DOCUMENTS[name];
+  const bandBottom = LETTERHEAD_TOP - LETTERHEAD_FULL_HEIGHT;
+  const draw = (layout?: 7) =>
+    renderJobCardPdf(
+      { ...sources.get(number)!, ...(layout === undefined ? {} : { layout }), letterhead: EJE_MASTER_LETTERHEAD },
+      `${number}.pdf`,
+      GENERATED_AT,
+    ).bytes;
+  const page1 = (bytes: Uint8Array) => textRuns(bytes).filter((run) => run.page === 1);
+
+  it("sets 1465 on the Email line's baseline, centred where it was; every other letterhead line exactly as in edition 7", () => {
+    const now = page1(draw());
+    const before = page1(draw(7));
+    const at = (runs: typeof now, value: string) => runs.find((run) => run.value === value)!;
+    expect(at(now, '1465').y).toBeCloseTo(at(now, 'Email: sales@ejeie.co.za or peetb@ejeie.co.za').y, 3);
+    expect(at(now, '1465').y).toBeLessThan(at(before, '1465').y - 20);
+    expect(at(now, '1465').x).toBeCloseTo(at(before, '1465').x, 3);
+    expect(at(now, '1465').size).toBeCloseTo(at(before, '1465').size, 3);
+    for (const line of MASTER_TEXT.filter((value) => value !== '1465')) {
+      expect([at(now, line).x, at(now, line).y, at(now, line).size], line).toEqual([at(before, line).x, at(before, line).y, at(before, line).size]);
+    }
+    // The mark is untouched.
+    expect(filledPaths(draw())[0]!.points).toEqual(filledPaths(draw(7))[0]!.points);
+  });
+
+  it("puts the number on the company name's line, at the right edge, smaller and bold, its label above where it was", () => {
+    const now = page1(draw());
+    const before = page1(draw(7));
+    const company = now.find((run) => run.value === 'EJE Industrial Electronics cc')!;
+    const jobNumber = now.find((run) => run.value === number && run.y > bandBottom)!;
+    const oldNumber = before.find((run) => run.value === number && run.y > bandBottom)!;
+    const title = now.find((run) => run.value === label)!;
+    expect(jobNumber.y).toBeCloseTo(company.y, 3);
+    expect(jobNumber.x + textWidth(number, jobNumber.size, 'bold')).toBeCloseTo(MARGIN + CONTENT_WIDTH, 1);
+    // Noticeably smaller than before (12pt), still readable (about 9pt), and well under the 20pt name.
+    expect(jobNumber.size).toBeLessThan(oldNumber.size * 0.8);
+    expect(jobNumber.size).toBeGreaterThanOrEqual(8.5);
+    expect(jobNumber.size).toBeLessThan(company.size / 2);
+    // The label is unchanged, above the number.
+    const oldTitle = before.find((run) => run.value === label)!;
+    expect([title.x, title.y, title.size]).toEqual([oldTitle.x, oldTitle.y, oldTitle.size]);
+    expect(title.y).toBeGreaterThan(jobNumber.y + jobNumber.size * 0.75);
+    // Clear of the company name to its left, and of every line of the letterhead.
+    expect(jobNumber.x).toBeGreaterThan(company.x + company.width / SUBSTITUTION_ALLOWANCE + 10);
+    const box = (run: { value: string; x: number; y: number; width: number; size: number }) => ({
+      left: run.x,
+      right:
+        run.x +
+        (run === jobNumber
+          ? textWidth(number, run.size, 'bold')
+          : run === title
+            ? textWidth(label, run.size, 'bold', LETTERHEAD_TITLE_SLOT.labelTracking * (CONTENT_WIDTH / LETTERHEAD_REFERENCE.width))
+            : run.width / SUBSTITUTION_ALLOWANCE),
+      top: run.y + run.size * 0.75,
+      bottom: run.y - run.size * 0.22,
+    });
+    for (const line of MASTER_TEXT) {
+      const lineBox = box(now.find((run) => run.value === line)!);
+      for (const own of [title, jobNumber]) {
+        const ownBox = box(own);
+        const apart = ownBox.right <= lineBox.left || ownBox.left >= lineBox.right || ownBox.top <= lineBox.bottom || ownBox.bottom >= lineBox.top;
+        expect(apart, `${own.value} overlaps "${line}"`).toBe(true);
+      }
+    }
+  });
+
+  it("keeps the header's height and everything below it exactly where edition 7 put it", () => {
+    const outside = (runs: ReturnType<typeof page1>) =>
+      runs
+        .filter((run) => !MASTER_TEXT.includes(run.value) && run.value !== label && !(run.value === number && run.y > bandBottom))
+        .map((run) => [run.value, run.x, run.y, run.size]);
+    expect(outside(page1(draw()))).toEqual(outside(page1(draw(7))));
+    expect(inspectPdf(draw(), { margin: MARGIN, edge: A4_HEIGHT - LETTERHEAD_TOP }).problems).toEqual([]);
   });
 });
 

@@ -1,9 +1,9 @@
-import { jobCardLayoutOf } from '@/lib/job-card/layout-version';
+import { JOB_CARD_LAYOUT_RENDERER, jobCardLayoutOf } from '@/lib/job-card/layout-version';
 
 /** The layout a preview is drawn in: absent for today's, else the one the job was issued in. */
-const layoutSourceOf = (finalDocument: { readonly renderer: number | null } | null): { readonly layout?: 'v5' | 6 } => {
+const layoutSourceOf = (finalDocument: { readonly renderer: number | null } | null): { readonly layout?: 'v5' | 6 | 7 } => {
   const layout = jobCardLayoutOf(finalDocument);
-  return layout === 7 ? {} : { layout };
+  return layout === JOB_CARD_LAYOUT_RENDERER ? {} : { layout };
 };
 import type { JobView } from '@/application/job-view';
 import type { Clock } from '@/services/ports';

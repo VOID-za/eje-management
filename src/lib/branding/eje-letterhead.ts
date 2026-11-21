@@ -164,7 +164,7 @@ export interface PlacedLetterhead {
  */
 export const layoutLetterhead = (
   box: LetterheadArea,
-  options: { readonly align?: 'left' | 'centre' } = {},
+  options: { readonly align?: 'left' | 'centre'; readonly lines?: readonly LetterheadLine[] } = {},
 ): PlacedLetterhead => {
   const scale = Math.max(
     0,
@@ -184,7 +184,7 @@ export const layoutLetterhead = (
       height: LETTERHEAD_MARK_BOX.height * scale,
     },
     markPolygons: EJE_MARK_POLYGONS,
-    lines: LETTERHEAD_LINES.map((value) => ({
+    lines: (options.lines ?? LETTERHEAD_LINES).map((value) => ({
       ...value,
       x: left + value.x * scale,
       baseline: top + value.baseline * scale,
@@ -221,6 +221,36 @@ export const LETTERHEAD_TITLE_SLOT = {
   numberBaseline: 162,
   numberSize: 77,
 } as const;
+
+/**
+ * THE HEADER, ALIGNED. JOB-CARD-4 (the owner, 21 November 2026) — two corrections and nothing else,
+ * for documents issued from edition 8 (an earlier issue keeps the header it was issued with):
+ *
+ *   - the P.O. Box block's last line, "1465", on the Email line's baseline — the block's other two
+ *     lines, every line's x (each stays centred in its column), size and face are as they were;
+ *   - the document's number on the company name's baseline, against the letterhead's right edge,
+ *     smaller (about 9pt on the page, from 12pt) and still bold — the company name stays the
+ *     dominant heading — with the label where it was, above it.
+ */
+const EMAIL_LINE = LETTERHEAD_LINES.find((value) => letterheadLineText(value).startsWith('Email:'));
+const COMPANY_NAME_LINE = LETTERHEAD_LINES.find((value) => letterheadLineText(value) === 'EJE Industrial Electronics cc');
+if (EMAIL_LINE === undefined || COMPANY_NAME_LINE === undefined) throw new Error('the letterhead lost its Email or company name line');
+
+export const LETTERHEAD_ALIGNED_LINES: readonly LetterheadLine[] = LETTERHEAD_LINES.map((value) =>
+  letterheadLineText(value) === '1465' ? { ...value, baseline: EMAIL_LINE.baseline } : value,
+);
+
+export const LETTERHEAD_INLINE_TITLE_SLOT = {
+  ...LETTERHEAD_TITLE_SLOT,
+  numberBaseline: COMPANY_NAME_LINE.baseline,
+  numberSize: 58,
+} as const;
+
+/** The letterhead lines and the title slot a full-width header is drawn with: edition 8's, or 7's. */
+export const fullWidthHeaderGeometry = (aligned: boolean) =>
+  aligned
+    ? { lines: LETTERHEAD_ALIGNED_LINES, slot: LETTERHEAD_INLINE_TITLE_SLOT }
+    : { lines: LETTERHEAD_LINES, slot: LETTERHEAD_TITLE_SLOT };
 
 /** The mark's outlines as an SVG path `d`, in the mark box's units (for an even-odd fill). */
 export const markPathData = (mark: LetterheadArea, polygons: readonly (readonly number[])[] = EJE_MARK_POLYGONS): string =>

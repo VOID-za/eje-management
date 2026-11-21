@@ -38,7 +38,7 @@ import {
 } from '@/domain';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/format';
 import { businessDateOf } from '@/lib/business-time';
-import { JOB_CARD_2_RENDERER, JOB_CARD_LAYOUT_RENDERER, type JobCardEdition } from './layout-version';
+import { JOB_CARD_2_RENDERER, hasJobCard3Layout, type JobCardEdition } from './layout-version';
 import { courierSignatureReference } from './delivery-note';
 import { INSTALLATION_DELIVERY_NOTE_TITLE, presentsAsInstallationDeliveryNote } from './installation-note';
 
@@ -480,7 +480,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
    * the PDF happens to be drawn — and it names who RELEASED the parts (`job.partsReleasedBy`, chosen at
    * the collection step), not the job's assigned technician.
    */
-  const collectionNote = edition === JOB_CARD_LAYOUT_RENDERER && job.jobType === 'parts';
+  const collectionNote = hasJobCard3Layout(edition) && job.jobType === 'parts';
   const raisedOn = businessDateOf(job.createdAt);
   const partDate = collectionNote && raisedOn !== null ? formatDate(raisedOn) : '';
   const releasedBy = (() => {
@@ -618,7 +618,7 @@ export const buildJobCardModel = (input: JobCardModelInput): JobCardModel => {
       machine === null
         ? null
         : {
-            ...(edition === JOB_CARD_LAYOUT_RENDERER && !presentsAsInstallationDeliveryNote(job)
+            ...(hasJobCard3Layout(edition) && !presentsAsInstallationDeliveryNote(job)
               ? {
                   /*
                    * JOB-CARD-3 (the owner): the customer's JOB CARD names the machine and its number,

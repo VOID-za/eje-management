@@ -41,7 +41,14 @@ import {
   drawLetterheadOverTitle,
 } from './pdf-sheet';
 import { isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
-import { JOB_CARD_2_RENDERER, JOB_CARD_LAYOUT_RENDERER, type JobCardEdition } from '@/lib/job-card/layout-version';
+import {
+  JOB_CARD_2_RENDERER,
+  JOB_CARD_3_RENDERER,
+  JOB_CARD_LAYOUT_RENDERER,
+  hasAlignedHeader,
+  hasJobCard3Layout,
+  type JobCardEdition,
+} from '@/lib/job-card/layout-version';
 
 
 const labelValueRows = (
@@ -95,8 +102,9 @@ const header = (
    * top-right corner (`drawFullWidthLetterhead`). The page below starts under its rule. An uploaded
    * letterhead (another company's) and the text header are unchanged.
    */
-  if (edition === JOB_CARD_LAYOUT_RENDERER && letterhead !== undefined && isMasterLetterhead(letterhead)) {
-    const ruleY = drawFullWidthLetterhead(sheet.pdf, model.documentTitle.toUpperCase(), model.jobNumber);
+  if (hasJobCard3Layout(edition) && letterhead !== undefined && isMasterLetterhead(letterhead)) {
+    // JOB-CARD-4: edition 8 aligned ("1465" on the Email line, the number inline with the company name).
+    const ruleY = drawFullWidthLetterhead(sheet.pdf, model.documentTitle.toUpperCase(), model.jobNumber, hasAlignedHeader(edition));
     sheet.move(top - ruleY);
     sheet.rule(INK, 1.4);
     sheet.move(GAP.section);
@@ -1196,8 +1204,9 @@ export const renderJobCardPdf = (
   fileName: string,
   generatedAt: string,
 ): RenderedPdf => {
-  // JOB-CARD-3: edition 6 redraws a job card issued in v1.15.0 exactly as it was; anything else is 7.
-  const edition: JobCardEdition = source.layout === JOB_CARD_2_RENDERER ? JOB_CARD_2_RENDERER : JOB_CARD_LAYOUT_RENDERER;
+  // JOB-CARD-3/-4: editions 6 and 7 redraw a job card issued in v1.15.0 / v1.16.0 exactly as it was; anything else is 8.
+  const edition: JobCardEdition =
+    source.layout === JOB_CARD_2_RENDERER || source.layout === JOB_CARD_3_RENDERER ? source.layout : JOB_CARD_LAYOUT_RENDERER;
   const model = buildJobCardModel({ ...source, generatedAt, edition });
   const sheet = new Sheet();
 

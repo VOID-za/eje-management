@@ -8,7 +8,7 @@ import {
 import { SignatureDisplay } from "./SignaturePad";
 import { DocumentPhoto } from "./DocumentPhoto";
 import { DocumentLetterhead, FullWidthLetterheadHeader } from "@/components/documents/EjeLetterhead";
-import { jobCardEditionOf, showsCurrentJobCardLayout, JOB_CARD_LAYOUT_RENDERER } from "@/lib/job-card/layout-version";
+import { jobCardEditionOf, showsCurrentJobCardLayout, hasAlignedHeader, hasJobCard3Layout } from "@/lib/job-card/layout-version";
 import { carriesMasterLetterhead } from "@/lib/branding/eje-letterhead";
 import { JobCardDocumentV5 } from "./JobCardDocumentV5";
 
@@ -32,7 +32,7 @@ export const JobCardDocument = ({ view }: { readonly view: JobView }) =>
 const CurrentJobCard = ({ view }: { readonly view: JobView }) => {
   // JOB-CARD-3: the edition the document is (or will be) issued in — 6 only for one issued in v1.15.0.
   const edition = jobCardEditionOf(view.job.finalDocument);
-  const fullWidthHeader = edition === JOB_CARD_LAYOUT_RENDERER && carriesMasterLetterhead(view.job.companyId);
+  const fullWidthHeader = hasJobCard3Layout(edition) && carriesMasterLetterhead(view.job.companyId);
   const model = buildJobCardModel({
     edition,
     job: view.job,
@@ -58,7 +58,7 @@ const CurrentJobCard = ({ view }: { readonly view: JobView }) => {
       className="eje-document mx-auto max-w-[820px] bg-white p-8 text-[13px] leading-relaxed text-steel-800 shadow-[var(--shadow-card)] sm:p-10"
     >
       {fullWidthHeader ? (
-        <FullWidthLetterheadHeader title={model.documentTitle} number={model.jobNumber} />
+        <FullWidthLetterheadHeader title={model.documentTitle} number={model.jobNumber} aligned={hasAlignedHeader(edition)} />
       ) : (
       <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-steel-900 pb-5">
         {/*

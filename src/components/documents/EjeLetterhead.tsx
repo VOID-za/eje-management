@@ -3,8 +3,9 @@ import { companies } from '@/api/endpoints';
 import type { LetterheadReference } from '@/domain';
 import {
   LETTERHEAD_REFERENCE,
-  LETTERHEAD_TITLE_SLOT,
   carriesMasterLetterhead,
+  fullWidthHeaderGeometry,
+  type LetterheadLine,
   layoutLetterhead,
   letterheadLineGlyphs,
   letterheadLineMatrix,
@@ -33,10 +34,10 @@ const REFERENCE_BOX = { left: 0, top: 0, width: LETTERHEAD_REFERENCE.width, heig
 
 const number = (value: number): string => Number(value.toFixed(6)).toString();
 
-export const EjeLetterhead = ({ className }: { readonly className?: string }) => {
+export const EjeLetterhead = ({ className, lineSet }: { readonly className?: string; readonly lineSet?: readonly LetterheadLine[] }) => {
   // Each instance's glyph ids are its own, so two letterheads on one page never share a definition.
   const prefix = `eje-lh-${useId().replace(/[^A-Za-z0-9_-]/gu, '')}`;
-  const placed = layoutLetterhead(REFERENCE_BOX);
+  const placed = layoutLetterhead(REFERENCE_BOX, lineSet === undefined ? {} : { lines: lineSet });
   const lines = placed.lines.map((line) => ({ line, glyphs: letterheadLineGlyphs(line) }));
   const definitions = new Map<string, { readonly id: string; readonly path: string }>();
   for (const { glyphs } of lines) {
@@ -86,13 +87,22 @@ export const EjeLetterhead = ({ className }: { readonly className?: string }) =>
  * corner would be unreadably small, so there the title is set under the letterhead at a readable size
  * instead; on a wider screen the same words stay in the page for a screen reader.
  */
-export const FullWidthLetterheadHeader = ({ title, number }: { readonly title: string; readonly number: string }) => {
-  const slot = LETTERHEAD_TITLE_SLOT;
+export const FullWidthLetterheadHeader = ({
+  title,
+  number,
+  aligned = false,
+}: {
+  readonly title: string;
+  readonly number: string;
+  /** JOB-CARD-4 (edition 8): "1465" on the Email line, the number inline with the company name. */
+  readonly aligned?: boolean;
+}) => {
+  const { lines, slot } = fullWidthHeaderGeometry(aligned);
   const text = { fontFamily: 'Helvetica, Arial, sans-serif', fontWeight: 700 } as const;
   return (
     <header className="border-b-2 border-steel-900 pb-4" data-testid="document-header" data-header="full-width">
       <div className="relative -mx-6 sm:mx-0">
-        <EjeLetterhead />
+        <EjeLetterhead lineSet={aligned ? lines : undefined} />
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox={`0 0 ${LETTERHEAD_REFERENCE.width} ${LETTERHEAD_REFERENCE.height}`}

@@ -4,7 +4,7 @@ import { parseSvgPath, pathBounds, pathOperators } from '@/lib/pdf/path';
 import {
   LETTERHEAD_INK,
   LETTERHEAD_REFERENCE,
-  LETTERHEAD_TITLE_SLOT,
+  fullWidthHeaderGeometry,
   isMasterLetterhead,
   layoutLetterhead,
   letterheadLineGlyphs,
@@ -12,6 +12,7 @@ import {
   letterheadLineText,
   type DocumentLetterhead,
   type LetterheadArea,
+  type LetterheadLine,
 } from '@/lib/branding/eje-letterhead';
 
 /**
@@ -255,8 +256,8 @@ const glyphForm = (key: string, path: string): PdfForm => {
  * Fitted exactly as an uploaded image is: uniformly, against the box's left edge, centred top
  * to bottom. Nothing outside the box moves.
  */
-export const drawEjeLetterhead = (pdf: PdfBuilder, box: LetterheadBox): void => {
-  const placed = layoutLetterhead(areaOf(box));
+export const drawEjeLetterhead = (pdf: PdfBuilder, box: LetterheadBox, lines?: readonly LetterheadLine[]): void => {
+  const placed = layoutLetterhead(areaOf(box), lines === undefined ? {} : { lines });
   const mark = placed.mark;
   pdf.fillPolygons(
     placed.markPolygons,
@@ -309,11 +310,20 @@ export const drawLetterhead = (
  */
 export const LETTERHEAD_FULL_HEIGHT = (CONTENT_WIDTH * LETTERHEAD_REFERENCE.height) / LETTERHEAD_REFERENCE.width;
 
-export const drawFullWidthLetterhead = (pdf: PdfBuilder, title: string, number: string): number => {
+/**
+ * JOB-CARD-4: `aligned` (edition 8) draws "1465" on the Email line and the number, smaller, on the
+ * company name's line (`fullWidthHeaderGeometry`); without it, edition 7's header to the byte.
+ */
+export const drawFullWidthLetterhead = (pdf: PdfBuilder, title: string, number: string, aligned = false): number => {
   const top = LETTERHEAD_TOP;
   const scale = CONTENT_WIDTH / LETTERHEAD_REFERENCE.width;
-  drawEjeLetterhead(pdf, { x: MARGIN, y: top - LETTERHEAD_FULL_HEIGHT, width: CONTENT_WIDTH, height: LETTERHEAD_FULL_HEIGHT });
-  const slot = LETTERHEAD_TITLE_SLOT;
+  const geometry = fullWidthHeaderGeometry(aligned);
+  drawEjeLetterhead(
+    pdf,
+    { x: MARGIN, y: top - LETTERHEAD_FULL_HEIGHT, width: CONTENT_WIDTH, height: LETTERHEAD_FULL_HEIGHT },
+    aligned ? geometry.lines : undefined,
+  );
+  const slot = geometry.slot;
   const right = MARGIN + slot.right * scale;
   const labelSize = slot.labelSize * scale;
   const tracking = slot.labelTracking * scale;

@@ -19,7 +19,7 @@ import { WorkflowError } from './errors';
 import { loadJobView } from './job-view';
 import { loadCompanyLetterhead } from './company-letterhead';
 import { isMasterLetterhead, type DocumentLetterhead } from '@/lib/branding/eje-letterhead';
-import { JOB_CARD_LAYOUT_RENDERER } from '@/lib/job-card/layout-version';
+import { JOB_CARD_3_RENDERER } from '@/lib/job-card/layout-version';
 
 /**
  * LETTERHEAD-2: the renderer number a Delivery Note's stored file records — 1 as always, or
@@ -28,7 +28,8 @@ import { JOB_CARD_LAYOUT_RENDERER } from '@/lib/job-card/layout-version';
  */
 // LETTERHEAD-4: drawn now with the master letterhead in the paper's own typefaces — 6, like the job
 // card issued with it; 5 marks the v1.13.0 artwork, which nothing draws any more.
-const rendererFor = (letterhead: DocumentLetterhead | undefined): number => (isMasterLetterhead(letterhead) ? JOB_CARD_LAYOUT_RENDERER : 1);
+// JOB-CARD-4 changed the job card's header only: a delivery note still records 7, as it did in v1.16.0.
+const rendererFor = (letterhead: DocumentLetterhead | undefined): number => (isMasterLetterhead(letterhead) ? JOB_CARD_3_RENDERER : 1);
 
 /**
  * THE COURIER'S DELIVERY NOTE. PARTS-03, PARTS-04, PARTS-05, and the owner's
