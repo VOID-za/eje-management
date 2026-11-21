@@ -1,10 +1,13 @@
 import { useId, type ReactNode } from 'react';
 import { companies } from '@/api/endpoints';
 import type { LetterheadReference } from '@/domain';
+import { textWidth } from '@/lib/pdf/writer';
 import {
   LETTERHEAD_REFERENCE,
   carriesMasterLetterhead,
   fullWidthHeaderGeometry,
+  type FullWidthHeaderStyle,
+  type FullWidthTitleSlot,
   type LetterheadLine,
   layoutLetterhead,
   letterheadLineGlyphs,
@@ -77,6 +80,10 @@ export const EjeLetterhead = ({ className, lineSet }: { readonly className?: str
   );
 };
 
+/** Where the PDF starts the label of a one-line title (JOB-CARD-5): `gap` before the number, both measured alike. */
+const inlineLabelX = (slot: FullWidthTitleSlot, title: string, number: string): number =>
+  slot.right - textWidth(number, slot.numberSize, 'bold') - (slot.gap ?? 0) - textWidth(title, slot.labelSize, 'bold', slot.labelTracking);
+
 /**
  * THE EJE LETTERHEAD ACROSS THE DOCUMENT'S FULL WIDTH, ITS NAME AND NUMBER IN THE TOP-RIGHT CORNER.
  * JOB-CARD-3 (the owner, 17 November 2026) — the screen's copy of `drawFullWidthLetterhead`.
@@ -90,19 +97,22 @@ export const EjeLetterhead = ({ className, lineSet }: { readonly className?: str
 export const FullWidthLetterheadHeader = ({
   title,
   number,
-  aligned = false,
+  headerStyle = 7,
 }: {
   readonly title: string;
   readonly number: string;
-  /** JOB-CARD-4 (edition 8): "1465" on the Email line, the number inline with the company name. */
-  readonly aligned?: boolean;
+  /**
+   * The header's edition: 7 (v1.16.0); 8 (JOB-CARD-4: "1465" on the Email line, the number on the
+   * company name's line); 9 (JOB-CARD-5: the P.O. Box block moved down whole, the name and number on one line).
+   */
+  readonly headerStyle?: FullWidthHeaderStyle;
 }) => {
-  const { lines, slot } = fullWidthHeaderGeometry(aligned);
+  const { lines, slot } = fullWidthHeaderGeometry(headerStyle);
   const text = { fontFamily: 'Helvetica, Arial, sans-serif', fontWeight: 700 } as const;
   return (
     <header className="border-b-2 border-steel-900 pb-4" data-testid="document-header" data-header="full-width">
       <div className="relative -mx-6 sm:mx-0">
-        <EjeLetterhead lineSet={aligned ? lines : undefined} />
+        <EjeLetterhead lineSet={headerStyle === 7 ? undefined : lines} />
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox={`0 0 ${LETTERHEAD_REFERENCE.width} ${LETTERHEAD_REFERENCE.height}`}
@@ -111,12 +121,27 @@ export const FullWidthLetterheadHeader = ({
           data-testid="letterhead-title-overlay"
           className="pointer-events-none absolute inset-0 hidden h-full w-full sm:block"
         >
-          <text x={slot.right} y={slot.labelBaseline} textAnchor="end" fontSize={slot.labelSize} letterSpacing={slot.labelTracking} fill="#6b7481" {...text}>
-            {title.toUpperCase()}
-          </text>
-          <text x={slot.right} y={slot.numberBaseline} textAnchor="end" fontSize={slot.numberSize} fill="#1b2434" {...text}>
-            {number}
-          </text>
+          {slot.inline === true ? (
+            // JOB-CARD-5: one heading on one baseline — the label, a gap, the number — placed at exactly the
+            // x the PDF places them (`drawFullWidthLetterhead`), in the letterhead's own units.
+            <>
+              <text x={inlineLabelX(slot, title.toUpperCase(), number)} y={slot.labelBaseline} fontSize={slot.labelSize} letterSpacing={slot.labelTracking} fill="#6b7481" {...text}>
+                {title.toUpperCase()}
+              </text>
+              <text x={slot.right - textWidth(number, slot.numberSize, 'bold')} y={slot.numberBaseline} fontSize={slot.numberSize} fill="#1b2434" {...text}>
+                {number}
+              </text>
+            </>
+          ) : (
+            <>
+              <text x={slot.right} y={slot.labelBaseline} textAnchor="end" fontSize={slot.labelSize} letterSpacing={slot.labelTracking} fill="#6b7481" {...text}>
+                {title.toUpperCase()}
+              </text>
+              <text x={slot.right} y={slot.numberBaseline} textAnchor="end" fontSize={slot.numberSize} fill="#1b2434" {...text}>
+                {number}
+              </text>
+            </>
+          )}
         </svg>
       </div>
       <div className="mt-3 text-right sm:sr-only" data-testid="document-title">

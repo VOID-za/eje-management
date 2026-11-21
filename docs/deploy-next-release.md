@@ -32,9 +32,13 @@ release is bigger than its commits say, `stage-release.ps1 -Bump minor` (or
 `major`) raises the step. The commit remains what identifies a deployment;
 `/api/health` reports both.
 
-## CANDIDATE — JOB-CARD-4, the header alignment (21 November 2026), on `claude/header-alignment`
+## CANDIDATE — JOB-CARD-5, the header correction (21 November 2026), on `claude/header-alignment`
 
-**No migration** (`-ExpectPending none`). Header only, Job Card and Parts Collection Note only (the Installation Delivery Note unchanged, by the owner's decision): "1465" on the Email line; the document number smaller and inline with the company name. New issues record renderer 8; renderer 7 (v1.16.0) and 6 (v1.15.0) documents are still drawn in their own editions, byte-identical. Rollback to `4ab6f13` is a code switch, with one visible effect: that release does not know renderer 8 and shows a document issued in it ON SCREEN in its oldest (V5) layout — the stored PDF, which is what is downloaded, emailed and printed, is never re-rendered and stays exactly as issued. Not deployed until the owner approves.
+**No migration** (`-ExpectPending none`). Header only, Job Card and Parts Collection Note only (the Installation Delivery Note unchanged): the P.O. Box address moved down as one three-line block ("1465" still on the Email line); the document type and number one heading on one baseline in the top-right corner, on the "Reg:" line. New issues record renderer 9; renderer 8 (v1.16.1), 7 (v1.16.0) and 6 (v1.15.0) documents are still drawn in their own editions, byte-identical. Rollback to `0fa3d19` is a code switch, with one visible effect: that release does not know renderer 9 and shows a document issued in it ON SCREEN in its oldest (V5) layout — the stored PDF, which is what is downloaded, emailed and printed, is never re-rendered and stays exactly as issued. Not deployed until the owner approves.
+
+## RELEASED — `0fa3d19` = v1.16.1, the header alignment (JOB-CARD-4, 21 November 2026)
+
+**No migration.** Job Card and Parts Collection Note header only: "1465" on the Email line; the document number smaller and inline with the company name. New issues record renderer 8. Switched 11:56:44 UTC; all 31 tables and all 63 stored PDFs identical before and after.
 
 ## RELEASED — `4ab6f13` = v1.16.0, the job card corrections and follow-up fixes (JOB-CARD-3, CUST-ACCT-1, CHK-RACE-1, MOBILE-TABLES-1, 18 November 2026)
 

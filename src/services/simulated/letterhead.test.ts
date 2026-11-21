@@ -30,7 +30,7 @@ import { DELIVERY_NOTE_MASTER_EXTRA, renderDeliveryNotePdf } from './delivery-no
 import { renderTimesheetPdf } from './timesheet-pdf';
 import { renderAttendancePdf } from './attendance-pdf';
 import { CONTENT_WIDTH, LETTERHEAD_FULL_HEIGHT, LETTERHEAD_TOP, MARGIN, drawLetterhead, fitLetterhead } from './pdf-sheet';
-import { LETTERHEAD_TITLE_SLOT } from '@/lib/branding/eje-letterhead';
+import { LETTERHEAD_ONE_LINE_TITLE_SLOT, LETTERHEAD_TITLE_SLOT } from '@/lib/branding/eje-letterhead';
 import { PdfBuilder } from '@/lib/pdf/writer';
 import {
   FROZEN_AT,
@@ -658,7 +658,7 @@ describe('edition 7 is v1.16.0, to the byte', () => {
 describe('JOB-CARD-4 leaves the Installation Delivery Note as it was', () => {
   it('draws it in edition 8 to the very bytes of edition 7 (v1.16.0)', () => {
     const number = JOB_DOCUMENTS.installationDeliveryNote;
-    const bytes = renderJobCardPdf({ ...sources.get(number)!, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes;
+    const bytes = renderJobCardPdf({ ...sources.get(number)!, layout: 8, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes;
     expect(sha256(bytes)).toBe('bfa233d182537705e5636ad864d2136543a6a3da1f3e3bec6a1a1be1f89aa854');
   });
 });
@@ -669,9 +669,10 @@ describe.each([
 ] as const)('%s — the aligned header (edition 8)', (name, label) => {
   const number = JOB_DOCUMENTS[name];
   const bandBottom = LETTERHEAD_TOP - LETTERHEAD_FULL_HEIGHT;
-  const draw = (layout?: 7) =>
+  // JOB-CARD-5: edition 8 is what a document issued in v1.16.1 (renderer 8) is still drawn in.
+  const draw = (layout: 7 | 8 = 8) =>
     renderJobCardPdf(
-      { ...sources.get(number)!, ...(layout === undefined ? {} : { layout }), letterhead: EJE_MASTER_LETTERHEAD },
+      { ...sources.get(number)!, layout, letterhead: EJE_MASTER_LETTERHEAD },
       `${number}.pdf`,
       GENERATED_AT,
     ).bytes;
@@ -740,6 +741,131 @@ describe.each([
         .map((run) => [run.value, run.x, run.y, run.size]);
     expect(outside(page1(draw()))).toEqual(outside(page1(draw(7))));
     expect(inspectPdf(draw(), { margin: MARGIN, edge: A4_HEIGHT - LETTERHEAD_TOP }).problems).toEqual([]);
+  });
+});
+
+/**
+ * JOB-CARD-5: a Job Card or Parts Collection Note ISSUED in v1.16.1 (renderer 8) is previewed as
+ * edition 8, which draws it to exactly the bytes 0fa3d19 drew (hashes taken by running this very
+ * rendering on 0fa3d19's source, 21 November 2026), with the master letterhead and without.
+ */
+describe('edition 8 is v1.16.1, to the byte', () => {
+  it('draws what 0fa3d19 drew', () => {
+    const now: Record<string, string> = {};
+    for (const [name, number] of Object.entries(JOB_DOCUMENTS)) {
+      const source = { ...sources.get(number)!, layout: 8 as const };
+      now[`${name}:master`] = sha256(renderJobCardPdf({ ...source, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes);
+      now[`${name}:none`] = sha256(renderJobCardPdf(source, `${number}.pdf`, GENERATED_AT).bytes);
+    }
+    expect(now).toEqual({
+      'jobCard:master': 'ef884ae748889c148c7001cb416f8fc0065bdd04121d07881b6face7c4a4f104',
+      'jobCard:none': 'a215cb43b75567e1022e26227c0bd549113515fec5c65e9d0d6305b7ef5afd5a',
+      'partsCollectionNote:master': '9fea5df586e17fe552443bad3d90394e91179d6d933ec594a120cd2e4036aee3',
+      'partsCollectionNote:none': '5ccd7236d33cecea7dfb46493ddbea0c319f8f868f47d1fd224cc94ae014c86d',
+      'installationDeliveryNote:master': 'bfa233d182537705e5636ad864d2136543a6a3da1f3e3bec6a1a1be1f89aa854',
+      'installationDeliveryNote:none': '689ea49dd141ca49309cbaed8fc2c951766abbe7ac6212f904d612ffd962775d',
+    });
+  });
+});
+
+/**
+ * JOB-CARD-5 (the owner, 21 November 2026), the header corrected on the Job Card and the Parts
+ * Collection Note: the P.O. Box address one three-line block, moved down whole so "1465" sits on the
+ * Email line; the document's name and number ONE heading on ONE baseline — "JOB CARD  EJE-1046" — at
+ * the right edge, on the "Reg:" line, clear of the company name. Everything else as edition 8 drew it.
+ */
+const POSTAL = ['P.O. Box 16282', 'Atlasville', '1465'];
+const EMAIL = 'Email: sales@ejeie.co.za or peetb@ejeie.co.za';
+describe.each([
+  ['jobCard', 'JOB CARD'],
+  ['partsCollectionNote', 'PARTS COLLECTION NOTE'],
+] as const)('%s — the corrected header (edition 9)', (name, label) => {
+  const number = JOB_DOCUMENTS[name];
+  const bandBottom = LETTERHEAD_TOP - LETTERHEAD_FULL_HEIGHT;
+  const draw = (layout?: 7 | 8) =>
+    renderJobCardPdf(
+      { ...sources.get(number)!, ...(layout === undefined ? {} : { layout }), letterhead: EJE_MASTER_LETTERHEAD },
+      `${number}.pdf`,
+      GENERATED_AT,
+    ).bytes;
+  const page1 = (bytes: Uint8Array) => textRuns(bytes).filter((run) => run.page === 1);
+  const at = (runs: ReturnType<typeof page1>, value: string) => runs.find((run) => run.value === value)!;
+  const scale = CONTENT_WIDTH / LETTERHEAD_REFERENCE.width;
+
+  it('moves the whole P.O. Box block down as one, its line spacing kept, "1465" on the Email line', () => {
+    const now = page1(draw());
+    const before = page1(draw(7));
+    const shift = at(now, '1465').y - at(before, '1465').y;
+    expect(at(now, '1465').y).toBeCloseTo(at(now, EMAIL).y, 3);
+    expect(shift).toBeLessThan(-20);
+    for (const line of POSTAL) {
+      // Every line moves by the same amount — the spacing between them is exactly the original.
+      expect(at(now, line).y - at(before, line).y, line).toBeCloseTo(shift, 2);
+      expect([at(now, line).x, at(now, line).size], line).toEqual([at(before, line).x, at(before, line).size]);
+    }
+    const gaps = POSTAL.slice(1).map((line, index) => at(now, POSTAL[index]!).y - at(now, line).y);
+    for (const gap of gaps) expect(gap).toBeGreaterThan(8);
+    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThan(0.5);
+    // Every other letterhead line and the mark exactly as before.
+    for (const line of MASTER_TEXT.filter((value) => !POSTAL.includes(value))) {
+      expect([at(now, line).x, at(now, line).y, at(now, line).size], line).toEqual([at(before, line).x, at(before, line).y, at(before, line).size]);
+    }
+    expect(filledPaths(draw())[0]!.points).toEqual(filledPaths(draw(7))[0]!.points);
+  });
+
+  it('sets the name and number as one heading on one baseline at the right edge, clear of every line', () => {
+    const now = page1(draw());
+    const company = at(now, 'EJE Industrial Electronics cc');
+    const reg = now.find((run) => run.value.startsWith('Reg:'))!;
+    const jobNumber = now.find((run) => run.value === number && run.y > bandBottom)!;
+    const title = at(now, label);
+    // One baseline, the number at the right edge, the label just before it.
+    expect(title.y).toBeCloseTo(jobNumber.y, 6);
+    expect(jobNumber.y).toBeCloseTo(reg.y, 3);
+    const numberRight = jobNumber.x + textWidth(number, jobNumber.size, 'bold');
+    expect(numberRight).toBeCloseTo(MARGIN + CONTENT_WIDTH, 1);
+    // The label ends 2pt before the number begins, measured with the substitution allowance.
+    const labelRight = title.x + textWidth(label, title.size, 'bold', LETTERHEAD_ONE_LINE_TITLE_SLOT.labelTracking * scale);
+    expect(jobNumber.x - labelRight).toBeCloseTo(2, 1);
+    // The number bold about 9pt, the label smaller, the company name dominant at about 20pt.
+    expect(jobNumber.size).toBeCloseTo(9, 1);
+    expect(title.size).toBeLessThan(jobNumber.size);
+    expect(company.size).toBeGreaterThan(19);
+    // Clear of every letterhead line, the company name included.
+    const box = (run: { value: string; x: number; y: number; width: number; size: number }, right: number) => ({
+      left: run.x,
+      right,
+      top: run.y + run.size * 0.75,
+      bottom: run.y - run.size * 0.22,
+    });
+    const own = [box(title, labelRight), box(jobNumber, numberRight)];
+    for (const line of MASTER_TEXT) {
+      const run = at(now, line);
+      const lineBox = box(run, run.x + run.width / SUBSTITUTION_ALLOWANCE);
+      for (const ownBox of own) {
+        const apart = ownBox.right <= lineBox.left || ownBox.left >= lineBox.right || ownBox.top <= lineBox.bottom || ownBox.bottom >= lineBox.top;
+        expect(apart, `the heading overlaps "${line}"`).toBe(true);
+      }
+    }
+    expect(title.x).toBeGreaterThan(reg.x + reg.width / SUBSTITUTION_ALLOWANCE + 10);
+    expect(own[0]!.bottom).toBeGreaterThan(company.y + company.size * 0.75);
+  });
+
+  it("keeps the header's height and everything below it exactly where edition 8 put it", () => {
+    const outside = (runs: ReturnType<typeof page1>) =>
+      runs
+        .filter((run) => !MASTER_TEXT.includes(run.value) && run.value !== label && !(run.value === number && run.y > bandBottom))
+        .map((run) => [run.value, run.x, run.y, run.size]);
+    expect(outside(page1(draw()))).toEqual(outside(page1(draw(8))));
+    expect(inspectPdf(draw(), { margin: MARGIN, edge: A4_HEIGHT - LETTERHEAD_TOP }).problems).toEqual([]);
+  });
+});
+
+describe('JOB-CARD-5 leaves the Installation Delivery Note as it was', () => {
+  it('draws it in edition 9 to the very bytes of edition 7 (v1.16.0)', () => {
+    const number = JOB_DOCUMENTS.installationDeliveryNote;
+    const bytes = renderJobCardPdf({ ...sources.get(number)!, letterhead: EJE_MASTER_LETTERHEAD }, `${number}.pdf`, GENERATED_AT).bytes;
+    expect(sha256(bytes)).toBe('bfa233d182537705e5636ad864d2136543a6a3da1f3e3bec6a1a1be1f89aa854');
   });
 });
 

@@ -246,11 +246,69 @@ export const LETTERHEAD_INLINE_TITLE_SLOT = {
   numberSize: 58,
 } as const;
 
-/** The letterhead lines and the title slot a full-width header is drawn with: edition 8's, or 7's. */
-export const fullWidthHeaderGeometry = (aligned: boolean) =>
-  aligned
-    ? { lines: LETTERHEAD_ALIGNED_LINES, slot: LETTERHEAD_INLINE_TITLE_SLOT }
-    : { lines: LETTERHEAD_LINES, slot: LETTERHEAD_TITLE_SLOT };
+/**
+ * THE HEADER, CORRECTED. JOB-CARD-5 (the owner, 21 November 2026), for documents issued from edition 9
+ * (a document issued in edition 8 keeps edition 8's header, above, exactly):
+ *
+ *   - the P.O. Box address stays ONE three-line block — "P.O. Box 16282", "Atlasville", "1465" at
+ *     their own spacing and x, each centred in the column — moved down AS A UNIT so its last line sits
+ *     on the Email line's baseline;
+ *   - the document's name and number are ONE heading on ONE baseline: "JOB CARD  EJE-2053", the label
+ *     smaller (about 6.5pt, lightly spaced, grey) and the number bold (about 9pt), against the right
+ *     edge, on the "Reg:" line's baseline in the empty top-right corner. (The company name's line has
+ *     only 79pt free to its right — not room for "PARTS COLLECTION NOTE EJE-2128" — so the owner chose
+ *     this corner.) Every other line, the mark, the company name, fonts and the header's height are
+ *     exactly as before.
+ */
+const POSTAL_BLOCK = ['P.O. Box 16282', 'Atlasville', '1465'];
+const LAST_POSTAL_LINE = LETTERHEAD_LINES.find((value) => letterheadLineText(value) === '1465');
+const REG_LINE = LETTERHEAD_LINES.find((value) => letterheadLineText(value).startsWith('Reg:'));
+if (LAST_POSTAL_LINE === undefined || REG_LINE === undefined) throw new Error('the letterhead lost its postal or Reg line');
+const POSTAL_SHIFT = EMAIL_LINE.baseline - LAST_POSTAL_LINE.baseline;
+
+export const LETTERHEAD_GROUPED_LINES: readonly LetterheadLine[] = LETTERHEAD_LINES.map((value) =>
+  POSTAL_BLOCK.includes(letterheadLineText(value)) ? { ...value, baseline: value.baseline + POSTAL_SHIFT } : value,
+);
+
+/** Points on the page per reference unit, for the full-width header (515pt across 3300 units). */
+const FULL_WIDTH_SCALE = 515 / LETTERHEAD_REFERENCE.width;
+
+export const LETTERHEAD_ONE_LINE_TITLE_SLOT = {
+  right: LETTERHEAD_REFERENCE.width,
+  labelBaseline: REG_LINE.baseline,
+  labelSize: 6.5 / FULL_WIDTH_SCALE,
+  labelTracking: 0.6 / FULL_WIDTH_SCALE,
+  numberBaseline: REG_LINE.baseline,
+  numberSize: 9 / FULL_WIDTH_SCALE,
+  /** The label ends this far before the number begins (2pt, measured with the substitution allowance). */
+  gap: 2 / FULL_WIDTH_SCALE,
+  inline: true,
+} as const;
+
+/** The full-width header's editions: 7 (v1.16.0), 8 (v1.16.1), 9 (JOB-CARD-5). */
+export type FullWidthHeaderStyle = 7 | 8 | 9;
+
+export interface FullWidthTitleSlot {
+  readonly right: number;
+  readonly labelBaseline: number;
+  readonly labelSize: number;
+  readonly labelTracking: number;
+  readonly numberBaseline: number;
+  readonly numberSize: number;
+  /** One line: the label ends `gap` before the number, which ends at `right`. Otherwise both end at `right`. */
+  readonly inline?: boolean;
+  readonly gap?: number;
+}
+
+/** The letterhead lines and the title slot a full-width header is drawn with, per edition. */
+export const fullWidthHeaderGeometry = (
+  style: FullWidthHeaderStyle,
+): { readonly lines: readonly LetterheadLine[]; readonly slot: FullWidthTitleSlot } =>
+  style === 9
+    ? { lines: LETTERHEAD_GROUPED_LINES, slot: LETTERHEAD_ONE_LINE_TITLE_SLOT }
+    : style === 8
+      ? { lines: LETTERHEAD_ALIGNED_LINES, slot: LETTERHEAD_INLINE_TITLE_SLOT }
+      : { lines: LETTERHEAD_LINES, slot: LETTERHEAD_TITLE_SLOT };
 
 /** The mark's outlines as an SVG path `d`, in the mark box's units (for an even-odd fill). */
 export const markPathData = (mark: LetterheadArea, polygons: readonly (readonly number[])[] = EJE_MARK_POLYGONS): string =>

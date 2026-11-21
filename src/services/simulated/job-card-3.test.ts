@@ -12,7 +12,7 @@ import { formatDate } from '@/lib/format';
 import { businessDateOf } from '@/lib/business-time';
 import { EJE_MASTER_LETTERHEAD } from '@/lib/branding/eje-letterhead';
 import { buildJobCardModel } from '@/lib/job-card/model';
-import { JOB_CARD_2_RENDERER, JOB_CARD_LAYOUT_RENDERER, jobCardEditionOf, jobCardLayoutOf } from '@/lib/job-card/layout-version';
+import { JOB_CARD_2_RENDERER, JOB_CARD_LAYOUT_RENDERER, fullWidthHeaderStyleOf, jobCardEditionOf, jobCardLayoutOf } from '@/lib/job-card/layout-version';
 import { asUserId, type IsoDateTime, type Job } from '@/domain';
 import { GENERATED_AT, jobSource } from '@/test/letterhead-documents';
 import { withWork } from '@/test/job-card-fixtures';
@@ -43,13 +43,25 @@ beforeAll(async () => {
 });
 
 describe('which edition a document is drawn in', () => {
-  it('7 for anything not yet issued or issued in it; 6 for v1.15.0; the frozen V5 for everything older', () => {
+  it("today's for anything not yet issued; 7 and 6 as issued; the frozen V5 for everything older", () => {
     expect(jobCardLayoutOf(null)).toBe(JOB_CARD_LAYOUT_RENDERER);
     expect(jobCardLayoutOf({ renderer: 7 })).toBe(7);
     expect(jobCardLayoutOf({ renderer: 6 })).toBe(6);
     for (const renderer of [null, 1, 4, 5]) expect(jobCardLayoutOf({ renderer })).toBe('v5');
     expect(jobCardEditionOf({ renderer: 6 })).toBe(JOB_CARD_2_RENDERER);
     expect(jobCardEditionOf(null)).toBe(JOB_CARD_LAYOUT_RENDERER);
+  });
+
+  it('JOB-CARD-5: 9 for anything not yet issued or issued in it; a v1.16.1 issue (8) stays 8, its header too', () => {
+    expect(JOB_CARD_LAYOUT_RENDERER).toBe(9);
+    expect(jobCardLayoutOf({ renderer: 9 })).toBe(9);
+    expect(jobCardLayoutOf({ renderer: 8 })).toBe(8);
+    expect(jobCardEditionOf({ renderer: 8 })).toBe(8);
+    expect(fullWidthHeaderStyleOf(9, false)).toBe(9);
+    expect(fullWidthHeaderStyleOf(8, false)).toBe(8);
+    expect(fullWidthHeaderStyleOf(7, false)).toBe(7);
+    // The Installation Delivery Note keeps edition 7's header in every edition.
+    for (const edition of [7, 8, 9] as const) expect(fullWidthHeaderStyleOf(edition, true)).toBe(7);
   });
 });
 

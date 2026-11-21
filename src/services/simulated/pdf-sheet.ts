@@ -5,6 +5,7 @@ import {
   LETTERHEAD_INK,
   LETTERHEAD_REFERENCE,
   fullWidthHeaderGeometry,
+  type FullWidthHeaderStyle,
   isMasterLetterhead,
   layoutLetterhead,
   letterheadLineGlyphs,
@@ -311,29 +312,37 @@ export const drawLetterhead = (
 export const LETTERHEAD_FULL_HEIGHT = (CONTENT_WIDTH * LETTERHEAD_REFERENCE.height) / LETTERHEAD_REFERENCE.width;
 
 /**
- * JOB-CARD-4: `aligned` (edition 8) draws "1465" on the Email line and the number, smaller, on the
- * company name's line (`fullWidthHeaderGeometry`); without it, edition 7's header to the byte.
+ * JOB-CARD-4/-5: `style` is the header's edition (`fullWidthHeaderGeometry`): 7 to the byte as v1.16.0
+ * drew it; 8 to the byte as v1.16.1 drew it; 9 the P.O. Box block moved down whole and the name and
+ * number on one line.
  */
-export const drawFullWidthLetterhead = (pdf: PdfBuilder, title: string, number: string, aligned = false): number => {
+export const drawFullWidthLetterhead = (pdf: PdfBuilder, title: string, number: string, style: FullWidthHeaderStyle = 7): number => {
   const top = LETTERHEAD_TOP;
   const scale = CONTENT_WIDTH / LETTERHEAD_REFERENCE.width;
-  const geometry = fullWidthHeaderGeometry(aligned);
+  const geometry = fullWidthHeaderGeometry(style);
   drawEjeLetterhead(
     pdf,
     { x: MARGIN, y: top - LETTERHEAD_FULL_HEIGHT, width: CONTENT_WIDTH, height: LETTERHEAD_FULL_HEIGHT },
-    aligned ? geometry.lines : undefined,
+    style === 7 ? undefined : geometry.lines,
   );
   const slot = geometry.slot;
   const right = MARGIN + slot.right * scale;
   const labelSize = slot.labelSize * scale;
   const tracking = slot.labelTracking * scale;
-  pdf.text(right - textWidth(title, labelSize, 'bold', tracking), top - slot.labelBaseline * scale, title, {
+  const numberSize = slot.numberSize * scale;
+  /*
+   * One line: the number ends at the right edge as always, and the label ends `gap` before the number
+   * begins — measured, like every layout here, with the substitution allowance, so the two never touch
+   * even in a viewer whose substitute face sets wider.
+   */
+  const labelRight = slot.inline === true ? right - textWidth(number, numberSize, 'bold') - (slot.gap ?? 0) * scale : right;
+  const labelLeft = labelRight - textWidth(title, labelSize, 'bold', tracking);
+  pdf.text(labelLeft, top - slot.labelBaseline * scale, title, {
     font: 'bold',
     size: labelSize,
     colour: MUTED,
     tracking,
   });
-  const numberSize = slot.numberSize * scale;
   pdf.text(right - textWidth(number, numberSize, 'bold'), top - slot.numberBaseline * scale, number, {
     font: 'bold',
     size: numberSize,

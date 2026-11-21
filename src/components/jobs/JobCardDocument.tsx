@@ -8,7 +8,7 @@ import {
 import { SignatureDisplay } from "./SignaturePad";
 import { DocumentPhoto } from "./DocumentPhoto";
 import { DocumentLetterhead, FullWidthLetterheadHeader } from "@/components/documents/EjeLetterhead";
-import { jobCardEditionOf, showsCurrentJobCardLayout, hasAlignedHeader, hasJobCard3Layout } from "@/lib/job-card/layout-version";
+import { jobCardEditionOf, showsCurrentJobCardLayout, fullWidthHeaderStyleOf, hasJobCard3Layout } from "@/lib/job-card/layout-version";
 import { carriesMasterLetterhead } from "@/lib/branding/eje-letterhead";
 import { JobCardDocumentV5 } from "./JobCardDocumentV5";
 
@@ -58,7 +58,7 @@ const CurrentJobCard = ({ view }: { readonly view: JobView }) => {
       className="eje-document mx-auto max-w-[820px] bg-white p-8 text-[13px] leading-relaxed text-steel-800 shadow-[var(--shadow-card)] sm:p-10"
     >
       {fullWidthHeader ? (
-        <FullWidthLetterheadHeader title={model.documentTitle} number={model.jobNumber} aligned={hasAlignedHeader(edition) && model.installation === undefined} />
+        <FullWidthLetterheadHeader title={model.documentTitle} number={model.jobNumber} headerStyle={fullWidthHeaderStyleOf(edition, model.installation !== undefined)} />
       ) : (
       <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-steel-900 pb-5">
         {/*
