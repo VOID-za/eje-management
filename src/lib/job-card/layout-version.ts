@@ -20,6 +20,11 @@
  * ONE three-line block (its last line still on the Email line), and the document's name and number set
  * as ONE heading on one baseline in the top-right corner. Documents issued in it record 9.
  *
+ * JOB-CARD-6 (the owner, 21 November 2026) changed the pagination and nothing else: the totals and
+ * the customer's acceptance go directly under the table whenever they fit there (measured as drawn,
+ * not estimated), and the photographs follow on the same page when their heading and first row fit —
+ * no page of their own. Documents issued in it record 10. The Installation Delivery Note is unchanged.
+ *
  * An ISSUED document is never re-rendered, so a job card issued in an earlier layout keeps its
  * stored PDF — and the screen beside it must show that same layout. Each renderer number is a marker
  * (nothing is migrated; RENDERER_VERSION — the backfill's comparison — is unchanged), above every
@@ -28,21 +33,24 @@
 export const JOB_CARD_2_RENDERER = 6;
 export const JOB_CARD_3_RENDERER = 7;
 export const JOB_CARD_4_RENDERER = 8;
-export const JOB_CARD_LAYOUT_RENDERER = 9;
+export const JOB_CARD_5_RENDERER = 9;
+export const JOB_CARD_LAYOUT_RENDERER = 10;
 
 /**
  * The editions of the current job-card renderer: 6 is JOB-CARD-2 exactly as issued on 17 November
  * 2026 (v1.15.0); 7 is JOB-CARD-3 exactly as issued from 18 November 2026 (v1.16.0); 8 is JOB-CARD-4
- * exactly as issued from 21 November 2026 (v1.16.1); 9 is today's.
+ * exactly as issued from 21 November 2026 (v1.16.1); 9 is JOB-CARD-5 exactly as issued from 21 November
+ * 2026 (v1.16.2); 10 is today's.
  * Everything older is the frozen V5 renderer.
  */
-export type JobCardEdition = 6 | 7 | 8 | 9;
+export type JobCardEdition = 6 | 7 | 8 | 9 | 10;
 
 export type JobCardLayout = 'v5' | JobCardEdition;
 
 /** The layout a job's document is shown in: nothing issued yet → today's; else the one it was issued in. */
 export const jobCardLayoutOf = (finalDocument: { readonly renderer: number | null } | null): JobCardLayout => {
   if (finalDocument === null || finalDocument.renderer === JOB_CARD_LAYOUT_RENDERER) return JOB_CARD_LAYOUT_RENDERER;
+  if (finalDocument.renderer === JOB_CARD_5_RENDERER) return JOB_CARD_5_RENDERER;
   if (finalDocument.renderer === JOB_CARD_4_RENDERER) return JOB_CARD_4_RENDERER;
   if (finalDocument.renderer === JOB_CARD_3_RENDERER) return JOB_CARD_3_RENDERER;
   if (finalDocument.renderer === JOB_CARD_2_RENDERER) return JOB_CARD_2_RENDERER;
@@ -53,7 +61,7 @@ export const jobCardLayoutOf = (finalDocument: { readonly renderer: number | nul
 export const showsCurrentJobCardLayout = (finalDocument: { readonly renderer: number | null } | null): boolean =>
   jobCardLayoutOf(finalDocument) !== 'v5';
 
-/** The current renderer's edition for a job's document (today's for anything not issued as 6, 7 or 8). */
+/** The current renderer's edition for a job's document (today's for anything not issued as 6, 7, 8 or 9). */
 export const jobCardEditionOf = (finalDocument: { readonly renderer: number | null } | null): JobCardEdition => {
   const layout = jobCardLayoutOf(finalDocument);
   return layout === 'v5' ? JOB_CARD_LAYOUT_RENDERER : layout;
@@ -66,8 +74,15 @@ export const hasJobCard3Layout = (edition: JobCardEdition): boolean => edition >
 export const hasAlignedHeader = (edition: JobCardEdition): boolean => edition >= JOB_CARD_4_RENDERER;
 
 /**
- * The full-width header a Job Card or Parts Collection Note is drawn with: its edition's (7, 8 or 9).
+ * The full-width header a Job Card or Parts Collection Note is drawn with: its edition's (7, 8 or 9;
+ * edition 10 keeps 9's header — JOB-CARD-6 changed only the pagination).
  * An Installation Delivery Note keeps edition 7's header in every edition (the owner, 21 November 2026).
  */
 export const fullWidthHeaderStyleOf = (edition: JobCardEdition, installation: boolean): 7 | 8 | 9 =>
   installation || edition <= JOB_CARD_3_RENDERER ? 7 : edition === JOB_CARD_4_RENDERER ? 8 : 9;
+
+/**
+ * JOB-CARD-6's pagination: 10 on. Earlier editions keep their page breaks exactly as issued (the totals
+ * and acceptance moved on by an over-generous estimate; the photographs always on a page of their own).
+ */
+export const hasFlowingPagination = (edition: JobCardEdition): boolean => edition >= JOB_CARD_LAYOUT_RENDERER;

@@ -782,9 +782,10 @@ describe.each([
 ] as const)('%s — the corrected header (edition 9)', (name, label) => {
   const number = JOB_DOCUMENTS[name];
   const bandBottom = LETTERHEAD_TOP - LETTERHEAD_FULL_HEIGHT;
-  const draw = (layout?: 7 | 8) =>
+  // JOB-CARD-6: edition 9 is what a document issued in v1.16.2 (renderer 9) is still drawn in.
+  const draw = (layout: 7 | 8 | 9 = 9) =>
     renderJobCardPdf(
-      { ...sources.get(number)!, ...(layout === undefined ? {} : { layout }), letterhead: EJE_MASTER_LETTERHEAD },
+      { ...sources.get(number)!, layout, letterhead: EJE_MASTER_LETTERHEAD },
       `${number}.pdf`,
       GENERATED_AT,
     ).bytes;

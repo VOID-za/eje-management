@@ -1,7 +1,7 @@
 import { JOB_CARD_LAYOUT_RENDERER, jobCardLayoutOf } from '@/lib/job-card/layout-version';
 
 /** The layout a preview is drawn in: absent for today's, else the one the job was issued in. */
-const layoutSourceOf = (finalDocument: { readonly renderer: number | null } | null): { readonly layout?: 'v5' | 6 | 7 | 8 } => {
+const layoutSourceOf = (finalDocument: { readonly renderer: number | null } | null): { readonly layout?: 'v5' | 6 | 7 | 8 | 9 } => {
   const layout = jobCardLayoutOf(finalDocument);
   return layout === JOB_CARD_LAYOUT_RENDERER ? {} : { layout };
 };

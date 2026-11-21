@@ -27,6 +27,7 @@ import {
   FAINT,
   FOOTER_SPACE,
   GAP,
+  GENUINE_FOOTER_SPACE,
   INK,
   MARGIN,
   MUTED,
@@ -45,8 +46,10 @@ import {
   JOB_CARD_2_RENDERER,
   JOB_CARD_3_RENDERER,
   JOB_CARD_4_RENDERER,
+  JOB_CARD_5_RENDERER,
   JOB_CARD_LAYOUT_RENDERER,
   fullWidthHeaderStyleOf,
+  hasFlowingPagination,
   hasJobCard3Layout,
   type JobCardEdition,
 } from '@/lib/job-card/layout-version';
@@ -516,7 +519,43 @@ const noteLines = (note: string): readonly string[] =>
 const totalsHeight = (charges: Charges): number =>
   4 + totalsLines(charges).reduce((sum, [, , note]) => sum + GAP.line + 2 + Math.max(0, noteLines(note).length - 1) * GAP.line, 0) + GAP.line + 2 + SIZE.total;
 
-const charges = (sheet: Sheet, model: JobCardModel): void => {
+/** Subtotal, VAT and the Total under its rule — drawn from the cursor down. */
+const drawTotals = (sheet: Sheet, totals: Charges, flowing: boolean): void => {
+  sheet.move(4);
+  for (const [label, value, note] of totalsLines(totals)) {
+    rightAligned(sheet, TABLE_RATE, sheet.cursor, label, SIZE.body, 'regular', MUTED);
+    rightAligned(sheet, TABLE_AMOUNT, sheet.cursor, value, SIZE.body, 'regular', BODY);
+    noteLines(note).forEach((line, index) => {
+      if (index > 0) sheet.move(GAP.line);
+      sheet.pdf.text(DESCRIPTION_X, sheet.cursor, line, { size: SIZE.body, font: 'italic', colour: MUTED });
+    });
+    sheet.move(GAP.line + 2);
+  }
+
+  sheet.rule(INK, 1.2, ACCEPTANCE_X, RIGHT);
+  sheet.move(GAP.line + 2);
+  rightAligned(sheet, TABLE_RATE, sheet.cursor, 'Total', SIZE.total, 'bold', INK);
+  rightAligned(sheet, TABLE_AMOUNT, sheet.cursor, totals.total, SIZE.total, 'bold', INK);
+  // JOB-CARD-6: from edition 10 the acceptance follows at the ordinary section gap below the Total,
+  // without the further 8pt editions 6–9 left (a 36pt step from the Total to the acceptance heading).
+  sheet.move(flowing ? SIZE.total : SIZE.total + 8);
+};
+
+/**
+ * JOB-CARD-6: how far below the cursor a block's ink reaches, MEASURED by drawing it on a scratch page
+ * with the exact operations that will draw it for real, so the measure cannot drift from the drawing.
+ * The block's trailing gap is not part of it: at the foot of a page that gap is the footer's margin.
+ * A block taller than a whole page reports as such, and is then started on a fresh page as before.
+ */
+const INK_BELOW_BASELINE = 3;
+const measuredHeight = (draw: (probe: Sheet) => void): number => {
+  const probe = new Sheet();
+  const top = probe.cursor;
+  draw(probe);
+  return probe.pdf.pageCount > 1 ? A4_HEIGHT : top - probe.cursor + INK_BELOW_BASELINE;
+};
+
+const charges = (sheet: Sheet, model: JobCardModel, flowing: boolean): void => {
   if (model.charges === null && model.received === null) return;
   sheet.sectionTitle('Labour, travel and parts');
 
@@ -541,24 +580,22 @@ const charges = (sheet: Sheet, model: JobCardModel): void => {
   /*
    * JOB-CARD-2: the customer's acceptance sits directly under the totals, so the totals and the
    * whole acceptance block go onto the same page — never a signature a page away from its total.
+   *
+   * JOB-CARD-6 (the owner, 21 November 2026, on EJE-2138): that page is THIS one whenever the totals
+   * and the whole acceptance fit under the table. The estimate used up to edition 9 reserved about
+   * 40pt more than is drawn (the signature box counted 23pt too tall, plus the gap AFTER the block),
+   * so a sign-off that fitted was sent to a page of its own. From edition 10 it is measured as drawn.
    */
-  sheet.need(totalsHeight(model.charges) + 8 + acceptanceHeight(model));
-  sheet.move(4);
-  for (const [label, value, note] of totalsLines(model.charges)) {
-    rightAligned(sheet, TABLE_RATE, sheet.cursor, label, SIZE.body, 'regular', MUTED);
-    rightAligned(sheet, TABLE_AMOUNT, sheet.cursor, value, SIZE.body, 'regular', BODY);
-    noteLines(note).forEach((line, index) => {
-      if (index > 0) sheet.move(GAP.line);
-      sheet.pdf.text(DESCRIPTION_X, sheet.cursor, line, { size: SIZE.body, font: 'italic', colour: MUTED });
-    });
-    sheet.move(GAP.line + 2);
+  const totals = model.charges;
+  if (flowing) {
+    sheet.need(measuredHeight((probe) => {
+      drawTotals(probe, totals, flowing);
+      acceptanceBody(probe, model);
+    }));
+  } else {
+    sheet.need(totalsHeight(totals) + 8 + acceptanceHeight(model));
   }
-
-  sheet.rule(INK, 1.2, ACCEPTANCE_X, RIGHT);
-  sheet.move(GAP.line + 2);
-  rightAligned(sheet, TABLE_RATE, sheet.cursor, 'Total', SIZE.total, 'bold', INK);
-  rightAligned(sheet, TABLE_AMOUNT, sheet.cursor, model.charges.total, SIZE.total, 'bold', INK);
-  sheet.move(SIZE.total + 8);
+  drawTotals(sheet, totals, flowing);
 };
 
 /**
@@ -989,33 +1026,63 @@ const photoCell = (
   sheet.pdf.line(x + grid.width, bottom, x + grid.width, top, 0.5, RULE);
 };
 
+/** A row of photographs: each one's wrapped caption, and the row's height with the tallest caption. */
+const photoRow = (row: JobCardModel['photos'], grid: PhotoGrid) => {
+  const captions = row.map((photo) =>
+    photo.caption.trim().length === 0
+      ? []
+      : PdfBuilder.wrap(photo.caption, grid.width, SIZE.tiny),
+  );
+  const captionLines = Math.max(0, ...captions.map((lines) => lines.length));
+  return { captions, rowHeight: grid.height + (captionLines === 0 ? 0 : 4 + captionLines * PHOTO_CAPTION_LEADING) };
+};
+
+/** JOB-CARD-6: the extra space between whatever precedes the photographs and their heading. */
+const PHOTOGRAPHS_SEPARATION = GAP.line;
+
+/**
+ * JOB-CARD-6: how far a row of photographs reaches below the cursor. The row's top is SIZE.small above
+ * the cursor, so its lowest ink (the last caption line's descenders, or the cell's lower edge) is
+ * `rowHeight - SIZE.small` below it; 1pt more for the descenders.
+ */
+const rowReach = (rowHeight: number): number => rowHeight - SIZE.small + 1;
+
 const photographs = (
   sheet: Sheet,
   model: JobCardModel,
   images: ReadonlyMap<string, PreparedPhoto> | undefined,
   grid: PhotoGrid = JOB_CARD_PHOTOS,
+  flowing = false,
 ): void => {
   if (model.photos.length === 0) return;
-  /*
-   * JOB-CARD-2 (the owner: "Always on new page! Heading + image together."): the photographs begin
-   * on a page of their own — after the acceptance and the checklist — so the heading is never left at
-   * the foot of a page; the heading and the first row are drawn together at its top. No photographs,
-   * no page.
-   */
-  sheet.newPage();
+  if (flowing) {
+    /*
+     * JOB-CARD-6 (the owner, 21 November 2026, on EJE-2138): no page of their own. The photographs
+     * follow the acceptance (and the checklist) on the same page when the heading AND the first row
+     * fit there; otherwise the two move to the next page together, so the heading is never left alone
+     * at the foot of a page. Every further row flows into the room left; a row is never split.
+     */
+    const first = photoRow(model.photos.slice(0, grid.columns), grid);
+    if (sheet.wouldOverflow(PHOTOGRAPHS_SEPARATION + GAP.line + rowReach(first.rowHeight))) sheet.newPage();
+    else sheet.move(PHOTOGRAPHS_SEPARATION);
+  } else {
+    /*
+     * JOB-CARD-2 (the owner: "Always on new page! Heading + image together."): the photographs begin
+     * on a page of their own — after the acceptance and the checklist — so the heading is never left at
+     * the foot of a page; the heading and the first row are drawn together at its top. No photographs,
+     * no page. (Editions 6–9, and every Installation Delivery Note.)
+     */
+    sheet.newPage();
+  }
   sheet.sectionTitle('Photographs');
   for (let start = 0; start < model.photos.length; start += grid.columns) {
     const row = model.photos.slice(start, start + grid.columns);
-    const captions = row.map((photo) =>
-      photo.caption.trim().length === 0
-        ? []
-        : PdfBuilder.wrap(photo.caption, grid.width, SIZE.tiny),
-    );
-    const captionLines = Math.max(0, ...captions.map((lines) => lines.length));
-    const rowHeight = grid.height + (captionLines === 0 ? 0 : 4 + captionLines * PHOTO_CAPTION_LEADING);
+    const { captions, rowHeight } = photoRow(row, grid);
     // A row is never split across a page: a photograph cut in half is worse
     // than white space at the foot of a page.
-    sheet.need(rowHeight + SIZE.small);
+    // JOB-CARD-6: from edition 10 the row reserves what it draws below the cursor (it starts SIZE.small
+    // ABOVE it); editions 6–9 reserved SIZE.small more than the row's own height, 15pt too much.
+    sheet.need(flowing ? rowReach(rowHeight) : rowHeight + SIZE.small);
     const top = sheet.cursor + SIZE.small;
     row.forEach((photo, column) => {
       const x = MARGIN + column * (grid.width + PHOTO_GAP);
@@ -1075,12 +1142,19 @@ const acceptanceHeight = (model: JobCardModel): number => {
     + rowsHeight(model.acceptance.rows, ACCEPTANCE_WIDTH) + 16 + SIGNATURE_BOX + 14 + GAP.section;
 };
 
-const acceptance = (sheet: Sheet, model: JobCardModel): void => {
-  const x = ACCEPTANCE_X;
-  const width = ACCEPTANCE_WIDTH;
+const acceptance = (sheet: Sheet, model: JobCardModel, flowing: boolean): void => {
   // The whole block stays together: a signature on a different page from the declaration it
   // belongs to is not an acceptance. (Under the totals, `charges` has already made room for it.)
-  sheet.need(acceptanceHeight(model));
+  // JOB-CARD-6: from edition 10 measured as drawn, not estimated.
+  sheet.need(flowing ? measuredHeight((probe) => acceptanceBody(probe, model)) : acceptanceHeight(model));
+  acceptanceBody(sheet, model);
+  sheet.move(GAP.section);
+};
+
+/** The acceptance (or refusal) block from the cursor down, without the gap after it. */
+const acceptanceBody = (sheet: Sheet, model: JobCardModel): void => {
+  const x = ACCEPTANCE_X;
+  const width = ACCEPTANCE_WIDTH;
   sheet.move(GAP.section);
 
   if (model.refusal !== null) {
@@ -1092,14 +1166,12 @@ const acceptance = (sheet: Sheet, model: JobCardModel): void => {
     sheet.paragraph(block.reason, { colour: BODY, width, x });
     sheet.move(5);
     labelValueRows(sheet, block.rows, x, width);
-    sheet.move(GAP.section);
     return;
   }
 
   smallHeading(sheet, x, acceptanceTitle(model));
   if (model.acceptance === null) {
     sheet.paragraph('Not yet signed.', { font: 'italic', colour: MUTED, width, x });
-    sheet.move(GAP.section);
     return;
   }
 
@@ -1141,7 +1213,6 @@ const acceptance = (sheet: Sheet, model: JobCardModel): void => {
 
   sheet.pdf.text(x, boxBottom - 11, model.acceptance.caption, { size: SIZE.tiny, colour: MUTED });
   sheet.setCursor(boxBottom - 11);
-  sheet.move(GAP.section);
 };
 
 /**
@@ -1207,13 +1278,22 @@ export const renderJobCardPdf = (
   fileName: string,
   generatedAt: string,
 ): RenderedPdf => {
-  // JOB-CARD-3/-4/-5: editions 6, 7 and 8 redraw a job card issued in v1.15.0 / v1.16.0 / v1.16.1 exactly as it was; anything else is 9.
+  // JOB-CARD-3/-4/-5/-6: editions 6, 7, 8 and 9 redraw a job card issued in v1.15.0 / v1.16.0 / v1.16.1 / v1.16.2 exactly as it was; anything else is 10.
   const edition: JobCardEdition =
-    source.layout === JOB_CARD_2_RENDERER || source.layout === JOB_CARD_3_RENDERER || source.layout === JOB_CARD_4_RENDERER
+    source.layout === JOB_CARD_2_RENDERER || source.layout === JOB_CARD_3_RENDERER || source.layout === JOB_CARD_4_RENDERER || source.layout === JOB_CARD_5_RENDERER
       ? source.layout
       : JOB_CARD_LAYOUT_RENDERER;
   const model = buildJobCardModel({ ...source, generatedAt, edition });
-  const sheet = new Sheet();
+  const simulated = source.job.finalDocument?.provenance === 'simulated';
+  // JOB-CARD-6: from edition 10 the sections flow — each kept whole, none sent to a new page needlessly.
+  const flowing = hasFlowingPagination(edition) && model.installation === undefined;
+  /*
+   * JOB-CARD-6: the room above the footer. Editions 6–9 kept 18pt clear above the footer rule on every
+   * document — the height of the demonstration stamp's band, which only a demonstration document draws.
+   * From edition 10 a genuine document's content may come down to 8pt above the rule (the footer itself
+   * is unchanged); a demonstration document keeps the full band.
+   */
+  const sheet = new Sheet(flowing && !simulated ? GENUINE_FOOTER_SPACE : FOOTER_SPACE);
 
   if (model.installation !== undefined) {
     /*
@@ -1230,7 +1310,8 @@ export const renderJobCardPdf = (
     installationLabour(sheet, model);
     notes(sheet, model);
     // JOB-CARD-2: the sign-off, then the supporting sections, then the photographs on their own page.
-    acceptance(sheet, model);
+    // (JOB-CARD-6's pagination is not applied: the Installation Delivery Note is unchanged.)
+    acceptance(sheet, model, false);
     checklist(sheet, model);
     photographs(sheet, model, source.photoImages, INSTALLATION_PHOTOS);
     footers(sheet, model, fileName, source.job.finalDocument?.provenance === 'simulated');
@@ -1243,15 +1324,16 @@ export const renderJobCardPdf = (
   partsReceived(sheet, model);
   work(sheet, model);
   notes(sheet, model);
-  charges(sheet, model);
+  charges(sheet, model, flowing);
   collection(sheet, model);
   /*
    * JOB-CARD-2: the customer's acceptance directly under the totals, on the right; then the
-   * supporting sections (the checklist); then the photographs, on a page of their own.
+   * supporting sections (the checklist); then the photographs (editions 6–9: on a page of their own;
+   * JOB-CARD-6, edition 10: following on, the heading with the first row).
    */
-  acceptance(sheet, model);
+  acceptance(sheet, model, flowing);
   checklist(sheet, model);
-  photographs(sheet, model, source.photoImages);
+  photographs(sheet, model, source.photoImages, JOB_CARD_PHOTOS, flowing);
   /*
    * WHETHER THIS IS A DEMONSTRATION DOCUMENT, taken from the JOB'S OWN RECORD.
    *
@@ -1260,7 +1342,7 @@ export const renderJobCardPdf = (
    * is therefore genuine, which is the right default — a preview of a real job
    * must not be stamped.
    */
-  footers(sheet, model, fileName, source.job.finalDocument?.provenance === 'simulated');
+  footers(sheet, model, fileName, simulated);
 
   return { bytes: sheet.pdf.toBytes(), pageCount: sheet.pdf.pageCount };
 };

@@ -286,9 +286,10 @@ export interface FinalDocumentSource {
    * from the one that was issued. JOB-CARD-3: 6 draws the JOB-CARD-2 edition exactly as issued with
    * renderer 6 (v1.15.0), for previewing a job issued in it. JOB-CARD-4: 7 draws JOB-CARD-3 exactly as
    * issued with renderer 7 (v1.16.0). JOB-CARD-5: 8 draws JOB-CARD-4 exactly as issued with renderer 8
-   * (v1.16.1). Absent: the current layout (9).
+   * (v1.16.1). JOB-CARD-6: 9 draws JOB-CARD-5 exactly as issued with renderer 9 (v1.16.2). Absent: the
+   * current layout (10).
    */
-  readonly layout?: 'v5' | 6 | 7 | 8;
+  readonly layout?: 'v5' | 6 | 7 | 8 | 9;
   /**
    * LETTERHEAD-1: the job company's uploaded letterhead, prepared, printed
    * across the top of the document in place of the text header. Absent — no

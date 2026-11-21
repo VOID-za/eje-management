@@ -53,6 +53,9 @@ let testAndRepair: FinalDocumentSource; // EJE-1067: Test & Repair, not signed
 
 const render = async (source: FinalDocumentSource) =>
   renderJobCardPdf({ ...source, photoImages: await photoImagesFor(source.job), letterhead: EJE_MASTER_LETTERHEAD }, 'J.pdf', GENERATED_AT).bytes;
+/** JOB-CARD-6: edition 9 (v1.16.2) — the last to put the photographs on a page of their own; still how a document issued in it is drawn. */
+const render9 = async (source: FinalDocumentSource) =>
+  renderJobCardPdf({ ...source, layout: 9, photoImages: await photoImagesFor(source.job), letterhead: EJE_MASTER_LETTERHEAD }, 'J.pdf', GENERATED_AT).bytes;
 
 beforeAll(async () => {
   const template = documentPhotos((await jobSource('EJE-1054')).job)[0];
@@ -222,8 +225,8 @@ describe('JOB-CARD-2 — the acceptance, the checklist and the photographs', () 
     }
   });
 
-  it('prints the checklist after the acceptance, and the photographs last, from the top of a new page', async () => {
-    const bytes = await render(service);
+  it('prints the checklist after the acceptance, and the photographs last, from the top of a new page (editions 6–9)', async () => {
+    const bytes = await render9(service);
     const runs = textRuns(bytes);
     const acceptance = runs.find((run) => run.value === 'CUSTOMER ACCEPTANCE')!;
     const checklist = runs.find((run) => run.value.startsWith('PREVENTATIVE SERVICE CHECKLIST'))!;
@@ -244,10 +247,10 @@ describe('JOB-CARD-2 — the acceptance, the checklist and the photographs', () 
     expect(first.y + first.height).toBeGreaterThan(photographs.y - 140);
   });
 
-  it('starts the photographs on a new page even when there is room for them on the last one', async () => {
-    const bytes = await render(testAndRepair);
+  it('starts the photographs on a new page even when there is room for them on the last one (editions 6–9)', async () => {
+    const bytes = await render9(testAndRepair);
     expect(inspectPdf(bytes).pageCount).toBe(1); // no photographs: no photographs page
-    const photographed = await render(withWork(testAndRepair, { ...{}, labour: testAndRepair.job.labour.map((entry) => ({ date: entry.date, rateType: entry.rateType, hours: entry.hours, description: entry.description })), photos: 1 }, documentPhotos(breakdown.job)[0]));
+    const photographed = await render9(withWork(testAndRepair, { ...{}, labour: testAndRepair.job.labour.map((entry) => ({ date: entry.date, rateType: entry.rateType, hours: entry.hours, description: entry.description })), photos: 1 }, documentPhotos(breakdown.job)[0]));
     const runs = textRuns(photographed);
     const heading = runs.find((run) => run.value === 'PHOTOGRAPHS')!;
     expect(heading.page).toBe(2);

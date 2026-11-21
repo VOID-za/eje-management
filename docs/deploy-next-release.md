@@ -32,6 +32,10 @@ release is bigger than its commits say, `stage-release.ps1 -Bump minor` (or
 `major`) raises the step. The commit remains what identifies a deployment;
 `/api/health` reports both.
 
+## CANDIDATE — JOB-CARD-6, the job card pagination (21 November 2026), on `claude/job-card-pagination`
+
+**No migration** (`-ExpectPending none`). Pagination only, Job Card and Parts Collection Note only (the Installation Delivery Note unchanged): the totals and acceptance directly under the table whenever they fit (measured as drawn); the photographs following on, the heading always with the first row, no page of their own; a genuine document's content down to 8 pt above the footer rule. On the EJE-2138 equivalent: 3 pages → 2, the totals and signature on page 1. New issues record renderer 10; renderer 9 (v1.16.2), 8, 7 and 6 documents are still drawn in their own editions, byte-identical. Rollback to `0cee570` is a code switch, with one visible effect: that release does not know renderer 10 and shows a document issued in it ON SCREEN in its oldest (V5) layout — the stored PDF, which is what is downloaded, emailed and printed, is never re-rendered and stays exactly as issued. Not deployed until the owner approves.
+
 ## RELEASED — `0cee570` = v1.16.2, the header correction (JOB-CARD-5, 21 November 2026)
 
 **No migration** (`-ExpectPending none`). Header only, Job Card and Parts Collection Note only (the Installation Delivery Note unchanged): the P.O. Box address moved down as one three-line block ("1465" still on the Email line); the document type and number one heading on one baseline in the top-right corner, on the "Reg:" line. New issues record renderer 9; renderer 8 (v1.16.1), 7 (v1.16.0) and 6 (v1.15.0) documents are still drawn in their own editions, byte-identical. Rollback to `0fa3d19` is a code switch, with one visible effect: that release does not know renderer 9 and shows a document issued in it ON SCREEN in its oldest (V5) layout — the stored PDF, which is what is downloaded, emailed and printed, is never re-rendered and stays exactly as issued.

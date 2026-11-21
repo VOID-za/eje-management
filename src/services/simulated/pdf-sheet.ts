@@ -35,6 +35,12 @@ export const MARGIN = 40;
 export const CONTENT_WIDTH = A4_WIDTH - MARGIN * 2;
 export const RIGHT = A4_WIDTH - MARGIN;
 export const FOOTER_SPACE = 44;
+/**
+ * JOB-CARD-6: the room a GENUINE job card or Parts Collection Note (edition 10 on) keeps above its
+ * footer — 8pt clear of the footer rule at MARGIN + 26. FOOTER_SPACE's further 10pt is the height of
+ * the demonstration stamp's band, which only a demonstration document draws.
+ */
+export const GENUINE_FOOTER_SPACE = 34;
 
 /** Type scale, from the screen's px values at 0.7. */
 export const SIZE = {
@@ -82,7 +88,8 @@ export class Sheet {
   readonly pdf = new PdfBuilder();
   private y = 0;
 
-  constructor() {
+  /** `footerSpace`: the room kept clear above the bottom margin for the footer (FOOTER_SPACE unless a renderer says otherwise). */
+  constructor(private readonly footerSpace: number = FOOTER_SPACE) {
     this.break();
   }
 
@@ -121,7 +128,7 @@ export class Sheet {
 
   /** True if `height` will not fit on the current page. */
   wouldOverflow(height: number): boolean {
-    return this.y - height < MARGIN + FOOTER_SPACE;
+    return this.y - height < MARGIN + this.footerSpace;
   }
 
   /** Breaks to a new page when `height` will not fit. */

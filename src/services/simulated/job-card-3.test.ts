@@ -52,8 +52,13 @@ describe('which edition a document is drawn in', () => {
     expect(jobCardEditionOf(null)).toBe(JOB_CARD_LAYOUT_RENDERER);
   });
 
-  it('JOB-CARD-5: 9 for anything not yet issued or issued in it; a v1.16.1 issue (8) stays 8, its header too', () => {
-    expect(JOB_CARD_LAYOUT_RENDERER).toBe(9);
+  it('JOB-CARD-6: 10 for anything not yet issued or issued in it; a v1.16.2 issue (9) stays 9, a v1.16.1 issue (8) stays 8, their headers too', () => {
+    expect(JOB_CARD_LAYOUT_RENDERER).toBe(10);
+    expect(jobCardLayoutOf({ renderer: 10 })).toBe(10);
+    expect(jobCardEditionOf({ renderer: 9 })).toBe(9);
+    // Edition 10 changed only the pagination: its header is edition 9's.
+    expect(fullWidthHeaderStyleOf(10, false)).toBe(9);
+    expect(fullWidthHeaderStyleOf(10, true)).toBe(7);
     expect(jobCardLayoutOf({ renderer: 9 })).toBe(9);
     expect(jobCardLayoutOf({ renderer: 8 })).toBe(8);
     expect(jobCardEditionOf({ renderer: 8 })).toBe(8);
